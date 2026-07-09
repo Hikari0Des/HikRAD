@@ -1,7 +1,7 @@
 # HikRAD — Sub-PRD 03: Lossless Accounting, Live Data & Monitoring
 
-> Derived from [docs/PRD.md](../PRD.md) v1.0 on 2026-07-08. Owns: FR-31, FR-32, FR-33, FR-34, FR-35, FR-36, FR-37, FR-38, FR-39, FR-40 · NFR-2 · Risks: lossless-pipeline complexity, competing with entrenched SAS4
-> Depends on: [01-platform-install-licensing](01-platform-install-licensing.md) (Compose volumes for disk-backed queue, settings for retention/SMTP/Telegram), [02-radius-nas-aaa](02-radius-nas-aaa.md) (accounting packet feed, CoA service, NAS registry) · Depended on by: [04-subscribers-profiles](04-subscribers-profiles.md) (usage graphs on user page, quota counters), [05-billing-payments-vouchers](05-billing-payments-vouchers.md) (low-agent-balance alerts), [08-reports](08-reports.md) (usage report data)
+> Derived from [docs/PRD.md](../PRD.md) v1.1 on 2026-07-08 (updated 2026-07-09: FR-55 added, FR-36 gains the WhatsApp channel — Decision 16). Owns: FR-31, FR-32, FR-33, FR-34, FR-35, FR-36, FR-37, FR-38, FR-39, FR-40, FR-55 · NFR-2 · Risks: lossless-pipeline complexity, competing with entrenched SAS4
+> Depends on: [01-platform-install-licensing](01-platform-install-licensing.md) (Compose volumes for disk-backed queue, settings for retention/SMTP/Telegram/WhatsApp), [02-radius-nas-aaa](02-radius-nas-aaa.md) (accounting packet feed, CoA service, NAS registry), [05-billing-payments-vouchers](05-billing-payments-vouchers.md) (renewal/payment events for FR-55 receipts) · Depended on by: [04-subscribers-profiles](04-subscribers-profiles.md) (usage graphs on user page, quota counters), [05-billing-payments-vouchers](05-billing-payments-vouchers.md) (low-agent-balance alerts), [08-reports](08-reports.md) (usage report data)
 
 ## 1. Scope & context
 
@@ -63,13 +63,22 @@ This module is HikRAD's deliberate specialty and market wedge: **monitoring and 
 *Elaboration:* FreeRADIUS watched via Status-Server + process check; auth-reject rate computed from authorize outcomes; disk space per volume (data, backups, queue spill). The health page also shows license state ([01](01-platform-install-licensing.md) FR-50.5), backup age, and the FR-40 counter invariant. Everything on it is alertable via FR-36.
 
 ### FR-36 (M) — Alerts engine
-**Master:** Rules for NAS down/up, RADIUS failure spike, accounting-queue backlog, low disk, user-expiring-in-N-days digest, low agent balance; channels: in-app, Telegram bot, email (SMTP); per-rule routing and quiet hours.
+**Master:** Rules for NAS down/up, RADIUS failure spike, accounting-queue backlog, low disk, user-expiring-in-N-days digest, low agent balance; channels: in-app, Telegram bot, email (SMTP), WhatsApp (Business Cloud API); per-rule routing and quiet hours.
 
 *Elaboration:*
 - **FR-36.1** — Rule = condition (typed, from the master's list) + threshold + routing (channel set, recipients) + quiet hours + cooldown (no re-fire storm). Delivery target ≤ 60 s from condition (user story: Telegram alert "within a minute").
-- **FR-36.2** — Channels: in-app notification center + banner; Telegram bot (token/chats from settings); SMTP email. Channel failures (no internet — NFR-7) are logged and retried without affecting anything else; in-app always works.
+- **FR-36.2** — Channels: in-app notification center + banner; Telegram bot (token/chats from settings); SMTP email; WhatsApp Business Cloud API (access token / phone-number ID from settings, [01](01-platform-install-licensing.md) FR-53.2 — admin-alert recipients are WhatsApp numbers configured per rule; business-initiated messages use pre-approved templates, see FR-55.1). Channel failures (no internet — NFR-7) are logged and retried without affecting anything else; in-app always works.
 - **FR-36.3** — Digest-type rules (expiring-in-N-days, daily business digest per Omar's user story — new users/renewals/revenue/expiring) render as a single scheduled message; revenue/renewal figures come from [05](05-billing-payments-vouchers.md) ledger and [04](04-subscribers-profiles.md) counts. Low-agent-balance condition reads manager balances ([05](05-billing-payments-vouchers.md) FR-20).
 - **FR-36.4** — Every fire recorded as an `alert_events` row (rule, condition snapshot, channels attempted, delivery result).
+
+### FR-55 (S) — Subscriber-facing WhatsApp messaging
+**Master:** Expiry reminders (N days before expiry) and payment receipts delivered to the subscriber's WhatsApp number using Meta-approved template messages in the subscriber's language; per-subscriber opt-in (phone consent); reuses the FR-36 delivery infrastructure (routing, quiet hours, retry, delivery isolation); internet-dependent, so it queues/skips gracefully per NFR-7.
+
+*Elaboration:*
+- **FR-55.1** — Business-initiated WhatsApp messages require **pre-approved Meta message templates**. v1 templates: `expiry_reminder` (params: subscriber name, days left, profile name) and `payment_receipt` (params: amount IQD, receipt number, new expiry date), each registered in ar/ku/en; template names + language mapping configurable in settings ([01](01-platform-install-licensing.md) FR-53.2).
+- **FR-55.2** — Triggers: the expiry reminder extends the `expiring_digest` rule machinery with per-subscriber targeting (each subscriber's own expiry, N days, their own language); the receipt sends on renewal/payment events published by [05](05-billing-payments-vouchers.md) (FR-19/FR-21/FR-23) — money logic stays there, delivery lives here.
+- **FR-55.3** — Consent & identity: sent only to subscribers with a valid normalized phone ([04](04-subscribers-profiles.md) FR-1.3) and the per-subscriber WhatsApp opt-in flag set ([04](04-subscribers-profiles.md) owns the field); language follows the subscriber's preference ([07](07-subscriber-portal-pwa.md)).
+- **FR-55.4** — Delivery isolation identical to FR-36.2: failures are logged and retried, never block alerts or anything else; every send recorded like an alert event. Meta's per-conversation pricing is documented for the ISP in the admin guide.
 
 ### FR-39 (S) — RADIUS debug tool
 **Master:** Live tail of auth attempts for a given username/NAS with human-readable reject reasons (bad password, expired, session limit, unknown NAS…).
@@ -89,7 +98,8 @@ This module is HikRAD's deliberate specialty and market wedge: **monitoring and 
 - **AC-31a** — Given an Accounting-Start, then the session row appears in Live Sessions within 2 s; given a Stop, it leaves within 2 s (key flow 1 step 5).
 - **AC-31b** — Given a scoped manager, then Live Sessions shows only their users, and Disconnect is hidden without the permission.
 - **AC-34a** — Given a NAS that stops answering pings, then its card turns red with downtime duration and a Telegram alert arrives within 60 s of the Nth missed probe (key flow 3).
-- **AC-36a** — Given quiet hours 23:00–07:00 on a rule, then conditions during that window produce in-app events but suppress Telegram/email until the window ends.
+- **AC-36a** — Given quiet hours 23:00–07:00 on a rule, then conditions during that window produce in-app events but suppress Telegram/email/WhatsApp until the window ends.
+- **AC-55a** — Given a subscriber with a valid phone, WhatsApp opt-in, and language ar, when their expiry crosses the reminder threshold or a renewal completes, then the matching Arabic template message arrives at their number; with opt-in off or the internet down, nothing else is affected and the skip/queue is logged.
 - **AC-33a** — Given 13 months of data, then daily graphs still render from rollups, raw sessions ≥ 12 months are intact, and retention jobs have not violated configured floors.
 - **AC-NFR2a** — Given the panel container stopped, then PPPoE auth and accounting continue unaffected.
 
@@ -104,7 +114,7 @@ This module is HikRAD's deliberate specialty and market wedge: **monitoring and 
 - `GET/POST /api/v1/alert-rules`, `GET /api/v1/alert-events`
 - Internal: `POST` accounting ingest from FreeRADIUS to `hikrad-acct` (transport configured by [02](02-radius-nas-aaa.md)).
 
-**Consumes:** CoA service and NAS registry from [02](02-radius-nas-aaa.md); settings (retention, SMTP, Telegram, quiet-hour defaults) from [01](01-platform-install-licensing.md); revenue/balance figures from [05](05-billing-payments-vouchers.md); subscriber counts/expiry queries from [04](04-subscribers-profiles.md); permission checks from [06](06-managers-roles-security.md).
+**Consumes:** CoA service and NAS registry from [02](02-radius-nas-aaa.md); settings (retention, SMTP, Telegram, WhatsApp credentials/templates, quiet-hour defaults) from [01](01-platform-install-licensing.md); revenue/balance figures and renewal/payment events (FR-55 receipts) from [05](05-billing-payments-vouchers.md); subscriber counts/expiry queries + phone/WhatsApp-opt-in/language fields from [04](04-subscribers-profiles.md); permission checks from [06](06-managers-roles-security.md).
 
 ## 5. UX notes
 
@@ -123,3 +133,4 @@ Live Sessions: dense but scannable table, sub-second perceived updates (no full-
 - **Risk (master): Competing head-on with entrenched SAS4.** Likelihood Medium / Impact High. Mitigation: wedge = monitoring/lossless data + modern UX + SAS4 CSV import (import itself → [04](04-subscribers-profiles.md) FR-6). This module carries the wedge: M2 and M3 are its scoreboard.
 - **NEW:** Redis AOF `everysec` admits a ≤ 1 s durability window on hard power loss; decide whether the ack path needs the disk WAL in front of Redis by default, or only as failover — measure both against NFR-1 in P2.
 - **NEW:** live-rate accuracy depends on interim interval (see [02](02-radius-nas-aaa.md) NEW question) — UI must label the averaging window to keep operator trust.
+- **NEW (FR-55):** WhatsApp Business Cloud API requires a Meta business account, a verified WhatsApp Business phone number, and per-template pre-approval — real lead time per ISP. Document the onboarding steps in the admin guide; in-app + Telegram remain the primary alert channels (consistent with the NFR-7 posture), so WhatsApp being unavailable never blocks anything.

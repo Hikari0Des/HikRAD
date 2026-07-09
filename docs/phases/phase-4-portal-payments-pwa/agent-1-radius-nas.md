@@ -6,7 +6,7 @@
 The master PRD names "MikroTik CoA/attribute quirks across RouterOS 6/7" a High-impact risk; by now CoA carries renewals, enforcement, and TOD sweeps — it must be proven per ROS version, not assumed. You build the ROS test matrix, encode discovered quirks into the vendor adapter, and complete the walled-garden config so expired subscribers can actually reach the portal + payment gateways from inside the expired pool (the redirect-to-renew loop that closes the business case). Detail source: sub-PRD [02-radius-nas-aaa](../../prd/02-radius-nas-aaa.md).
 
 ## File ownership
-- **Exclusive:** `backend/internal/radius/**`, `deploy/freeradius/**`, `backend/test/harness/**`, `docs/ops/ros-matrix.md`.
+- **Exclusive:** `backend/internal/radius/**`, `deploy/freeradius/**`, `backend/test/harness/**`, `docs/ops/ros-matrix.md`, `backend/migrations/0320_*.sql`–`0329_*.sql`.
 - **Read-only:** portal/payment host requirements (D's gateway adapters document their callback/redirect hosts — frozen at phase start in C3 adapter docs). **Forbidden:** `internal/{portalapi,billing,push}`, `frontend/**`.
 
 ## Tasks
@@ -14,7 +14,8 @@ The master PRD names "MikroTik CoA/attribute quirks across RouterOS 6/7" a High-
 2. **Quirk table** → `docs/ops/ros-matrix.md`: per-version findings (supported CoA operations, attribute casing, timing) — and encode them: vendor adapter consults `nas.ros_version` to choose strategies (e.g. rate-change unsupported → transparent Disconnect fallback, already typed in Phase 2 FR-15.4 — now version-aware instead of NAK-reactive where knowable).
 3. **Walled-garden completion**: FR-14 snippet + hotspot package gain the full expired-pool garden: portal host, Caddy-served assets, each enabled gateway's redirect/callback hosts (from adapter docs), DNS notes; verify an expired-pool client can complete a voucher redemption and a mock payment through the garden.
 4. **CoA hardening**: retry/backoff tuning under packet loss (harness-simulated), concurrent CoA storm safety (enforcement worker bursts), metrics counters per operation/result for C's health page.
-5. Regression: full Phase-2/3 harness suites stay green on both ROS targets.
+5. **NAS API auto-setup** (FR-56.2–56.4, phase C6): migrations 0320–0329 (`nas` api_port/api_user/api_password_enc, sealed via A's crypto); RouterOS API client **inside the vendor adapter** (FR-17 grep applies); preview endpoint (read-only connect, diff of exact commands vs current state, conflict detection); apply endpoint gated on preview hash — additive-only, HikRAD-scoped, whole-apply abort on any conflict, auto-runs the "seen" test after; per-ROS-version enablement driven by your matrix results (apply refuses on an unvalidated version, offering the copy-paste snippet instead). Audited + permission-gated. Negative tests: planted conflicting `/radius` entry, router state mutated between preview and apply, wrong credentials.
+6. Regression: full Phase-2/3 harness suites stay green on both ROS targets.
 
 Edge cases: ROS 7 changed some VSA behaviors vs 6.49 — where behavior is truly irreconcilable, the adapter must degrade predictably and the matrix doc must say so for support staff; garden rules must not open general internet to expired users (test negative reachability too).
 
@@ -23,7 +24,7 @@ Edge cases: ROS 7 changed some VSA behaviors vs 6.49 — where behavior is truly
 - **Exposes:** version-aware adapter behavior (everyone relying on CoA), `docs/ops/ros-matrix.md` (support + pilot onboarding), garden-complete snippets (pilot install).
 
 ## Definition of done
-- Gate item 7 passes; gate item 1's expired-pool → renew → CoA-restore leg verified through the garden on both ROS versions.
+- Gate items 7 and 8 pass; gate item 1's expired-pool → renew → CoA-restore leg verified through the garden on both ROS versions.
 - Negative tests: expired-pool client cannot reach non-garden hosts; CoA storm (100 ops/min) causes no drops/misfires.
 - Quirk handling has unit tests keyed by ros_version; matrix doc reviewed and committed.
 

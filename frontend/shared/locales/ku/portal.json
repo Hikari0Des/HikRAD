@@ -1,0 +1,40 @@
+{
+  "_comment": "Kurdish (Sorani) — drafted by the dev team, needs native review before the v1 cut (sub-PRD 07 risk note). Keys must always match en; i18n:check enforces it. Fallback chain is ku→en, never ku→ar.",
+  "portal": {
+    "login": {
+      "title": "بچۆ ژوورەوە بۆ هەژمارەکەت",
+      "subtitle": "پۆرتاڵی بەشداربوو",
+      "username": "ناوی بەکارهێنەر",
+      "password": "وشەی نهێنی",
+      "submit": "چوونەژوورەوە",
+      "note": "ناوی بەکارهێنەر و وشەی نهێنی ئینتەرنێتەکەت (PPPoE) بەکاربهێنە.",
+      "language": "زمان"
+    },
+    "nav": {
+      "label": "ڕێنیشاندەر",
+      "home": "سەرەکی",
+      "usage": "بەکارهێنان",
+      "renew": "نوێکردنەوە"
+    },
+    "home": {
+      "title": "هەژمارەکەم",
+      "status": "باری بەشداری",
+      "expires": "بەسەردەچێت",
+      "quotaTitle": "داتای ئەم مانگە",
+      "placeholder": "پوختەی هەژمارەکەت لەگەڵ پۆرتاڵی تەواو دێت."
+    },
+    "usage": {
+      "title": "بەکارهێنان",
+      "chartTitle": "بەکارهێنانی ڕۆژانە",
+      "chartPlaceholder": "هێڵکاری بەکارهێنان لێرە دەردەکەوێت.",
+      "mixedSample": "بەشداربوو {username} ئەم هەفتەیە {gb} گیگابایت بەکارهێنا",
+      "daysLeft": "{count, plural, one {# ڕۆژ ماوە} other {# ڕۆژ ماوە}}"
+    },
+    "renew": {
+      "title": "نوێکردنەوە",
+      "price": "نرخی نوێکردنەوە",
+      "action": "ئێستا نوێی بکەرەوە",
+      "placeholder": "نوێکردنەوە و بەکارهێنانی ڤاوچەر لەگەڵ پۆرتاڵی تەواو دێن."
+    }
+  }
+}

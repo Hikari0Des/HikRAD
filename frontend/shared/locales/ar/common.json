@@ -1,0 +1,29 @@
+{
+  "common": {
+    "productName": "HikRAD",
+    "loading": "جارٍ التحميل…",
+    "retry": "حاول مرة أخرى",
+    "empty": {
+      "title": "لا يوجد شيء هنا بعد",
+      "body": "لا يوجد شيء لعرضه."
+    },
+    "error": {
+      "title": "حدث خطأ ما",
+      "body": "يرجى المحاولة مرة أخرى."
+    },
+    "status": {
+      "active": "نشط",
+      "expired": "منتهي",
+      "disabled": "معطّل"
+    },
+    "quota": {
+      "label": "الاستخدام",
+      "of": "{used} من {total}"
+    },
+    "languages": {
+      "en": "English",
+      "ar": "العربية",
+      "ku": "کوردی"
+    }
+  }
+}

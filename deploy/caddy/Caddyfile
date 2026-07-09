@@ -1,0 +1,60 @@
+# HikRAD reverse proxy — contract C5 (Phase 1, Agent A).
+#   /        -> admin panel static dist   (frontend/panel,  Agent E)
+#   /portal  -> subscriber portal dist    (frontend/portal, Agent F)
+#   /api/*   -> hikrad-api:8080           (REST API, /api/v1/...)
+#
+# Note: only /api/* is proxied. The FreeRADIUS policy endpoint
+# (POST /internal/radius/authorize, contract C4) is served on the same
+# backend port but is deliberately NOT reachable through Caddy.
+
+# Offline-first default (NFR-7, FR-49.5): self-signed certificate from
+# Caddy's internal CA. Browsers will warn until the CA cert
+# (data/caddy/pki/authorities/local/root.crt) is trusted.
+#
+# --- Let's Encrypt instead (needs a public domain + internet) ---
+# 1. Replace the `localhost:443` site address below with your domain, e.g.
+#      hikrad.example.isp {
+# 2. Delete the `tls internal` line (Caddy then provisions Let's Encrypt
+#    certificates automatically).
+# 3. Optionally set a contact email in a global block at the top:
+#      {
+#          email admin@example.isp
+#      }
+
+localhost:443 {
+	# Caddy's `tls internal` only pre-issues a certificate when the site
+	# address names a host: a bare `:443` has no name to mint a cert for and
+	# on-demand issuance is off by default, so every handshake fails with
+	# "no certificate available" (found by testing the real gate, not just
+	# reading the config). "localhost" matches the documented dev default
+	# (docs/ops/dev-setup.md, master phase gate item 4); a production install
+	# on a real domain still follows the Let's Encrypt note below.
+	tls internal
+	encode gzip
+
+	handle /api/* {
+		reverse_proxy hikrad-api:8080
+	}
+
+	redir /portal /portal/
+
+	# Portal dist is mounted at /srv/portal; the /portal prefix is stripped
+	# so the SPA is built and served from its own root (Vite base config is
+	# Agent F's side of this contract).
+	handle_path /portal/* {
+		root * /srv/portal
+		try_files {path} /index.html
+		file_server
+	}
+
+	# Everything else: admin panel SPA.
+	handle {
+		root * /srv/panel
+		try_files {path} /index.html
+		file_server
+	}
+}
+
+:80 {
+	redir https://{host}{uri} permanent
+}

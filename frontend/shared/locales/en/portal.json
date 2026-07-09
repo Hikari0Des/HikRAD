@@ -1,0 +1,39 @@
+{
+  "portal": {
+    "login": {
+      "title": "Sign in to your account",
+      "subtitle": "Subscriber portal",
+      "username": "Username",
+      "password": "Password",
+      "submit": "Sign in",
+      "note": "Use your internet (PPPoE) username and password.",
+      "language": "Language"
+    },
+    "nav": {
+      "label": "Navigation",
+      "home": "Home",
+      "usage": "Usage",
+      "renew": "Renew"
+    },
+    "home": {
+      "title": "My account",
+      "status": "Subscription status",
+      "expires": "Expires",
+      "quotaTitle": "Data this month",
+      "placeholder": "Your live account overview arrives with the full portal."
+    },
+    "usage": {
+      "title": "Usage",
+      "chartTitle": "Daily usage",
+      "chartPlaceholder": "Usage charts will appear here.",
+      "mixedSample": "Subscriber {username} used {gb} GB this week",
+      "daysLeft": "{count, plural, one {# day left} other {# days left}}"
+    },
+    "renew": {
+      "title": "Renew",
+      "price": "Renewal price",
+      "action": "Renew now",
+      "placeholder": "Renewal and voucher redemption arrive with the full portal."
+    }
+  }
+}

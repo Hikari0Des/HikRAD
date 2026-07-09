@@ -1,0 +1,27 @@
+# HikRAD (Phase 1, Agent 2 / RADIUS & NAS): bridges the authorize section to
+# hikrad-api's POST /internal/radius/authorize (contract C4). rlm_rest is
+# deliberately not used here — see scripts/authorize.pl for why (its
+# connect_uri reachability pre-check runs at server startup and this
+# image's rlm_json has no response-decode support); this exec module calls
+# a script that does the HTTP round trip and the JSON-to-attribute mapping
+# itself, in one process.
+#
+# output_pairs = reply because rlm_exec's pairlist parser does not accept
+# "list:Attribute" prefixes on its output lines (confirmed empirically
+# against 3.2.3) — every attribute the script prints, including the
+# Tmp-String-0/-1 decision flags sites-enabled/default branches on, lands in
+# the reply list. Tmp-String-* are FreeRADIUS's generic scratch attributes
+# and are never encoded onto the wire, so leaving them in reply is harmless.
+exec hikrad_authorize {
+	wait = yes
+	program = "/etc/raddb/scripts/authorize.pl"
+	input_pairs = request
+	output_pairs = reply
+	# 2s hard bound (agent-2 task file edge case: "rlm_rest timeout must be
+	# set (2s) with a clear Reject on backend-down, not a hang"). This is the
+	# real enforcement point — confirmed empirically that HTTP::Tiny's own
+	# `timeout` inside the script does not reliably fire before rlm_exec's
+	# force-kill, so this value is what actually bounds worst case.
+	timeout = 2
+	shell_escape = yes
+}

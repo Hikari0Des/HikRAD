@@ -1,6 +1,6 @@
 # HikRAD — Sub-PRD 01: Platform, Install & Licensing
 
-> Derived from [docs/PRD.md](../PRD.md) v1.0 on 2026-07-08. Owns: FR-49, FR-50, FR-51, FR-52, FR-53 · NFR-3, NFR-7, NFR-8 · Risks: solo-dev scope creep, license cracking · Open question 3 (price point)
+> Derived from [docs/PRD.md](../PRD.md) v1.1 on 2026-07-08 (updated 2026-07-09: FR-57 added — Decision 18; FR-53 gains WhatsApp credentials — Decision 16). Owns: FR-49, FR-50, FR-51, FR-52, FR-53, FR-57 · NFR-3, NFR-7, NFR-8 · Risks: solo-dev scope creep, license cracking · Open question 3 (price point)
 > Depends on: none (this is the foundation every other module builds on) · Depended on by: **all** sub-PRDs (Compose skeleton, `/api/v1` framework, migrations, settings service), especially [02-radius-nas-aaa](02-radius-nas-aaa.md) (service wiring) and [03-lossless-accounting-live-monitoring](03-lossless-accounting-live-monitoring.md) (disk-backed queue volumes, backup of hypertables).
 
 ## 1. Scope & context
@@ -51,18 +51,30 @@ Stack (fixed by master §8): Go backend (`hikrad-api`, `hikrad-acct`, `hikrad-mo
 - **FR-52.4** — WebSocket/SSE endpoints for live data (`/api/v1/live/…`) follow the same versioning and auth rules (consumed per [03](03-lossless-accounting-live-monitoring.md) FR-31).
 
 ### FR-53 (S) — Settings module
-**Master:** Timezone (default Asia/Baghdad), currency (IQD default, display formatting), date formats, SMTP, Telegram bot token, expiry/quota behavior defaults.
+**Master:** Timezone (default Asia/Baghdad), currency (IQD default, display formatting), date formats, SMTP, Telegram bot token, WhatsApp Business API credentials, expiry/quota behavior defaults.
 
 *Elaboration:*
 - **FR-53.1** — Key-value `settings` table with typed, schema-validated entries; one settings service in `hikrad-api` with cache + invalidation; audit-logged changes (audit log owned by [06](06-managers-roles-security.md) FR-28).
-- **FR-53.2** — v1 setting groups: **Locale** (timezone default `Asia/Baghdad`, currency `IQD`, number/date formats, default UI language), **Branding** (ISP name, logo, colors — consumed by portal/PWA [07](07-subscriber-portal-pwa.md)), **Notifications** (SMTP host/port/creds, Telegram bot token + chat IDs — consumed by [03](03-lossless-accounting-live-monitoring.md) FR-36), **Billing defaults** (renewal anchor rule for FR-19, expiry/quota behavior defaults consumed by [04](04-subscribers-profiles.md)), **Backups** (schedule, path, retention), **Data retention** (raw sessions ≥ 12 months, rollups ≥ 3 years — enforced by [03](03-lossless-accounting-live-monitoring.md) FR-33).
+- **FR-53.2** — v1 setting groups: **Locale** (timezone default `Asia/Baghdad`, currency `IQD`, number/date formats, default UI language), **Branding** (ISP name, logo, colors — consumed by portal/PWA [07](07-subscriber-portal-pwa.md)), **Notifications** (SMTP host/port/creds, Telegram bot token + chat IDs, WhatsApp Business Cloud API access token + phone-number ID + template names/languages — consumed by [03](03-lossless-accounting-live-monitoring.md) FR-36/FR-55), **Billing defaults** (renewal anchor rule for FR-19, expiry/quota behavior defaults consumed by [04](04-subscribers-profiles.md)), **Backups** (schedule, path, retention), **Data retention** (raw sessions ≥ 12 months, rollups ≥ 3 years — enforced by [03](03-lossless-accounting-live-monitoring.md) FR-33), **Remote access** (FR-57 tunnel enable + token, encrypted at rest).
 - **FR-53.3** — Settings screen is admin-permission-gated (permission model owned by [06](06-managers-roles-security.md) FR-27).
+
+### FR-57 (S) — Optional Cloudflare Zero Trust tunnel
+**Master:** Optional built-in Cloudflare Zero Trust tunnel for remote panel/portal access: a bundled `cloudflared` container behind a Compose profile, **off by default**, with the tunnel token configured in settings; connection status shown on the health page. Strictly a convenience feature — LAN access and every daily operation keep working with the tunnel disabled or the internet down (NFR-7); only Caddy's web surface is ever tunneled, never RADIUS/CoA.
+
+*Elaboration:*
+- **FR-57.1** — `cloudflared` ships in the Compose file behind the `tunnel` profile (not started by default). Enabling = settings toggle + tunnel token (encrypted at rest per NFR-4) + `hikrad tunnel enable|disable` in the CLI wrapper (starts/stops the profile); no other service is restarted by either operation.
+- **FR-57.2** — Tunnel state (disabled / connected / disconnected) surfaces on the health page ([03](03-lossless-accounting-live-monitoring.md) FR-35) and is alertable via FR-36. No service may depend on `cloudflared`: tunnel down or internet down must be invisible to LAN operation (NFR-7).
+- **FR-57.3** — HikRAD only consumes the token; creating the tunnel and Zero Trust access policies happens in the Cloudflare dashboard and is documented step-by-step in the admin guide (including the strong recommendation to put an Access policy in front of the panel hostname).
+- **FR-57.4** — Exposure boundary: the tunnel fronts Caddy (panel `/`, portal `/portal`, `/api`) only. RADIUS (1812/1813) and CoA (3799) UDP are never tunneled or reachable through it.
+
+**Acceptance:**
+- **AC-57a** — Given the tunnel disabled and the server offline, then every daily flow works on the LAN unchanged; given it enabled with a valid token, then the panel is reachable via the Cloudflare hostname, health shows "connected", and disabling it stops only the `cloudflared` container.
 
 ### NFR-3 (owned) — Hardware footprint
 Runs fully on one modest server: **4 vCPU / 8 GB RAM / 200 GB SSD** for the 5k-subscriber tier. *Elaboration:* the installer enforces minimums with an override flag; Compose sets per-container memory limits so one component cannot OOM the box; image sizes and retention defaults must fit 200 GB with 3 years of rollups (sizing math verified in [03](03-lossless-accounting-live-monitoring.md) FR-33).
 
 ### NFR-7 (owned) — Offline resilience
-No feature required for daily operation may depend on internet access. *Elaboration:* license validation offline (FR-50); updates installable from offline bundles (FR-51.5); self-signed TLS path (FR-49.5); the only online-dependent features are e-wallet payments ([05](05-billing-payments-vouchers.md)) and outbound Telegram/SMTP alerts ([03](03-lossless-accounting-live-monitoring.md)) — both must fail gracefully and queue/skip without affecting anything else.
+No feature required for daily operation may depend on internet access. *Elaboration:* license validation offline (FR-50); updates installable from offline bundles (FR-51.5); self-signed TLS path (FR-49.5); the only online-dependent features are e-wallet payments ([05](05-billing-payments-vouchers.md)), outbound Telegram/SMTP/WhatsApp alerts and subscriber messages ([03](03-lossless-accounting-live-monitoring.md) FR-36/FR-55), and the optional Cloudflare tunnel (FR-57) — all must fail gracefully and queue/skip without affecting anything else.
 
 ### NFR-8 (owned) — Maintainability
 Solo-dev-friendly: monorepo, one backend service + workers, automated migrations, seeded demo data, CI running unit + integration tests including a **RADIUS packet-level test harness simulating a MikroTik NAS**. *Elaboration:* this module owns the monorepo layout, migration tooling, `make seed-demo` (demo NAS, profiles, subscribers, sessions), and the CI skeleton; the packet-level harness content is specified with [02](02-radius-nas-aaa.md) and exercised for the pipeline in [03](03-lossless-accounting-live-monitoring.md).

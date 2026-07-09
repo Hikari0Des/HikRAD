@@ -14,7 +14,8 @@ Make HikRAD a sellable on-prem product: the offline license system with generous
 2. **Backup/restore** per C5 (FR-51): nightly job (settings schedule/retention/path), archive = pg_dump custom + `.env` + Caddy config + branding assets, `hikrad backup/restore` CLI with post-restore verification summary; decision from sub-PRD 06's open question implemented: **archives are passphrase-encrypted** (age/GPG; passphrase set at install, stored only in operator's head + printed install summary) so a stolen backup ≠ data+key. Restore refuses newer schemas.
 3. **Update** (FR-51.4/51.5): `hikrad update` per C5 with automatic pre-backup, image pinning, forward-only migrations, rollback-on-failure; offline bundle path (`hikrad update --bundle <tar>`) for internet-poor sites (NFR-7).
 4. **Installer & wizard** (FR-49): `install.sh` final (re-run → update/repair menu; NFR-3 checks with override), first-run wizard backend per C4 (setup endpoints active only pre-admin; license → admin → branding → optional NAS/profile via existing APIs); TLS finalization (Let's Encrypt when domain+internet, self-signed otherwise, documented cert-replacement path).
-5. **Settings completion** (FR-53): remaining groups wired (backup schedule, data-retention floors enforcement check with C, billing defaults, notification config validation endpoints — "send test Telegram/email").
+5. **Settings completion** (FR-53): remaining groups wired (backup schedule, data-retention floors enforcement check with C, billing defaults, notification config validation endpoints — "send test Telegram/email/WhatsApp").
+5b. **Cloudflare tunnel** (FR-57, phase C7): `cloudflared` compose profile `tunnel` (off by default, no other service depends on it), `remote_access` settings group (enable flag + token encrypted at rest), `hikrad tunnel enable|disable` in the CLI wrapper, tunnel state into health (+ alertable), Cloudflare-dashboard setup walkthrough in `admin-guide.md` (incl. recommending an Access policy on the panel hostname). Negative guarantee: only Caddy's web surface is fronted — document and test that RADIUS/CoA are unreachable via the tunnel.
 6. **ASVS L2 verification** (NFR-4.5): run the Phase-3 checklist against the release candidate; fix findings in your paths; file others to their owners (this phase's agents patch their own trivia); record results in `docs/ops/security-checklist.md`.
 7. **Docs**: `install-guide.md` (the M4 document), `admin-guide.md` skeleton, `pilot-checklist.md`, backup/restore/update runbooks, the one-page operator guide source (NFR-5's training artifact).
 
@@ -25,7 +26,7 @@ Edge cases: license grace during restore-to-same-hardware must not trigger (fing
 - **Exposes:** C4 license/setup APIs (E's wizard + banner UIs), C5 CLI (docs + pilot), evidence hooks (C's pack references your restore verification).
 
 ## Definition of done
-- Gate items 1, 2, 3, 7 (ASVS + docs parts) pass as written — including the timed independent install rehearsal.
+- Gate items 1, 2, 3, 7 (ASVS + docs parts), and 8 (tunnel) pass as written — including the timed independent install rehearsal.
 - Tests: signature verify incl. tampered keys, fingerprint tolerance matrix, grace state machine, read-only middleware coverage map, backup round-trip integrity + encryption, update rollback on injected failure, wizard gating.
 
 ## Handoff

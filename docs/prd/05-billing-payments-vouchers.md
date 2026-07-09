@@ -88,6 +88,7 @@ All money movement: prepaid renewals, the immutable transaction ledger, manager/
 - `GET /api/v1/ledger?filters…` (+ CSV export)
 - `POST /api/v1/payments/{gateway}/create`, `POST /api/v1/payments/{gateway}/callback` (public webhook endpoint, signature-verified), reconciliation worker.
 - Revenue aggregates for dashboard/reports ([03](03-lossless-accounting-live-monitoring.md), [08](08-reports.md)).
+- Renewal/payment events (subscriber, amount, receipt no, new expiry) published for [03](03-lossless-accounting-live-monitoring.md) FR-55 WhatsApp receipt delivery — money logic here, message delivery there.
 
 **Consumes:** profile price/duration + expiry mutation + policy invalidation from [04](04-subscribers-profiles.md); CoA from [02](02-radius-nas-aaa.md); permissions (`renew`, `top-up`, `export`) + audit from [06](06-managers-roles-security.md); billing-default settings and branding (receipts) from [01](01-platform-install-licensing.md).
 

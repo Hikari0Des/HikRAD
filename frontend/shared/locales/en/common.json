@@ -1,0 +1,29 @@
+{
+  "common": {
+    "productName": "HikRAD",
+    "loading": "Loading…",
+    "retry": "Try again",
+    "empty": {
+      "title": "Nothing here yet",
+      "body": "There is nothing to show."
+    },
+    "error": {
+      "title": "Something went wrong",
+      "body": "Please try again."
+    },
+    "status": {
+      "active": "Active",
+      "expired": "Expired",
+      "disabled": "Disabled"
+    },
+    "quota": {
+      "label": "Usage",
+      "of": "{used} of {total}"
+    },
+    "languages": {
+      "en": "English",
+      "ar": "العربية",
+      "ku": "کوردی"
+    }
+  }
+}

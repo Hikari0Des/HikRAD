@@ -1,6 +1,6 @@
 # HikRAD — Sub-PRD 02: RADIUS Core, NAS Management & AAA
 
-> Derived from [docs/PRD.md](../PRD.md) v1.0 on 2026-07-08. Owns: FR-13, FR-14, FR-15, FR-16, FR-17, FR-18 · NFR-1 · Risk: MikroTik CoA/attribute quirks · Open question 2 (pilot ISP)
+> Derived from [docs/PRD.md](../PRD.md) v1.1 on 2026-07-08 (updated 2026-07-09: FR-56 added — Decision 17; FR-58 auth-time enforcement referenced — Decision 19). Owns: FR-13, FR-14, FR-15, FR-16, FR-17, FR-18, FR-56 · NFR-1 · Risk: MikroTik CoA/attribute quirks · Open question 2 (pilot ISP)
 > Depends on: [01-platform-install-licensing](01-platform-install-licensing.md) (Compose wiring, `/api/v1` framework), [04-subscribers-profiles](04-subscribers-profiles.md) (subscriber credentials/status, profile attributes it must translate into RADIUS replies) · Depended on by: [03-lossless-accounting-live-monitoring](03-lossless-accounting-live-monitoring.md) (accounting feed, CoA for disconnect actions), [05-billing-payments-vouchers](05-billing-payments-vouchers.md) (CoA on renewal, Hotspot voucher login)
 
 ## 1. Scope & context
@@ -60,13 +60,22 @@ This module is HikRAD's protocol heart: FreeRADIUS 3.2 wired to the Go backend's
 - **FR-18.1** — HikRAD serves a downloadable/customized MikroTik Hotspot `login.html` package themed from branding settings ([01](01-platform-install-licensing.md) FR-53), with username/password and **voucher-code** login (voucher becomes the credential; redemption logic owned by [05](05-billing-payments-vouchers.md) FR-22).
 - **FR-18.2** — Walled-garden host list needed for the page's assets is included in the FR-14 snippet.
 
+### FR-56 (S) — NAS auto-discovery & API auto-setup
+**Master:** Discover MikroTik routers on reachable networks (MikroTik Neighbor Discovery / IP-range scan) to pre-fill the FR-14 wizard; optionally apply the generated config directly over the RouterOS API using admin-supplied router credentials (encrypted at rest). Auto-apply always shows a diff/preview before writing, makes only additive HikRAD-scoped changes — it never overwrites or deletes existing router config, and conflicts abort with a report; the FR-14 copy-paste snippet remains the always-available fallback.
+
+*Elaboration:*
+- **FR-56.1** — **Discovery:** listen for MikroTik Neighbor Discovery (MNDP, UDP 5678) on attached networks, plus an operator-triggered IP-range scan probing the RouterOS API port. Results (identity, RouterOS version, MAC, IP) pre-fill the FR-14 wizard and are deduplicated against already-registered NAS records. Discovery is passive/read-only — it never touches a router.
+- **FR-56.2** — **Auto-setup:** with admin-supplied router credentials (AES-GCM encrypted at rest like SNMP communities, NFR-4; write-only after save, reveal permission-gated per FR-13.3), HikRAD connects over the RouterOS API (8728/8729) and applies the FR-14.2 config. **Safety contract (frozen by Decision 17):** a mandatory diff/preview (exact commands to run + current-router-state check) precedes any write; changes are additive and HikRAD-scoped only — existing router entries are never modified or deleted; a conflict (e.g. an existing `/radius` entry pointing elsewhere) aborts the apply with a per-item report instead of overwriting. This is the scariest write path in the product — it must be boringly predictable.
+- **FR-56.3** — Copy-paste (FR-14) remains the always-available path; any API failure falls back to showing the snippet. A successful apply automatically runs the FR-14.4 "seen since created" test and reports the result.
+- **FR-56.4** — All RouterOS API client code lives inside the MikroTik vendor adapter boundary — the FR-17.1 rule applies verbatim and the CI vendor-isolation grep covers it.
+
 ### NFR-1 (owned) — Performance
 **Master:** At 5,000 subscribers / ~2,000 concurrent sessions with 5-minute interims (~7 acct packets/sec sustained, 50/sec burst): auth latency < 100 ms at the backend (p99), accounting ingest keeps queue depth near zero, panel pages load < 1.5 s, live-session updates ≤ 2 s end-to-end.
 
 *Elaboration (ownership note):* this module owns the **auth latency < 100 ms p99** budget: policy decision reads (subscriber, profile, session count, MAC lock) served from Redis cache with explicit invalidation on renewal/edit ([04](04-subscribers-profiles.md)/[05](05-billing-payments-vouchers.md) must call the invalidation hook); DB fallback on cache miss must still meet budget at the 5k scale. The accounting-ingest and live-update numbers are implemented by [03](03-lossless-accounting-live-monitoring.md); the panel-load number by each UI module — all referencing this NFR.
 
 ### Enforced-here policies owned elsewhere (reference, not ownership)
-At Access-Request time this module enforces, per the master's key flow 1: credential check against stored password (storage rules NFR-4 → [06](06-managers-roles-security.md)); status active/disabled/expired and expiry behavior (FR-9 → [04](04-subscribers-profiles.md)); quota-exhausted behavior (FR-10 → [04](04-subscribers-profiles.md)); simultaneous-session limit and MAC lock incl. first-MAC auto-learn (FR-5 → [04](04-subscribers-profiles.md)); per-user overrides (FR-7 → [04](04-subscribers-profiles.md)). This file defines *where* they execute; their business rules live with their owners.
+At Access-Request time this module enforces, per the master's key flow 1: credential check against stored password (storage rules NFR-4 → [06](06-managers-roles-security.md)); status active/disabled/expired and expiry behavior (FR-9 → [04](04-subscribers-profiles.md)); quota-exhausted behavior (FR-10 → [04](04-subscribers-profiles.md)); simultaneous-session limit and MAC lock incl. first-MAC auto-learn (FR-5 → [04](04-subscribers-profiles.md)); per-user overrides (FR-7 → [04](04-subscribers-profiles.md)); dual-service login (FR-58 → [04](04-subscribers-profiles.md)): a Hotspot-service Access-Request for a PPPoE subscriber is accepted only when 04's allow-Hotspot flag is set — at most one concurrent Hotspot session, **not** counted against the PPPoE session limit, reply rate = the profile's Hotspot-specific rate (fallback: main rate), and the session is tagged `hotspot` in accounting so [03](03-lossless-accounting-live-monitoring.md)/[04](04-subscribers-profiles.md) exclude its usage from quota math (it still counts for graphs/reports and requires a non-expired, non-disabled account). Reject reason for a non-flagged attempt: `service_not_allowed`. This file defines *where* they execute; their business rules live with their owners.
 
 ## 3. Acceptance criteria
 
@@ -78,15 +87,17 @@ At Access-Request time this module enforces, per the master's key flow 1: creden
 - **AC-17a** — Given the codebase, when searched for MikroTik VSA names, then they appear only in the MikroTik adapter/dictionary/templates.
 - **AC-NFR1a** — Given 2,000 active sessions and a 50/sec burst of auth requests (CI packet harness, NFR-8), then backend auth latency p99 < 100 ms.
 - **AC-18a** — Given Hotspot type NAS with the served login page, when a subscriber enters a valid unused voucher code, then they get online and the voucher is consumed (verified with [05](05-billing-payments-vouchers.md)).
+- **AC-56a** — Given a discovered router and valid admin credentials, when auto-setup preview is accepted, then only additive HikRAD-scoped entries are created on the router and a subsequent test Access-Request succeeds; given a conflicting existing `/radius` entry, the apply aborts with a per-item report and the router is unchanged.
 
 ## 4. Data & interfaces
 
-**Owned entities:** `nas` (id, name, ip, secret_enc, type, vendor, coa_port, snmp_community_enc, ros_version, location, enabled), `ip_pools` (id, name, ranges[], purpose), `pool_assignments` (pool ↔ profile/NAS).
+**Owned entities:** `nas` (id, name, ip, secret_enc, type, vendor, coa_port, snmp_community_enc, ros_version, location, enabled, api_port, api_user, api_password_enc — the api_* fields for FR-56 auto-setup), `ip_pools` (id, name, ranges[], purpose), `pool_assignments` (pool ↔ profile/NAS).
 
 **Exposes:**
 - `POST /api/v1/radius/authorize` — internal endpoint called by FreeRADIUS `rlm_rest`; input: RADIUS request attrs; output: accept/reject + abstract attribute intents (vendor adapter applied before reply).
 - Go-internal CoA service: `Disconnect(sessionRef)`, `ApplyRate(sessionRef, rate)`, `MovePool(sessionRef, pool)` — consumed by [03](03-lossless-accounting-live-monitoring.md) (UI disconnect) and [05](05-billing-payments-vouchers.md) (renewal).
 - `GET/POST/PUT/DELETE /api/v1/nas`, `/api/v1/pools` + `GET /api/v1/nas/{id}/config-snippet`.
+- FR-56: `POST /api/v1/nas/discover` (trigger scan + return found routers), `POST /api/v1/nas/{id}/auto-setup/preview` (diff/current-state report), `POST /api/v1/nas/{id}/auto-setup/apply` (permission-gated, audited).
 - Cache-invalidation hook: `InvalidatePolicy(subscriberID)` — **contract:** any module changing subscriber/profile/billing state that affects auth MUST call it.
 
 **Consumes:** subscriber + profile read models from [04](04-subscribers-profiles.md); accounting forwarding target `hikrad-acct` is [03](03-lossless-accounting-live-monitoring.md)'s (FreeRADIUS acct config written here, semantics owned there); branding for FR-18 from [01](01-platform-install-licensing.md) FR-53.
@@ -108,3 +119,4 @@ NAS list = health-at-a-glance cards (status color comes from [03](03-lossless-ac
 - **Open question 2 (master): Pilot ISP** — which ISP hosts the pilot; drives the ROS-version test matrix (and Kurdish-language priority, which [07](07-subscriber-portal-pwa.md) tracks). Target: decide during P4.
 - **NEW:** interim-update interval trade-off — 5 min default matches NFR-1 sizing; shorter intervals improve live-rate accuracy ([03](03-lossless-accounting-live-monitoring.md) FR-31) but multiply accounting volume. Make it a per-NAS wizard option with guidance.
 - **NEW:** decide whether FreeRADIUS reads NAS clients via SQL (`rlm_sql` clients) or generated config + reload — affects how fast FR-13.2 changes take effect. Resolve in P1.
+- **NEW (FR-56):** the RouterOS API surface and command syntax differ between ROS 6.49 and 7.x — auto-setup preview/apply must be validated as part of the P5 ROS test matrix before it is enabled against real routers; until validated per version, the wizard falls back to copy-paste for that version.

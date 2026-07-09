@@ -1,0 +1,62 @@
+{
+  "name": "@hikrad/shared",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "//": [
+    "Contract C8 (Phase 1, Agent 5 / F): the i18n/RTL framework, formatting",
+    "helpers, bidi utilities, shared UI primitives and the thin C2 API client",
+    "consumed by @hikrad/panel and @hikrad/portal.",
+    "This is a SOURCE package: consumers (Vite apps in this workspace) compile",
+    "src/ directly, so `build` is a typecheck, not an emit step.",
+    "Locale JSON lives in locales/{en,ar,ku}/*.json — one file per module,",
+    "merged at the root; a file's top-level key is the namespace (contract C8",
+    "'module.key'). npm run i18n:check (scripts/i18n-check.mjs) enforces it."
+  ],
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./ui.css": "./src/ui/ui.css",
+    "./locales/*": "./locales/*"
+  },
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "build": "tsc -b",
+    "lint": "eslint . && prettier --check . && stylelint \"src/**/*.css\"",
+    "format": "prettier --write .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "i18n:check": "node scripts/i18n-check.mjs"
+  },
+  "peerDependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.9.0",
+    "@testing-library/jest-dom": "^6.4.8",
+    "@testing-library/react": "^16.0.0",
+    "@testing-library/user-event": "^14.5.2",
+    "@types/node": "^22.20.1",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "eslint": "^9.9.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-react-hooks": "^5.0.0",
+    "eslint-plugin-react-refresh": "^0.4.9",
+    "globals": "^15.9.0",
+    "jsdom": "^25.0.0",
+    "prettier": "^3.3.3",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "stylelint": "^16.8.1",
+    "typescript": "^5.5.4",
+    "typescript-eslint": "^8.2.0",
+    "vite": "^5.4.2",
+    "vitest": "^2.0.5"
+  }
+}

@@ -1,0 +1,21 @@
+/*
+ * ISP-brandable color tokens (RGB triplets so Tailwind can compose alpha).
+ * Later phases inject an ISP's brand color here from server settings —
+ * components must only ever reference the token names, never raw colors.
+ */
+:root {
+  --hik-brand: 8 116 143; /* teal-ish default brand */
+  --hik-brand-strong: 6 88 108;
+  --hik-brand-soft: 224 242 246;
+
+  --hik-surface: 244 246 248;
+  --hik-surface-raised: 255 255 255;
+  --hik-surface-sunken: 232 236 240;
+
+  --hik-ink: 23 32 42;
+  --hik-ink-muted: 100 112 126;
+  --hik-ink-inverse: 255 255 255;
+
+  --hik-danger: 185 28 28;
+  --hik-ok: 21 128 61;
+}

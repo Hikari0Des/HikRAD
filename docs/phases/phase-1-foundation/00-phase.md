@@ -40,7 +40,8 @@ frontend/panel/ (E)   frontend/portal/ (F)   frontend/shared/ (F)
 ### C4. Authorize endpoint (stub this phase; full policy Phase 2)
 `POST /internal/radius/authorize` (served by hikrad-api on the internal port 8080, not proxied by Caddy):
 Request `{"username","password":?, "chap_challenge":?, "chap_response":?, "nas_ip","calling_station_id":?, "service":"pppoe|hotspot"}`
-Response `{"action":"accept|reject","reason":"ok|bad_password|expired|disabled|session_limit|mac_mismatch|unknown_user|unknown_nas","attributes":[{"intent":"rate_limit|address_pool|session_timeout","value":"string"}]}`
+Response `{"action":"accept|reject","reason":"ok|bad_password|expired|disabled|session_limit|mac_mismatch|unknown_user|unknown_nas|service_not_allowed","attributes":[{"intent":"rate_limit|address_pool|session_timeout","value":"string"}]}`
+*(Amended 2026-07-09, additive: `service_not_allowed` reason added for FR-58 dual-service enforcement — used from Phase 2 on; the Phase-1 stub never emits it.)*
 Phase-1 stub (B implements inside `internal/radius`): accept exactly the seeded `testuser`/`testpass` with `rate_limit "10M/10M"`, reject everything else. Vendor mapping of intents→VSAs happens FreeRADIUS-side per B's config (Phase 1 hardcodes Mikrotik-Rate-Limit for the stub intents).
 
 ### C5. Environment & service topology (A owns `.env.example`; everyone codes against it)

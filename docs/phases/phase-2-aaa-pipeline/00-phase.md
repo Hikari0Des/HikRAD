@@ -15,10 +15,10 @@
 ## Frozen contracts
 
 ### C1. Schema additions (by migration range owner)
-- **D 0100–0109:** subscribers += address, notes, owner_manager_id, mac_lock_mode (`off|learn|fixed`), learned_mac, static_ip, session_limit_override, rate_override, price_override, disabled_reason; profiles += pool_id, session_limit_default, quota_mode (`unlimited|total|split`), quota_total_bytes, quota_down/up_bytes, throttle_rate, expiry_behavior (`block|expired_pool`), quota_behavior (`block|throttle|expired_pool`), archived; `audit-relevant` updated_at triggers.
+- **D 0100–0109:** subscribers += address, notes, owner_manager_id, mac_lock_mode (`off|learn|fixed`), learned_mac, static_ip, session_limit_override, rate_override, price_override, disabled_reason, **allow_hotspot bool default false, whatsapp_opt_in bool default false** (FR-58/FR-55 fields, amendment 2026-07-09); profiles += pool_id, session_limit_default, quota_mode (`unlimited|total|split`), quota_total_bytes, quota_down/up_bytes, throttle_rate, expiry_behavior (`block|expired_pool`), quota_behavior (`block|throttle|expired_pool`), archived, **hotspot_rate_down/up_kbps nullable** (FR-58); `audit-relevant` updated_at triggers.
 - **A 0110–0119:** managers += totp fields (Phase 3 uses), scoped bool, `panel_sessions` (id, manager_id, refresh_hash, ua, ip, created, last_seen, revoked), `audit_log` (append-only: id, actor_id, action, entity_type, entity_id, before jsonb, after jsonb, ip, at) with REVOKE UPDATE/DELETE.
 - **B 0120–0129:** `nas` (per sub-PRD 02 §4: name, ip unique, secret_enc, type, vendor default 'mikrotik', coa_port default 3799, snmp_community_enc, ros_version, location, enabled), `ip_pools` (name, ranges inet[], purpose `active|expired|static`), `pool_assignments`.
-- **C 0130–0139:** `sessions` (nas_id, acct_session_id, subscriber_id, username, ip, mac, started_at, stopped_at, terminate_cause, bytes_in/out, packets, stale bool, reaped bool; unique (nas_id, acct_session_id)), `usage_points` hypertable (time, subscriber_id, nas_id, delta_down, delta_up, exempt bool), `usage_daily` continuous aggregate, `acct_dedup` (nas_id, acct_session_id, record_type, event_time, unique all four), `pipeline_counters`.
+- **C 0130–0139:** `sessions` (nas_id, acct_session_id, subscriber_id, username, ip, mac, started_at, stopped_at, terminate_cause, bytes_in/out, packets, stale bool, reaped bool, **service text default 'pppoe'** — derived from nas.type, FR-58; unique (nas_id, acct_session_id)), `usage_points` hypertable (time, subscriber_id, nas_id, delta_down, delta_up, exempt bool, **service text default 'pppoe'** — quota math excludes `hotspot` rows per FR-58.3; graphs/reports include them), `usage_daily` continuous aggregate, `acct_dedup` (nas_id, acct_session_id, record_type, event_time, unique all four), `pipeline_counters`.
 
 ### C2. Auth middleware (A exposes; all API modules adopt)
 `auth.Manager` in request context; `auth.Require("subscribers.view")`-style permission strings (`<module>.<verb>` + action perms `renew|disconnect|topup|export`); `auth.ScopeFilter(ctx) *ManagerScope` returning nil (unscoped) or manager ID — every list/get/mutation on subscriber-owned data must apply it. Real `POST /api/v1/auth/login` (+ `/refresh`, `/logout`) replaces the Phase-1 stub **keeping the C7/Phase-1 response shape**. Permission model this phase: role string `admin|operator|agent` with hardcoded permission sets (full matrix editor is Phase 3); contract: code checks permission strings, never role names.
@@ -31,7 +31,8 @@
 ```go
 type AuthView struct { SubscriberID uuid; PasswordEnc []byte; Status string; ExpiresAt time.Time
   ExpiryBehavior, QuotaBehavior string; QuotaExhausted bool; RateLimit string; PoolName string
-  ExpiredPoolName string; SessionLimit int; MacLockMode string; LearnedMac string; ThrottleRate string }
+  ExpiredPoolName string; SessionLimit int; MacLockMode string; LearnedMac string; ThrottleRate string
+  AllowHotspot bool; HotspotRateLimit string } // FR-58 (amendment 2026-07-09); HotspotRateLimit empty = fall back to RateLimit
 func GetAuthView(ctx, username) (AuthView, error)  // Redis-cached, ~1 ms hot path
 func LearnMac(ctx, subscriberID, mac string) error
 ```
@@ -42,12 +43,12 @@ Cache key `auth:view:<username>`; **`radius.InvalidatePolicy(subscriberID)`** (B
 
 ### C6. Accounting ingest & live state (C owns)
 - FreeRADIUS (B's config) forwards accounting via `rlm_rest` `POST http://hikrad-acct:8082/acct` `{record_type:"start|interim|stop", nas_ip, acct_session_id, username, framed_ip, calling_station_id, session_time, bytes_in/out (+gigawords), event_time, terminate_cause?}`; hikrad-acct replies 204 **only after durable enqueue** (Redis stream `acct:stream` + disk spill `data/acct-spill/`).
-- Live-session Redis hash `live:sessions` (field = `nasID:acctSessionID`, value JSON: username, subscriber_id, nas_id, ip, mac, started_at, last_interim_at, bytes_in/out, rate_down/up_bps, stale) — read interface `live.Count(subscriberID) int` (B's session-limit check), `live.List(filter)`.
+- Live-session Redis hash `live:sessions` (field = `nasID:acctSessionID`, value JSON: username, subscriber_id, nas_id, ip, mac, started_at, last_interim_at, bytes_in/out, rate_down/up_bps, stale, service `pppoe|hotspot`) — read interface `live.Count(subscriberID, service string) int` (service `""` = all; B's session-limit check counts PPPoE and Hotspot separately per FR-58.2), `live.List(filter)`.
 - Panel feed: `GET /api/v1/live/sessions` — SSE; events `snapshot` then `upsert`/`remove` with the hash JSON; filter params nas_id/profile_id/manager_id/q; scoped per C2.
 
 ### C7. REST surface for the panel (shapes fixed now)
 - D: `GET/POST/PUT/DELETE /api/v1/subscribers` (+`GET /api/v1/subscribers/{id}`, `POST /{id}/reset-mac`, `POST /api/v1/subscribers/bulk` {filter, action, params}, `GET /api/v1/search?q=` → `[{type:"subscriber", id, username, name, phone, status}]`), `GET/POST/PUT /api/v1/profiles` (+archive). Subscriber detail embeds: profile summary, owner, live flag.
-- B: `GET/POST/PUT/DELETE /api/v1/nas` (+`GET /{id}/config-snippet?ros=6|7`), `GET/POST/PUT/DELETE /api/v1/pools` (+utilization % in list).
+- B: `GET/POST/PUT/DELETE /api/v1/nas` (+`GET /{id}/config-snippet?ros=6|7`), `POST /api/v1/nas/discover` → `[{ip, identity, ros_version, mac, already_registered}]` (FR-56.1 — MNDP listen + optional range scan; read-only, never touches a router; API auto-setup itself is Phase 4), `GET/POST/PUT/DELETE /api/v1/pools` (+utilization % in list).
 - C: `GET /api/v1/usage/subscriber/{id}?granularity=daily|monthly&from&to` → `[{t, down, up}]`; `GET /api/v1/sessions?subscriber_id=` (history, paginated).
 
 ### C8. Enforcement hooks deferred
@@ -57,9 +58,13 @@ Quota/expiry **enforcement** (CoA on crossing) is Phase 3 (B). This phase: auth-
 FR-31/33: backend C, UI E. FR-13–16: backend B, UI E. FR-1–5: backend D, UI E. FR-5 MAC learn: rule D, invocation B (authorize). NFR-1 auth-latency: B (with D's cache); ingest: C.
 
 ## Integration gate
-1. Harness: subscriber created via API authenticates (PAP+CHAP); disabled/expired/wrong-MAC/over-session-limit each reject with correct reason; expired user with `expired_pool` behavior gets Accept + expired pool attributes (key flow 1 fully).
+1. Harness: subscriber created via API authenticates (PAP+CHAP); disabled/expired/wrong-MAC/over-session-limit each reject with correct reason; expired user with `expired_pool` behavior gets Accept + expired pool attributes (key flow 1 fully). FR-58: Hotspot-service auth for an `allow_hotspot` subscriber accepts with the hotspot rate even at the PPPoE session limit; a second concurrent Hotspot session rejects `session_limit`; flag off rejects `service_not_allowed`; hotspot usage rows carry `service='hotspot'` and don't move quota.
 2. Auth p99 < 100 ms at 50 req/s burst with 2k sessions loaded (harness load mode) — NFR-1 checkpoint.
 3. Accounting flood (harness 50 pkt/s): kill Postgres 60 s mid-flood → zero loss after drain, counters invariant holds (received − dupes − queued = persisted); duplicate retransmits dedup'd. Session Start→visible in panel Live Sessions ≤ 2 s; Stop removes ≤ 2 s.
 4. Reaper: silenced session goes stale → reaped with synthesized Stop, flagged, visible in history.
 5. Panel: real login (Phase-1 stub gone), NAS CRUD + copy-paste snippet, user list/detail/search (`/` shortcut), Live Sessions with working Disconnect (CoA ACK verified against harness/real MikroTik).
 6. All Phase-1 CI still green + new suites; audit_log rows exist for every mutation done during gate testing.
+7. NAS discovery: harness (or a real MikroTik on the LAN) announces via MNDP → appears in `POST /api/v1/nas/discover` results and pre-fills the wizard; discovery provably sends nothing to the router.
+
+---
+*Amended 2026-07-09 (pre-start, Decisions 16–19): FR-58 dual-service fields/enforcement and FR-56.1 discovery added to C1/C4/C6/C7 and gate items 1/7; `whatsapp_opt_in` field added to C1-D for Phase 4's FR-55. See master PRD Decisions Log.*

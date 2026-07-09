@@ -1,6 +1,6 @@
 # HikRAD — Product Requirements Document
 
-> Version 1.0 — 2026-07-08 — Status: Draft (all decisions user-confirmed)
+> Version 1.1 — 2026-07-08 (amended 2026-07-09: FR-55–58 added, Decisions 16–20) — Status: Draft (all decisions user-confirmed)
 > Decomposed into domain sub-PRDs: see [docs/prd/00-index.md](prd/00-index.md)
 
 ## 1. Overview
@@ -99,6 +99,7 @@ Priorities: **M**ust / **S**hould / **C**ould / **W**on't (this release). All Mu
 - **FR-5 (M):** Simultaneous-session limit and optional MAC-lock per user (auto-learn first MAC, one-click reset).
 - **FR-6 (S):** CSV import wizard for migrating subscriber bases from SAS4/other systems (field mapping + dry-run report).
 - **FR-7 (S):** Per-user overrides of profile attributes (custom rate limit, custom price on renewal).
+- **FR-58 (S):** Dual-service login: a PPPoE subscriber can optionally also authenticate on Hotspot NASes with the same credentials (per-subscriber "allow Hotspot" toggle). The Hotspot session is allowed **in addition to** the PPPoE simultaneous-session limit (+1, at most one concurrent Hotspot session); Hotspot usage counts against the subscription's validity/expiry but **not** its data quota; Hotspot session speed uses a Hotspot-specific rate limit defined on the profile (falls back to the profile's main rate when unset).
 
 ### 6.2 Profiles (service plans)
 - **FR-8 (M):** Profiles define: price, duration (days), download/up speed (Mikrotik-Rate-Limit), data quota (total, or separate down/up) or unlimited, IP pool, simultaneous-session default.
@@ -114,6 +115,7 @@ Priorities: **M**ust / **S**hould / **C**ould / **W**on't (this release). All Mu
 - **FR-16 (M):** IP pool management: define pools, assign to profiles/NAS, view utilization %, warn on exhaustion.
 - **FR-17 (M):** Vendor-neutral RADIUS core: MikroTik ships as the certified vendor via its dictionary/templates; architecture must not hard-code MikroTik so other vendor dictionaries can be added later (W for certifying other vendors in v1).
 - **FR-18 (S):** Hotspot login page template (ISP logo/colors) served for MikroTik Hotspot with voucher-code login.
+- **FR-56 (S):** NAS auto-discovery & API auto-setup: discover MikroTik routers on reachable networks (MikroTik Neighbor Discovery / IP-range scan) to pre-fill the FR-14 wizard; optionally apply the generated config directly over the RouterOS API using admin-supplied router credentials (encrypted at rest). Auto-apply always shows a diff/preview before writing, makes only additive HikRAD-scoped changes — it never overwrites or deletes existing router config, and conflicts abort with a report; the FR-14 copy-paste snippet remains the always-available fallback.
 
 ### 6.4 Billing, payments & vouchers
 - **FR-19 (M):** Prepaid recurring model: renewal charges the profile price, extends expiry by profile duration (from expiry date if still active, from now if already expired — configurable).
@@ -137,11 +139,12 @@ Priorities: **M**ust / **S**hould / **C**ould / **W**on't (this release). All Mu
 - **FR-33 (M):** Per-user usage graphs: daily and monthly download/upload, session timeline; per-NAS and whole-network aggregate traffic graphs. Retention: raw sessions ≥ 12 months, aggregated daily rollups ≥ 3 years (configurable).
 - **FR-34 (M):** NAS health monitoring: ICMP probe (latency/loss) always; SNMP (CPU, memory, uptime, port traffic) when community configured; per-NAS status page with probe history.
 - **FR-35 (M):** System self-monitoring: FreeRADIUS up/throughput/auth-reject rate, backend API health, DB health, queue depth of the accounting pipeline, disk space — all on an admin health page.
-- **FR-36 (M):** Alerts engine: rules for NAS down/up, RADIUS failure spike, accounting-queue backlog, low disk, user-expiring-in-N-days digest, low agent balance; channels: in-app, Telegram bot, email (SMTP); per-rule routing and quiet hours.
+- **FR-36 (M):** Alerts engine: rules for NAS down/up, RADIUS failure spike, accounting-queue backlog, low disk, user-expiring-in-N-days digest, low agent balance; channels: in-app, Telegram bot, email (SMTP), WhatsApp (Business Cloud API); per-rule routing and quiet hours.
 - **FR-37 (M):** **Lossless accounting pipeline:** every Accounting-Request (Start/Interim/Stop) is acknowledged only after being durably enqueued; a consumer writes to the DB; if the DB is down, the queue buffers to disk and drains on recovery; duplicates (NAS retransmits) are idempotently deduplicated by (NAS, Acct-Session-Id, record type, event timestamp).
 - **FR-38 (M):** Stale-session reaper: sessions with missed interims are marked stale, then closed with a synthesized Stop after a configurable timeout, flagged as "reaped" (never silently deleted).
 - **FR-39 (S):** RADIUS debug tool: live tail of auth attempts for a given username/NAS with human-readable reject reasons (bad password, expired, session limit, unknown NAS...).
 - **FR-40 (M):** Pipeline audit counters: received/enqueued/persisted/deduplicated totals exposed on the health page, proving M2 (zero loss) at any moment.
+- **FR-55 (S):** Subscriber-facing WhatsApp messaging: expiry reminders (N days before expiry) and payment receipts delivered to the subscriber's WhatsApp number using Meta-approved template messages in the subscriber's language; per-subscriber opt-in (phone consent); reuses the FR-36 delivery infrastructure (routing, quiet hours, retry, delivery isolation); internet-dependent, so it queues/skips gracefully per NFR-7.
 
 ### 6.7 Subscriber self-care portal
 - **FR-41 (M):** Subscriber login (username/password) to a mobile-responsive portal: status, expiry, remaining quota, current speed, usage graphs, payment history.
@@ -161,7 +164,8 @@ Priorities: **M**ust / **S**hould / **C**ould / **W**on't (this release). All Mu
 - **FR-50 (M):** One-time license: signed license key bound to a server fingerprint, validated offline (no internet dependency for daily operation); grace behavior and re-issue flow for hardware changes.
 - **FR-51 (M):** Backup/restore: scheduled DB + config dumps to local path; one-command restore; update mechanism preserving data (versioned migrations).
 - **FR-52 (M):** Internal REST API used by all frontends (panel, portal), versioned from day one (`/api/v1`) so Phase-2 mobile apps and eventual public exposure need no rework.
-- **FR-53 (S):** Settings module: timezone (default Asia/Baghdad), currency (IQD default, display formatting), date formats, SMTP, Telegram bot token, expiry/quota behavior defaults.
+- **FR-53 (S):** Settings module: timezone (default Asia/Baghdad), currency (IQD default, display formatting), date formats, SMTP, Telegram bot token, WhatsApp Business API credentials, expiry/quota behavior defaults.
+- **FR-57 (S):** Optional built-in Cloudflare Zero Trust tunnel for remote panel/portal access: a bundled `cloudflared` container behind a Compose profile, **off by default**, with the tunnel token configured in settings; connection status shown on the health page. Strictly a convenience feature — LAN access and every daily operation keep working with the tunnel disabled or the internet down (NFR-7); only Caddy's web surface is ever tunneled, never RADIUS/CoA.
 
 ## 7. Non-Functional Requirements
 
@@ -188,7 +192,7 @@ Rationale: FreeRADIUS removes all RADIUS protocol risk (same foundation as SAS4)
                      │           durable queue ─────────┴─► Redis (live sessions,    rollups          │
                      │           (Redis stream +            queue, cache)                             │
                      │            disk spill)                                                         │
-                     │  hikrad-monitor (Go): ICMP/SNMP probes, alert engine ──► Telegram/SMTP         │
+                     │  hikrad-monitor (Go): ICMP/SNMP probes, alert engine ──► Telegram/SMTP/WhatsApp│
                      │  Caddy reverse proxy ──► React admin panel · React subscriber portal ──/api/v1─┘
                      └────────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -197,7 +201,7 @@ Rationale: FreeRADIUS removes all RADIUS protocol risk (same foundation as SAS4)
 - **Accounting path (lossless):** FreeRADIUS forwards accounting to `hikrad-acct`, which acks only after appending to a Redis stream backed by disk spill-over; consumers upsert sessions and insert usage points into Timescale hypertables; idempotency key = (nas_id, acct_session_id, record_type, event_time). Audit counters at every stage (FR-40).
 - **Live data:** Redis holds current sessions; the panel subscribes over WebSocket/SSE for the ≤ 2 s Live Sessions experience.
 - **Data model (core entities):** `subscribers`, `profiles`, `nas`, `ip_pools`, `sessions` (+ `usage_points` hypertable, `usage_daily` rollup), `managers`, `roles/permissions`, `ledger_transactions`, `payments`, `vouchers` (+ batches), `alert_rules`/`alert_events`, `health_probes` (hypertable), `audit_log`, `settings`, `license`.
-- **Integrations:** MikroTik RouterOS (RADIUS + CoA :3799, generated config), Telegram Bot API, SMTP, e-wallet gateways behind a `PaymentGateway` interface (create-payment / verify-callback / query-status per adapter).
+- **Integrations:** MikroTik RouterOS (RADIUS + CoA :3799, generated config, RouterOS API for FR-56 auto-setup — API client code confined to the vendor adapter per FR-17), Telegram Bot API, SMTP, WhatsApp Business Cloud API (FR-36 channel + FR-55 subscriber messaging), e-wallet gateways behind a `PaymentGateway` interface (create-payment / verify-callback / query-status per adapter), optional Cloudflare Tunnel via bundled `cloudflared` (FR-57).
 
 ## 9. Milestones & Phasing
 
@@ -206,11 +210,11 @@ ASAP pacing, sized for a solo developer with AI assistance; sequenced so somethi
 | Phase | Contents | Requirements | Rough size |
 |---|---|---|---|
 | **P1 — Skeleton & auth** | Repo, Docker Compose, DB schema/migrations, FreeRADIUS wired to Go policy API, first PPPoE Accept against real MikroTik | FR-49, FR-1 (partial), FR-8, FR-13–14, FR-17 | 2–3 wks |
-| **P2 — Accounting & live data** | Lossless pipeline, sessions, Live Sessions table, usage graphs, CoA disconnect, stale reaper | FR-31, FR-33, FR-15, FR-37–38, FR-40 | 2–3 wks |
+| **P2 — Accounting & live data** | Lossless pipeline, sessions, Live Sessions table, usage graphs, CoA disconnect, stale reaper, dual-service auth, NAS discovery | FR-31, FR-33, FR-15, FR-37–38, FR-40, FR-58, FR-56 (discovery) | 2–3 wks |
 | **P3 — Users, profiles, billing** | Full user mgmt + search, profile behaviors (expiry/quota), renewals, manager balances/ledger, receipts, vouchers | FR-1–5, FR-9–10, FR-16, FR-19–22, FR-24 | 3–4 wks |
 | **P4 — Managers, monitoring, alerts** *(MVP)* | Roles/permissions, 2FA, audit log, dashboard, NAS/system health, alert engine | FR-27–29, FR-32, FR-34–36 | 2–3 wks |
-| **P5 — Portal & payments** | Subscriber portal (3 languages, RTL), voucher redeem, e-wallet gateway interface + first adapter(s), Hotspot login page, PWA packaging of portal + panel | FR-41–43, FR-54, FR-23, FR-18 | 2–3 wks |
-| **P6 — Reports, install & license** *(v1)* | Reports, backup/restore & updates, license system, install wizard polish, CSV import, docs; pilot ISP go-live | FR-45–46, FR-50–53, FR-6 | 2–3 wks |
+| **P5 — Portal & payments** | Subscriber portal (3 languages, RTL), voucher redeem, e-wallet gateway interface + first adapter(s), Hotspot login page, PWA packaging of portal + panel, subscriber WhatsApp messaging, NAS API auto-setup | FR-41–43, FR-54, FR-23, FR-18, FR-55, FR-56 (API apply) | 2–3 wks |
+| **P6 — Reports, install & license** *(v1)* | Reports, backup/restore & updates, license system, install wizard polish, CSV import, optional Cloudflare tunnel, docs; pilot ISP go-live | FR-45–46, FR-50–53, FR-57, FR-6 | 2–3 wks |
 | **P7+ (post-v1)** | Card system + designer, reseller tree, TWA wrapper for Play Store (if needed), public API docs, more gateways/vendors | (Phase-2 backlog) | — |
 
 ## 10. Risks & Mitigations
@@ -244,6 +248,11 @@ ASAP pacing, sized for a solo developer with AI assistance; sequenced so somethi
 | 13 | Languages | Arabic (RTL) + English + Kurdish Sorani | User |
 | 14 | Team & pacing | Solo developer + AI tooling; ASAP, phase-gated | User |
 | 15 | Success metric | Pilot ISP 30 days in production with zero lost accounting records | Agent-proposed, user-confirmed |
+| 16 | Notification channels | WhatsApp (Business Cloud API) added as a fourth alert channel (FR-36) **and** for subscriber-facing messages — expiry reminders and payment receipts via pre-approved templates (FR-55) | User (2026-07-09) |
+| 17 | NAS onboarding | Auto-discovery + RouterOS-API auto-setup added (FR-56) with a mandatory diff/preview, additive-only changes (never overwrite existing router config), copy-paste snippet always available as fallback | User (2026-07-09) |
+| 18 | Remote access | Optional off-by-default Cloudflare Zero Trust tunnel container (FR-57); daily operation never depends on it (NFR-7 holds) | User (2026-07-09) |
+| 19 | Dual-service subscribers | A PPPoE account may also log in on Hotspot (FR-58): +1 session beyond the PPPoE limit (max one concurrent Hotspot), counts against expiry but not data quota, Hotspot-specific rate limit on the profile | User (2026-07-09) |
+| 20 | Rejected additions | Application-aware QoS and installing HikRAD on MikroTik containers were considered and **skipped** (post-v1 backlog at most; container install ruled out by NFR-3 sizing) | User (2026-07-09) |
 
 ## 12. Open Questions
 

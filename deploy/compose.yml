@@ -1,0 +1,191 @@
+# HikRAD Docker Compose stack — contract C5 (Phase 1, Agent A).
+#
+# Service names are a frozen contract: postgres:5432, redis:6379,
+# hikrad-api:8080, freeradius (1812/1813/3799 udp host-published),
+# caddy (80/443 host-published).
+#
+# Interpolation variables come from the env file (deploy/.env in dev,
+# /opt/hikrad/.env in production — see scripts/gen-env.sh). The stack must
+# boot with only that file present; nothing here needs internet after the
+# images are pulled (NFR-7).
+#
+# Memory limits are sized so the whole stack fits the NFR-3 tier
+# (4 vCPU / 8 GB / 200 GB) with headroom for the Phase-2 services below.
+
+name: hikrad
+
+services:
+  postgres:
+    # TODO(release): pin an exact timescaledb tag before shipping (FR-51.4
+    # updates pull pinned tags).
+    image: timescale/timescaledb:latest-pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-hikrad}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?generate with scripts/gen-env.sh}
+      POSTGRES_DB: ${POSTGRES_DB:-hikrad}
+    volumes:
+      - ${HIKRAD_DATA_DIR:-./data}/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          memory: 2048M
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # AOF everysec: durable enough for the accounting queue's ack-after-enqueue
+    # posture (sub-PRD 03) without fsync-per-write latency.
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec"]
+    volumes:
+      - ${HIKRAD_DATA_DIR:-./data}/redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+    deploy:
+      resources:
+        limits:
+          memory: 768M
+
+  hikrad-api:
+    build:
+      context: ..
+      dockerfile: deploy/docker/api.Dockerfile
+    restart: unless-stopped
+    environment:
+      HIKRAD_DB_URL: ${HIKRAD_DB_URL:?generate with scripts/gen-env.sh}
+      HIKRAD_REDIS_URL: ${HIKRAD_REDIS_URL:-redis://redis:6379/0}
+      HIKRAD_ENCRYPTION_KEY: ${HIKRAD_ENCRYPTION_KEY:?generate with scripts/gen-env.sh}
+      HIKRAD_JWT_SECRET: ${HIKRAD_JWT_SECRET:?generate with scripts/gen-env.sh}
+      HIKRAD_ENV: ${HIKRAD_ENV:-prod}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    # Port 8080 stays internal to the compose network: Caddy proxies /api/*,
+    # and FreeRADIUS calls POST /internal/radius/authorize directly (C4 — the
+    # /internal/* routes are deliberately NOT reachable through Caddy).
+    expose:
+      - "8080"
+    healthcheck:
+      # TCP readiness probe baked into the image (deploy/docker/healthcheck.go):
+      # hikrad-api opens :8080 only after config, migrations, and DB/Redis
+      # pings succeed, so a successful dial means ready, not merely alive.
+      test: ["CMD", "hikrad-healthcheck", "127.0.0.1:8080"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          memory: 1024M
+
+  freeradius:
+    # Image + mounts only — everything under deploy/freeradius/ is Agent 2's
+    # (config content, mods-enabled, clients.conf, rlm_rest wiring).
+    image: freeradius/freeradius-server:3.2.3
+    restart: unless-stopped
+    depends_on:
+      hikrad-api:
+        condition: service_healthy
+    volumes:
+      - ./freeradius:/etc/raddb
+    ports:
+      - "1812:1812/udp"
+      - "1813:1813/udp"
+      - "3799:3799/udp"
+    healthcheck:
+      # radiusd runs as PID 1; a live PID 1 means the server is up. Agent 2
+      # may replace this with a radclient Status-Server probe once their
+      # config enables the status virtual server.
+      test: ["CMD-SHELL", "kill -0 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      hikrad-api:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ../frontend/panel/dist:/srv/panel:ro
+      - ../frontend/portal/dist:/srv/portal:ro
+      - ${HIKRAD_DATA_DIR:-./data}/caddy:/data
+      - ${HIKRAD_DATA_DIR:-./data}/caddy-config:/config
+    healthcheck:
+      # Caddy admin endpoint (localhost-only inside the container).
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:2019/config/"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 5s
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  # ---------------------------------------------------------------------------
+  # Phase 2 (Agent C) — uncomment when cmd/hikrad-acct and cmd/hikrad-monitor
+  # land. Memory budget already reserved in the NFR-3 sizing above.
+  # ---------------------------------------------------------------------------
+  # hikrad-acct:
+  #   build:
+  #     context: ..
+  #     dockerfile: deploy/docker/acct.Dockerfile
+  #   restart: unless-stopped
+  #   environment:
+  #     HIKRAD_DB_URL: ${HIKRAD_DB_URL}
+  #     HIKRAD_REDIS_URL: ${HIKRAD_REDIS_URL:-redis://redis:6379/0}
+  #     HIKRAD_ENV: ${HIKRAD_ENV:-prod}
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #     redis:
+  #       condition: service_healthy
+  #   volumes:
+  #     - ${HIKRAD_DATA_DIR:-./data}/acct-spill:/spill   # disk spill for the lossless queue
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         memory: 1024M
+  #
+  # hikrad-monitor:
+  #   build:
+  #     context: ..
+  #     dockerfile: deploy/docker/monitor.Dockerfile
+  #   restart: unless-stopped
+  #   environment:
+  #     HIKRAD_DB_URL: ${HIKRAD_DB_URL}
+  #     HIKRAD_REDIS_URL: ${HIKRAD_REDIS_URL:-redis://redis:6379/0}
+  #     HIKRAD_ENV: ${HIKRAD_ENV:-prod}
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #     redis:
+  #       condition: service_healthy
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         memory: 512M

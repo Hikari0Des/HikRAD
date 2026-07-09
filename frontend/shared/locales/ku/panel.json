@@ -1,0 +1,70 @@
+{
+  "_comment": "Kurdish (Sorani) keys are present per the Phase-1 contract; content intentionally lags behind en/ar during development and is tracked by i18n:check (must be fully translated before the v1 cut). Fallback chain is ku→en, never ku→ar.",
+  "login": {
+    "title": "Sign in to HikRAD",
+    "subtitle": "Manager panel",
+    "username": "Username",
+    "password": "Password",
+    "submit": "Sign in",
+    "submitting": "Signing in…",
+    "error": {
+      "invalid_credentials": "Wrong username or password.",
+      "network": "Can't reach the HikRAD server. Check that it is running and try again.",
+      "generic": "Something went wrong. Please try again."
+    }
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "subscribers": "Subscribers",
+    "profiles": "Profiles",
+    "nas": "NAS devices",
+    "sessions": "Live sessions",
+    "comingSoon": "Coming soon",
+    "menu": "Open menu",
+    "close": "Close menu"
+  },
+  "search": {
+    "label": "Global search",
+    "placeholder": "Search… (press /)"
+  },
+  "user": {
+    "menu": "Account menu",
+    "signedInAs": "Signed in as",
+    "logout": "Sign out",
+    "language": "Language"
+  },
+  "languages": {
+    "en": "English",
+    "ar": "العربية",
+    "ku": "کوردی"
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "empty": {
+      "title": "Nothing here yet",
+      "body": "Subscriber, profile and live-session screens will appear here."
+    }
+  },
+  "notFound": {
+    "title": "Page not found",
+    "body": "The page you are looking for does not exist or has been moved.",
+    "home": "Back to dashboard"
+  },
+  "errorBoundary": {
+    "title": "Something went wrong",
+    "body": "The panel hit an unexpected error. Reload the page to continue.",
+    "reload": "Reload"
+  },
+  "smoke": {
+    "title": "Bidirectional smoke page",
+    "intro": "This page proves that Tailwind + Radix with CSS logical properties mirror correctly under RTL.",
+    "startAligned": "This box is aligned to the start of the line",
+    "endAligned": "This box is aligned to the end of the line",
+    "mixed": "Subscriber {username} used {gb} GB from address {ip}",
+    "note": "Usernames, IPs and MACs stay left-to-right inside RTL text.",
+    "radixLabel": "Radix dropdown",
+    "open": "Open menu",
+    "itemOne": "First item",
+    "itemTwo": "Second item"
+  }
+}

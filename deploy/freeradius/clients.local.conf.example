@@ -1,0 +1,19 @@
+# Example clients.local.conf: a single-NAS override for a harness or real
+# MikroTik reachable outside Docker's bridge ranges (see clients.conf's
+# docker_bridge_dev entry for the common case, which needs no override).
+#
+# Copy this file to clients.local.conf (an empty clients.local.conf ships
+# by default; overwrite it locally) and set TEST_NAS_IP to the harness/NAS's
+# real source address. Note this env var must also reach the freeradius
+# container: compose.yml's freeradius service does not pass through
+# arbitrary host env vars today, so add
+# `environment: ["TEST_NAS_IP=${TEST_NAS_IP}"]` to that service (deploy/
+# compose.yml, Agent 1's file) the one time this override is needed. Without
+# that, skip this file entirely — clients.conf's docker_bridge_dev entry
+# already covers every source address Docker's own bridge networks use,
+# which is enough for the packet harness and CI.
+client test_nas {
+	ipaddr = $ENV{TEST_NAS_IP}
+	secret = testing123
+	require_message_authenticator = no
+}

@@ -14,7 +14,7 @@ HikRAD is a commercial RADIUS AAA + billing platform for Iraqi ISPs (a Snono SAS
 2. [docs/prd/](docs/prd/00-index.md) — 8 domain sub-PRDs elaborating the master (requirement ownership, acceptance criteria, API/data contracts per domain). If a sub-PRD disagrees with the master, the master wins — fix the sub-PRD.
 3. [docs/phases/](docs/phases/00-team.md) — multi-agent execution plan: 6 agent roles, 5 phases, one task PRD per agent per phase. Each phase's `00-phase.md` contains **frozen contracts** (API shapes, schema, events) and an integration gate.
 
-Requirement IDs (FR-1…FR-54, NFR-1…NFR-8) are used everywhere; trace any implementation work back to them. Every FR is owned by exactly one sub-PRD (mapping in [docs/prd/00-index.md](docs/prd/00-index.md)).
+Requirement IDs (FR-1…FR-58, NFR-1…NFR-8) are used everywhere; trace any implementation work back to them. Every FR is owned by exactly one sub-PRD (mapping in [docs/prd/00-index.md](docs/prd/00-index.md)). FR-55–58 were added 2026-07-09 (Decisions 16–20: WhatsApp channel + subscriber messaging, NAS auto-discovery/auto-setup, optional Cloudflare tunnel, PPPoE-on-Hotspot dual-service); the affected phase briefs carry dated amendment notes.
 
 ## How implementation is meant to proceed
 

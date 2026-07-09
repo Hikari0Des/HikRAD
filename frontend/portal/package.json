@@ -1,0 +1,53 @@
+{
+  "name": "@hikrad/portal",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "//": [
+    "Subscriber portal skeleton (Phase 1, Agent 5 / F — FR-43 groundwork).",
+    "Mobile-first single column; served by Caddy under /portal (contract C5,",
+    "hence Vite base '/portal/'). Component library mirrors Agent 4's frozen",
+    "decision: Tailwind CSS + Radix UI, CSS logical properties only.",
+    "Full portal features land in Phase 4."
+  ],
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "lint": "eslint . && prettier --check . && stylelint \"src/**/*.css\"",
+    "format": "prettier --write .",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@hikrad/shared": "*",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.26.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.9.0",
+    "@testing-library/jest-dom": "^6.4.8",
+    "@testing-library/react": "^16.0.0",
+    "@testing-library/user-event": "^14.5.2",
+    "@types/node": "^22.20.1",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "autoprefixer": "^10.4.20",
+    "eslint": "^9.9.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-react-hooks": "^5.0.0",
+    "eslint-plugin-react-refresh": "^0.4.9",
+    "globals": "^15.9.0",
+    "jsdom": "^25.0.0",
+    "postcss": "^8.4.41",
+    "prettier": "^3.3.3",
+    "stylelint": "^16.8.1",
+    "tailwindcss": "^3.4.10",
+    "typescript": "^5.5.4",
+    "typescript-eslint": "^8.2.0",
+    "vite": "^5.4.2",
+    "vitest": "^2.0.5"
+  }
+}

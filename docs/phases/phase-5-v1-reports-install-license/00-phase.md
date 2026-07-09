@@ -33,6 +33,9 @@ Ed25519-signed JSON key; fingerprint = hash(machine-id + primary MAC) shown in w
 ### C5. Backup/update CLI (A)
 `hikrad backup now|list`, `hikrad restore <archive>` (stop-restore-migrate-verify, prints subscriber/ledger/acct summary), `hikrad update` (pre-backup, pull/load images, forward-only migrations, rollback images on failure). Nightly schedule + retention from settings. Restore refuses newer-schema archives.
 
+### C7. Cloudflare tunnel (A) — FR-57 (amendment 2026-07-09)
+`cloudflared` in compose behind profile `tunnel`, **off by default**; `hikrad tunnel enable|disable` (starts/stops only that profile); token in settings group `remote_access` (encrypted); tunnel state (disabled/connected/disconnected) in `GET /api/v1/health` and alertable. Exposure boundary: fronts Caddy only — RADIUS/CoA UDP never tunneled. No service may depend on it (NFR-7). Cloudflare-dashboard setup steps in `admin-guide.md`.
+
 ### C6. Evidence pack (C) → `docs/evidence/`
 Scripted, reproducible: chaos suite results (kill-DB/kill-acct/dup-storm/unclean-host → invariant holds), perf run (NFR-1 numbers at 5k/2k scale: auth p99, ingest depth, SSE latency), 200 GB sizing check. This is the M2 proof shipped with v1.
 
@@ -47,3 +50,7 @@ FR-45–47 backend D, UI E. FR-49 wizard backend A, UI E. FR-53 settings backend
 5. SAS4-shaped CSV (Arabic names, CP1256) → dry-run catches planted errors, zero writes; execute imports valid rows; re-execute skips.
 6. Evidence pack generated on the release build: invariant green through all chaos scenarios; NFR-1 numbers met; attached to the release.
 7. ASVS L2 checklist pass recorded; ku untranslated count = 0 (`i18n:check`); ≤ 3-click audit for renew/reset-MAC/find-user documented. Pilot go-live checklist (`docs/ops/pilot-checklist.md`) complete.
+8. Tunnel (C7): disabled by default on a fresh install and everything works offline on the LAN; enable with a valid token → panel reachable via the Cloudflare hostname + health shows connected; disable stops only `cloudflared`; RADIUS/CoA unreachable through the tunnel (negative check).
+
+---
+*Amended 2026-07-09 (pre-start, Decisions 16–18): C7 tunnel contract + gate item 8 (A); settings UI gains the WhatsApp notification group, remote-access group, and the NAS auto-setup panel slot (E). See master PRD Decisions Log.*

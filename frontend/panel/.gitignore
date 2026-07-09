@@ -1,0 +1,3 @@
+# Pre-merge standalone installs only — the frontend/ workspace root lockfile
+# (Agent 5's) is canonical once the workspace lands.
+package-lock.json

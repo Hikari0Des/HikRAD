@@ -1,0 +1,144 @@
+# HikRAD CI (Phase 1, Agent A — NFR-8). Every job guards on its inputs
+# existing so the pipeline stays green while the parallel Phase-1 agents
+# (backend module: D, frontend: E/F, harness: B) merge in any order.
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  backend:
+    name: Go vet / build / test
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: timescale/timescaledb:latest-pg16
+        env:
+          POSTGRES_USER: hikrad
+          POSTGRES_PASSWORD: hikrad-ci
+          POSTGRES_DB: hikrad_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U hikrad -d hikrad_test"
+          --health-interval 5s --health-timeout 3s --health-retries 12
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 12
+    env:
+      # Integration-style tests may use these; unit tests must not require them.
+      HIKRAD_TEST_DB_URL: postgres://hikrad:hikrad-ci@localhost:5432/hikrad_test?sslmode=disable
+      HIKRAD_TEST_REDIS_URL: redis://localhost:6379/0
+    steps:
+      - uses: actions/checkout@v4
+      - name: Detect Go module
+        id: detect
+        run: |
+          if [ -f backend/go.mod ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::backend/go.mod not present yet (Agent D) — skipping Go job"
+          fi
+      - uses: actions/setup-go@v5
+        if: steps.detect.outputs.present == 'true'
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - name: go vet
+        if: steps.detect.outputs.present == 'true'
+        working-directory: backend
+        run: go vet ./...
+      - name: go build
+        if: steps.detect.outputs.present == 'true'
+        working-directory: backend
+        run: go build ./...
+      - name: go test (race)
+        if: steps.detect.outputs.present == 'true'
+        working-directory: backend
+        run: go test -race ./...
+
+  frontend:
+    name: Frontend lint / build / i18n
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Detect frontend workspaces
+        id: detect
+        run: |
+          if [ -f frontend/package.json ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::frontend/package.json not present yet (Agents E/F) — skipping frontend job"
+          fi
+      - uses: actions/setup-node@v4
+        if: steps.detect.outputs.present == 'true'
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install
+        if: steps.detect.outputs.present == 'true'
+        working-directory: frontend
+        run: npm ci
+      - name: Lint
+        if: steps.detect.outputs.present == 'true'
+        working-directory: frontend
+        run: npm run lint --workspaces --if-present
+      - name: Build
+        if: steps.detect.outputs.present == 'true'
+        working-directory: frontend
+        run: npm run build --workspaces --if-present
+      - name: i18n check (no hardcoded user-visible strings — contract C8, CI-fatal)
+        if: steps.detect.outputs.present == 'true'
+        working-directory: frontend
+        run: npm run i18n:check
+
+  scripts:
+    name: Ops scripts self-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Syntax-check shell scripts
+        run: bash -n scripts/gen-env.sh scripts/gen-env.test.sh scripts/install.sh scripts/hikrad
+      - name: gen-env self-test (unique valid secrets twice)
+        run: bash scripts/gen-env.test.sh
+      - name: install.sh idempotency (sandboxed root, no docker/compose)
+        run: |
+          export HIKRAD_ROOT="$RUNNER_TEMP/hikrad-root"
+          export HIKRAD_SKIP_OS_CHECK=1 HIKRAD_SKIP_DOCKER=1
+          bash scripts/install.sh --no-start
+          test -f "$HIKRAD_ROOT/.env"
+          # Second run must refuse politely (exit 2) and change nothing.
+          before="$(sha256sum "$HIKRAD_ROOT/.env")"
+          if bash scripts/install.sh --no-start; then
+            echo "second install.sh run should have aborted"; exit 1
+          else
+            [ $? -eq 2 ] || { echo "expected exit 2 on existing install"; exit 1; }
+          fi
+          [ "$before" = "$(sha256sum "$HIKRAD_ROOT/.env")" ] || { echo ".env was modified on re-run"; exit 1; }
+
+  harness-smoke:
+    name: RADIUS harness smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Detect harness target
+        id: detect
+        run: |
+          if [ -f backend/Makefile ] && make -C backend -n test-harness-smoke >/dev/null 2>&1; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::backend test-harness-smoke target not present yet (Agent B) — skipping"
+          fi
+      - name: Run harness smoke (simulated MikroTik NAS → FreeRADIUS → stub authorize)
+        if: steps.detect.outputs.present == 'true'
+        run: make -C backend test-harness-smoke

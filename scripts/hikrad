@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+# hikrad — ops CLI wrapper (contract C1; installed to /usr/local/bin by
+# scripts/install.sh). Phase 1 covers stack lifecycle; backup/restore/update
+# subcommands (FR-51) ship in Phase 5.
+
+set -euo pipefail
+
+META="${HIKRAD_META:-/opt/hikrad/install.meta}"
+
+if [ -r "$META" ]; then
+    # shellcheck disable=SC1090
+    . "$META"
+else
+    # Dev fallback: run from a checkout without a production install.
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    HIKRAD_COMPOSE_FILE="$SCRIPT_DIR/../deploy/compose.yml"
+    HIKRAD_ENV_FILE="$SCRIPT_DIR/../deploy/.env"
+fi
+
+compose() {
+    docker compose --env-file "$HIKRAD_ENV_FILE" -f "$HIKRAD_COMPOSE_FILE" "$@"
+}
+
+usage() {
+    cat <<'EOF'
+Usage: hikrad <command>
+
+  up          build and start the stack
+  down        stop the stack (data is kept)
+  restart     restart all services
+  status      show service health
+  logs [svc]  follow logs (all services or one)
+
+  backup      (Phase 5) scheduled/manual backups — not yet implemented
+  restore     (Phase 5) restore from archive — not yet implemented
+  update      (Phase 5) versioned update — not yet implemented
+EOF
+}
+
+case "${1:-}" in
+    up)       compose up -d --build ;;
+    down)     compose down ;;
+    restart)  compose restart ;;
+    status)   compose ps ;;
+    logs)     shift; compose logs -f --tail=200 "$@" ;;
+    backup|restore|update)
+        echo "hikrad $1: not implemented yet — ships with the Phase 5 backup/update work (FR-51)." >&2
+        exit 3
+        ;;
+    -h|--help|help|"") usage ;;
+    *)
+        echo "hikrad: unknown command '$1'" >&2
+        usage >&2
+        exit 1
+        ;;
+esac

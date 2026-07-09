@@ -1,0 +1,30 @@
+# Secrets & local state — never commit
+deploy/.env
+*.env.local
+
+# Runtime data (bind mounts from deploy/compose.yml)
+deploy/data/
+data/
+
+# Go
+backend/bin/
+*.test
+*.out
+coverage.*
+
+# Node / frontend
+node_modules/
+frontend/*/dist/
+frontend/*/.vite/
+*.tsbuildinfo
+
+# Editors & OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Backups & licenses (production artifacts live in /opt/hikrad, not the repo)
+backups/
+licenses/

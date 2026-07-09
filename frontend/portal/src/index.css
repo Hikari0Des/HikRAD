@@ -1,0 +1,28 @@
+@import './theme/tokens.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * Layout rule (contract C8): CSS logical properties / logical Tailwind
+ * utilities only (ms-/me-/ps-/pe-/start-/end-/text-start) — never physical
+ * left/right — so the whole portal mirrors when <html dir> flips to rtl.
+ */
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  @apply bg-surface text-ink antialiased;
+  font-family:
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    Roboto,
+    'Noto Sans Arabic',
+    'Noto Kufi Arabic',
+    sans-serif;
+}

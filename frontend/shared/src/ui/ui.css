@@ -1,0 +1,130 @@
+/*
+ * @hikrad/shared UI primitives — plain CSS on the panel's brand tokens
+ * (--hik-*, see the consuming app's theme/tokens.css) so the primitives work
+ * in any consumer regardless of its Tailwind content globs. Import once per
+ * app:  import '@hikrad/shared/ui.css'
+ *
+ * Layout rule (contract C8 / NFR-6.2): CSS logical properties only — the
+ * stylelint config in this package enforces it.
+ */
+
+.hk-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  border-radius: 9999px;
+  padding-block: 0.125rem;
+  padding-inline: 0.625rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+
+.hk-badge__dot {
+  inline-size: 0.5rem;
+  block-size: 0.5rem;
+  border-radius: 9999px;
+  background: currentColor;
+}
+
+.hk-badge--active {
+  color: rgb(var(--hik-ok));
+  background: rgb(var(--hik-ok) / 0.12);
+}
+
+.hk-badge--expired {
+  color: rgb(var(--hik-danger));
+  background: rgb(var(--hik-danger) / 0.12);
+}
+
+.hk-badge--disabled {
+  color: rgb(var(--hik-ink-muted));
+  background: rgb(var(--hik-ink-muted) / 0.15);
+}
+
+.hk-quota {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.hk-quota__track {
+  block-size: 0.5rem;
+  border-radius: 9999px;
+  background: rgb(var(--hik-surface-sunken));
+  overflow: hidden;
+}
+
+/* Fill grows from the inline start, so it mirrors under RTL by itself. */
+.hk-quota__fill {
+  block-size: 100%;
+  border-radius: 9999px;
+  background: rgb(var(--hik-brand));
+  transition: inline-size 200ms ease;
+}
+
+.hk-quota--warn .hk-quota__fill {
+  background: rgb(var(--hik-danger));
+}
+
+.hk-quota__meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.8125rem;
+  color: rgb(var(--hik-ink-muted));
+}
+
+.hk-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding-block: 2rem;
+  padding-inline: 1rem;
+  text-align: center;
+  color: rgb(var(--hik-ink-muted));
+}
+
+.hk-state__title {
+  font-weight: 600;
+  color: rgb(var(--hik-ink));
+}
+
+.hk-state__body {
+  font-size: 0.875rem;
+  max-inline-size: 28rem;
+}
+
+.hk-state__retry {
+  margin-block-start: 0.5rem;
+  border-radius: 0.375rem;
+  padding-block: 0.375rem;
+  padding-inline: 1rem;
+  background: rgb(var(--hik-brand));
+  color: rgb(var(--hik-ink-inverse));
+  font-size: 0.875rem;
+}
+
+.hk-state__retry:hover {
+  background: rgb(var(--hik-brand-strong));
+}
+
+.hk-spinner {
+  inline-size: 1.5rem;
+  block-size: 1.5rem;
+  border-radius: 9999px;
+  border: 2px solid rgb(var(--hik-surface-sunken));
+  border-block-start-color: rgb(var(--hik-brand));
+  animation: hk-spin 0.8s linear infinite;
+}
+
+@keyframes hk-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.hk-iqd {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}

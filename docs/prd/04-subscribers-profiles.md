@@ -1,6 +1,6 @@
 # HikRAD — Sub-PRD 04: Subscribers & Profiles
 
-> Derived from [docs/PRD.md](../PRD.md) v1.0 on 2026-07-08. Owns: FR-1, FR-2, FR-3, FR-4, FR-5, FR-6, FR-7, FR-8, FR-9, FR-10, FR-11, FR-12 · NFR-5
+> Derived from [docs/PRD.md](../PRD.md) v1.1 on 2026-07-08 (updated 2026-07-09: FR-58 added — Decision 19; WhatsApp opt-in field for [03](03-lossless-accounting-live-monitoring.md) FR-55 — Decision 16). Owns: FR-1, FR-2, FR-3, FR-4, FR-5, FR-6, FR-7, FR-8, FR-9, FR-10, FR-11, FR-12, FR-58 · NFR-5
 > Depends on: [01-platform-install-licensing](01-platform-install-licensing.md) (API framework, settings defaults), [03-lossless-accounting-live-monitoring](03-lossless-accounting-live-monitoring.md) (live widget + usage graphs on the user page), [06-managers-roles-security](06-managers-roles-security.md) (ownership scoping, permissions, audit log) · Depended on by: [02-radius-nas-aaa](02-radius-nas-aaa.md) (reads subscriber/profile state at auth), [05-billing-payments-vouchers](05-billing-payments-vouchers.md) (renewals change expiry/profile), [07-subscriber-portal-pwa](07-subscriber-portal-pwa.md) (portal reads subscriber state), [08-reports](08-reports.md) (subscriber reports)
 
 ## 1. Scope & context
@@ -16,6 +16,7 @@ The subscriber base and the service plans that govern it. This module owns subsc
 - **FR-1.1** — Username unique, case-insensitive, immutable after creation (it's the RADIUS identity); password storage per NFR-4 ([06](06-managers-roles-security.md)): encrypted-at-rest reversible (CHAP/MS-CHAP requirement), never displayed after save, reset-only.
 - **FR-1.2** — `status` transitions: active ↔ disabled are manual (permission-gated); expired is derived from `expires_at` (a scheduled job + auth-time check flip it, so lists and auth agree). Disabling an online user offers immediate CoA disconnect.
 - **FR-1.3** — Static IP validated against pools ([02](02-radius-nas-aaa.md) FR-16.2). Phone stored normalized (Iraqi formats accepted: `07xx…`, `+964…`).
+- **FR-1.5** — Per-subscriber `whatsapp_opt_in` boolean (default off, shown next to the phone field): consent flag for [03](03-lossless-accounting-live-monitoring.md) FR-55 subscriber messaging (expiry reminders, receipts). Requires a valid phone to enable.
 - **FR-1.4** — Every create/edit/delete writes the audit log with before/after ([06](06-managers-roles-security.md) FR-28). Any change affecting auth calls `InvalidatePolicy` ([02](02-radius-nas-aaa.md) contract).
 
 ### FR-2 (M) — Global instant search
@@ -75,6 +76,15 @@ The subscriber base and the service plans that govern it. This module owns subsc
 
 *Elaboration (Could — build only if v1 schedule allows):* pending-profile field consumed at next renewal by [05](05-billing-payments-vouchers.md); immediate-with-proration debits/credits a ledger adjustment (FR-24 rules). No further depth until scheduled.
 
+### FR-58 (S) — Dual-service login (PPPoE subscriber on Hotspot)
+**Master:** A PPPoE subscriber can optionally also authenticate on Hotspot NASes with the same credentials (per-subscriber "allow Hotspot" toggle). The Hotspot session is allowed **in addition to** the PPPoE simultaneous-session limit (+1, at most one concurrent Hotspot session); Hotspot usage counts against the subscription's validity/expiry but **not** its data quota; Hotspot session speed uses a Hotspot-specific rate limit defined on the profile (falls back to the profile's main rate when unset).
+
+*Elaboration:*
+- **FR-58.1** — Data: subscriber boolean `allow_hotspot` (default off), editable on the user page and via bulk action; profile optional fields `hotspot_rate_down/up` (null = fall back to the profile's main rate). Toggling either calls `InvalidatePolicy` ([02](02-radius-nas-aaa.md) contract).
+- **FR-58.2** — Session rule (Decision 19a): the Hotspot session never counts into the PPPoE `session_limit`; exactly **one** concurrent Hotspot session is permitted per subscriber — a second concurrent Hotspot login rejects with `session_limit`.
+- **FR-58.3** — Quota rule (Decision 19b): usage from Hotspot sessions is tagged by service in the accounting data ([03](03-lossless-accounting-live-monitoring.md) coordination, same mechanism family as FR-11's exemption flag) and **excluded** from FR-8/FR-10 quota consumption; it still appears in usage graphs and reports. Validity rule: Hotspot login requires a non-expired, non-disabled account — FR-9 expiry behaviors apply to it exactly like PPPoE.
+- **FR-58.4** — Enforcement is auth-time in [02](02-radius-nas-aaa.md) (the authorize request's `service` field distinguishes pppoe/hotspot); this module owns the fields and rules. With the flag off, a Hotspot attempt rejects with `service_not_allowed` (visible in the FR-39 debug tool).
+
 ### NFR-5 (owned) — Usability
 **Master:** Every daily operator task ≤ 3 clicks from dashboard; keyboard-first global search; a new front-desk operator productive within one hour using a one-page guide; mobile-responsive panel (Hassan's phone).
 
@@ -90,10 +100,12 @@ The subscriber base and the service plans that govern it. This module owns subsc
 - **AC-9a** — Given profile mode "expired pool", when a subscriber expires while online, then within 5 minutes their session is CoA-moved to the expired pool, and their next auth gets pool attributes instead of a reject.
 - **AC-10a** — Given a throttle-on-exhaustion profile, when an online user crosses quota, then a CoA rate-change applies the throttle speed without disconnect (where ROS supports it, else fallback per [02](02-radius-nas-aaa.md) FR-15.4).
 - **AC-NFR5a** — Given the dashboard, then renew-a-user completes in ≤ 3 clicks after search, measured on the release build.
+- **AC-58a** — Given a PPPoE subscriber with `allow_hotspot` on and active PPPoE sessions at their session limit, when they log in on a Hotspot NAS, then the auth accepts with the profile's Hotspot rate (or main rate when unset); a second concurrent Hotspot login rejects with `session_limit`; with the flag off, the Hotspot login rejects with `service_not_allowed`.
+- **AC-58b** — Given N GB of Hotspot usage on a quota-limited profile, then remaining quota is unchanged while the usage graphs and reports include the N GB.
 
 ## 4. Data & interfaces
 
-**Owned entities:** `subscribers` (username, password_enc, name, phone, address, notes, owner_manager_id, profile_id, expires_at, status, mac_lock_mode, learned_mac, static_ip, overrides{rate, price}, pending_profile_id), `profiles` (name, price, duration_days, rate_down/up, burst fields, quota_mode, quota bytes, throttle_rate, expiry_behavior, quota_behavior, pool_id, session_limit_default, archived), import batches/rows.
+**Owned entities:** `subscribers` (username, password_enc, name, phone, address, notes, owner_manager_id, profile_id, expires_at, status, mac_lock_mode, learned_mac, static_ip, overrides{rate, price}, pending_profile_id, allow_hotspot, whatsapp_opt_in), `profiles` (name, price, duration_days, rate_down/up, burst fields, hotspot_rate_down/up, quota_mode, quota bytes, throttle_rate, expiry_behavior, quota_behavior, pool_id, session_limit_default, archived), import batches/rows.
 
 **Exposes:**
 - `GET/POST/PUT/DELETE /api/v1/subscribers` (+ `/bulk`, `/search?q=`, `/{id}/reset-mac`), `GET/POST/PUT /api/v1/profiles`

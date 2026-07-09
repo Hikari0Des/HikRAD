@@ -32,7 +32,7 @@ Redis pub/sub channels frozen: `enforce.quota_exceeded {subscriber_id}` (C publi
 
 ### C5. Health, alerts & dashboard (C)
 - `GET /api/v1/health` → freeradius {up, req_rate, reject_rate}, api, db, redis, queue {depth, drain_rate, invariant_ok, counters}, disk per volume, license placeholder (Phase 5).
-- `GET/POST/PUT /api/v1/alert-rules`; rule types frozen: `nas_down|nas_up|radius_reject_spike|acct_backlog|disk_low|expiring_digest|agent_balance_low`; channels `inapp|telegram|email`. `GET /api/v1/alert-events` (paginated). In-app: SSE `GET /api/v1/live/notifications`.
+- `GET/POST/PUT /api/v1/alert-rules`; rule types frozen: `nas_down|nas_up|radius_reject_spike|acct_backlog|disk_low|expiring_digest|agent_balance_low`; channels `inapp|telegram|email|whatsapp` (whatsapp added 2026-07-09 per Decision 16 — admin-alert recipients are WhatsApp numbers on the rule; creds/templates from settings, sub-PRD 01 FR-53.2; Phase 4 adds `push` and the FR-55 subscriber-facing messages). `GET /api/v1/alert-events` (paginated). In-app: SSE `GET /api/v1/live/notifications`.
 - `GET /api/v1/dashboard` → `{online_now, online_24h_sparkline[], subs {active, expired, expiring_7d}, revenue_today_iqd, nas_cards[{id, name, status, latency_ms, downtime_s?}], radius_rps, pipeline {invariant_ok, depth}}` (revenue from D's ledger view `revenue_daily`, frozen read-only).
 - NAS down/up detection: N=4 missed ICMP (15 s interval) → event; recovery → all-clear + publish `nas.recovered {nas_id}` (B may reconcile, C flags missing Stops).
 
@@ -51,5 +51,8 @@ FR-19–22/24/25 backend D, UI E. FR-27–30 backend A, UI E. FR-32/34/35/36 bac
 3. Voucher batch of 100: generate → CSV → redeem one (operator path) → single-use enforced under concurrent double-redeem test.
 4. Quota crossing while online → throttle CoA applied ≤ 5 min (or per-profile alternative); expiry crossing → expired-pool move; both visible in audit.
 5. Security: role matrix editing takes effect immediately; TOTP enroll/login works; scoped agent API-verified isolation; audit viewer shows before/after for a subscriber edit; DB-level immutability tests green (ledger + audit).
-6. Key flow 3: NAS unplugged → dashboard card red + Telegram alert < 60 s; sessions marked stale not dropped; recovery all-clear + reconciliation flags missing Stops. Quiet hours suppress Telegram but not in-app.
+6. Key flow 3: NAS unplugged → dashboard card red + Telegram alert < 60 s; sessions marked stale not dropped; recovery all-clear + reconciliation flags missing Stops. Quiet hours suppress Telegram/email/WhatsApp but not in-app. WhatsApp channel verified with configured creds (or its delivery path unit-proven + documented as pending Meta onboarding — acceptable, in-app/Telegram are primary per NFR-7 posture).
 7. Dashboard tiles correct against seeded/derived data; health page shows pipeline invariant green; debug tool tails a live reject with human-readable reason.
+
+---
+*Amended 2026-07-09 (pre-start, Decision 16): `whatsapp` added to the C5 channel enum and gate item 6; delivery engine work in agent-3, routing UI in agent-5. Subscriber-facing WhatsApp (FR-55) lands in Phase 4.*
