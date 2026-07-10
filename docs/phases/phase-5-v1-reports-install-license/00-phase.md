@@ -54,3 +54,4 @@ FR-45–47 backend D, UI E. FR-49 wizard backend A, UI E. FR-53 settings backend
 
 ---
 *Amended 2026-07-09 (pre-start, Decisions 16–18): C7 tunnel contract + gate item 8 (A); settings UI gains the WhatsApp notification group, remote-access group, and the NAS auto-setup panel slot (E). See master PRD Decisions Log.*
+*Amended 2026-07-11 (pre-start, Decision 22): E adds the FR-59 card-payment verification queue UI (task 2c in agent-4) on D's Phase-4 C8 endpoints; settings UI gains card-type list + rejection-cooldown fields. Execution-efficiency protocol applies (see [00-team.md](../00-team.md)); scriptable gate items (2 licence-state API legs, 3, 4, 5, 6) belong in `scripts/gate-phase-5.sh`.*

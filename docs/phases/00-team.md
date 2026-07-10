@@ -1,6 +1,6 @@
 # HikRAD — Multi-Agent Execution Plan: Team & Phases
 
-> Generated 2026-07-08 from [docs/PRD.md](../PRD.md) v1.0 and sub-PRDs [docs/prd/](../prd/00-index.md). Plan confirmed by the product owner on 2026-07-08. Amended 2026-07-09 for master v1.1 (FR-55–58, Decisions 16–20) — the affected phase briefs carry dated amendment notes.
+> Generated 2026-07-08 from [docs/PRD.md](../PRD.md) v1.0 and sub-PRDs [docs/prd/](../prd/00-index.md). Plan confirmed by the product owner on 2026-07-08. Amended 2026-07-09 for master v1.1 (FR-55–58, Decisions 16–20) and 2026-07-11 for master v1.3 (FR-59 scratch-card payments → Phase 4 D/F + Phase 5 E; FR-60 device monitoring → Phase 3 C/E; execution-efficiency protocol below; v2 backlog in [docs/v2/](../v2/00-v2-index.md)) — the affected phase briefs carry dated amendment notes.
 
 ## Project snapshot
 
@@ -52,6 +52,16 @@ Phase 5: Reports, Install & License — v1: installable in <30 min, provable zer
   Agent 4 (Frontend Panel): reports/settings/import/first-run-wizard UIs, ≤3-click + empty-state polish (NFR-5)
 ```
 
+## Execution-efficiency protocol (added 2026-07-11 — binding for Phases 3–5)
+
+Purpose: cut token/time cost per phase without weakening the gates. These rules supplement the frozen contracts; they never override them.
+
+1. **Context discipline.** An agent session loads ONLY: its own task file, the phase brief's contracts its task file cites, `CLAUDE.md`, and the *specific sections* of sub-PRDs it is pointed at. Never the whole PRD tree, the master PRD, or another agent's task file. The task files are written to be standalone — trust that.
+2. **Scripted gates.** Every gate item that a machine can check (builds, tests, property tests, API assertions via curl, harness runs, invariant checks) is added to `scripts/gate-phase-N.sh` *by the agent that implements the feature, as part of its definition of done*. Closing a phase = one session runs the script once, then performs only the irreducibly human items (real-phone walkthroughs, physical unplug tests, print-view eyeballing). No agent ever re-verifies the whole gate manually, and no gate item is checked twice by two sessions.
+3. **Short handoffs.** Agent status notes are ≤ 20 lines: what was built, deviations from the brief, seams left for others. No narrative retellings of the task file.
+4. **No re-derivation.** Frozen contracts are read and implemented, not re-validated or re-negotiated. If a contract is wrong, say so in one line and stop — the amend-and-restart rule below handles it.
+5. **Targeted reading.** Locate code with grep/glob on specific symbols, read only the relevant spans of files, and never re-read files that haven't changed in-session. Prefer running a single failing test over re-reading a package to reason about it.
+
 ## How to run it
 
 For each phase, in order:
@@ -62,6 +72,6 @@ For each phase, in order:
 
 ## Audit results
 
-- **Coverage:** all 40 Must FRs and all 13 Should FRs (FR-6, 7, 11, 18, 25, 30, 39, 47, 53, and — added 2026-07-09 — FR-55, 56, 57, 58) are assigned to ≥ 1 task; every assignment cites its FR IDs. Backend/frontend pairs are deliberately dual-assigned (e.g. FR-31 backend→C / UI→E; FR-22 backend→D / UI→E / portal→F) — listed in each phase brief. All 8 NFRs land in named tasks (NFR-1 → B/C + gate benchmarks; NFR-2 → C; NFR-3/7 → A; NFR-4 → A; NFR-5 → E; NFR-6 → F; NFR-8 → A/B/C). **Deliberately deferred (Could):** FR-12 (profile-change scheduling), FR-26 (promo pricing), FR-44 (portal password self-change), FR-48 beyond the daily digest (arbitrary scheduled reports) — stretch items only if a phase finishes early; noted in their owning sub-PRDs.
+- **Coverage:** all 40 Must FRs and all 15 Should FRs (FR-6, 7, 11, 18, 25, 30, 39, 47, 53, added 2026-07-09: FR-55, 56, 57, 58; added 2026-07-11: FR-59 → Phase-4 D backend + F portal UI + Phase-5 E queue UI, FR-60 → Phase-3 C backend + E UI; FR-44 promoted C→S 2026-07-10 → Phase-4 D+F) are assigned to ≥ 1 task; every assignment cites its FR IDs. Backend/frontend pairs are deliberately dual-assigned (e.g. FR-31 backend→C / UI→E; FR-22 backend→D / UI→E / portal→F) — listed in each phase brief. All 8 NFRs land in named tasks (NFR-1 → B/C + gate benchmarks; NFR-2 → C; NFR-3/7 → A; NFR-4 → A; NFR-5 → E; NFR-6 → F; NFR-8 → A/B/C). **Deliberately deferred (Could):** FR-12 (profile-change scheduling), FR-26 (promo pricing), FR-44 (portal password self-change), FR-48 beyond the daily digest (arbitrary scheduled reports) — stretch items only if a phase finishes early; noted in their owning sub-PRDs.
 - **Collision:** within every phase, agent path ownership is pairwise disjoint (verified per phase brief's path map; migration files are range-partitioned per agent; the single cross-boundary case — PWA assets in `frontend/panel/public/` during Phase 4 — is safe because Agent E is not staffed in Phase 4, and is recorded in both role table and phase brief).
 - **Dependency:** no task consumes a contemporaneous task's *unfrozen* output. Everything crossing agent lines inside a phase (authorize contract, auth-view read-model, CoA interface, `InvalidatePolicy`, accounting ingest shape, enforcement events, portal/payment/report API shapes) is written into the phase brief as a frozen contract with exact request/response shapes; sequencing needs that couldn't be frozen were moved across phase boundaries (e.g. real manager auth is Phase 2 so Phase 1's panel uses a seeded stub; live gateway adapters are Phase 4 after the ledger exists).

@@ -1,6 +1,6 @@
 # HikRAD — Sub-PRD 05: Billing, Payments & Vouchers
 
-> Derived from [docs/PRD.md](../PRD.md) v1.0 on 2026-07-08. Owns: FR-19, FR-20, FR-21, FR-22, FR-23, FR-24, FR-25, FR-26 · Risk: e-wallet gateway availability · Open question 1 (gateway priority)
+> Derived from [docs/PRD.md](../PRD.md) v1.0 on 2026-07-08; updated 2026-07-11 for master v1.3 (FR-59 scratch-card payments added — Decision 22). Owns: FR-19, FR-20, FR-21, FR-22, FR-23, FR-24, FR-25, FR-26, FR-59 · Risk: e-wallet gateway availability · Open question 1 (gateway priority)
 > Depends on: [04-subscribers-profiles](04-subscribers-profiles.md) (profile price/duration, expiry updates, per-user overrides), [02-radius-nas-aaa](02-radius-nas-aaa.md) (CoA after renewal, Hotspot voucher login), [06-managers-roles-security](06-managers-roles-security.md) (manager accounts, permissions, audit) · Depended on by: [07-subscriber-portal-pwa](07-subscriber-portal-pwa.md) (portal renewal + payment UI), [08-reports](08-reports.md) (financial reports read the ledger), [03-lossless-accounting-live-monitoring](03-lossless-accounting-live-monitoring.md) (revenue tile, low-balance alerts)
 
 ## 1. Scope & context
@@ -60,6 +60,16 @@ All money movement: prepaid renewals, the immutable transaction ledger, manager/
 
 *Elaboration:* permission-gated; reverses the renewal's ledger entry (credit back to the acting manager's balance), rolls `expires_at` back by the granted duration (floor: now), restores prior quota state where determinable, requires a reason, audit-logged; if the user is online and now expired, applies FR-9 behavior via CoA.
 
+### FR-59 (S) — Telecom scratch-card payment (manual verification + trial window)
+**Master (v1.3):** A subscriber submits a Zain/Asiacell airtime-card code from the portal and immediately receives a 1-day provisional renewal; the payment sits pending in an admin verification queue until an admin redeems the card value and approves (full renewal) or rejects (reversal + deactivation), with the subscriber notified at each state change. No carrier API — fully offline-capable.
+
+*Elaboration:*
+- **FR-59.1** — Submission (portal, [07](07-subscriber-portal-pwa.md) UI): card type (from a settings-configurable list: zain, asiacell, …) + card code → creates a `card_payments` row (state `pending`) **and** runs a provisional FR-19 renewal for **1 day** (source `card-trial`, ledger entry flagged provisional) so the subscriber gets test internet immediately — including CoA restore if online in the expired pool.
+- **FR-59.2** — Verification queue (panel): admins with permission `card_payments.verify` see pending items (subscriber, profile, requested plan price, card type, submission time) and can reveal the card code (audit-logged reveal) to load it into the ISP's own telecom account manually. **Approve** → full FR-19 renewal for the target profile anchored at the trial's start (the trial day is part of, not added to, the paid duration), source `card-<type>`, pending → `approved`. **Reject** (reason required) → reversing ledger entry for the trial, expiry rolled back (floor: now → subscriber lands expired/deactivated, FR-9 behavior applied via CoA), pending → `rejected`.
+- **FR-59.3** — Notifications: state changes (pending confirmation on submit, approved, rejected-with-reason) delivered via portal in-app/push and the FR-55 WhatsApp receipt infrastructure ([03](03-lossless-accounting-live-monitoring.md)); rejected message must tell the subscriber what to do next (contact the ISP / try a voucher).
+- **FR-59.4** — Abuse guards: max one `pending` card payment per subscriber; after a rejection, new card submissions are blocked for a configurable cooldown (default 7 days, settings); trial is granted at most once per pending payment; card codes AES-encrypted at rest (NFR-4 crypto service), never in logs or list payloads — reveal is an explicit audited action.
+- **FR-59.5** — Offline posture (NFR-7): the whole flow needs no internet; it is the *manual* counterpart to FR-23 and follows FR-19.3 — both trial and final renewal go through the single renewal path with distinct sources.
+
 ### FR-26 (C) — Promo pricing
 **Master:** Temporary profile price override with start/end dates.
 
@@ -76,10 +86,13 @@ All money movement: prepaid renewals, the immutable transaction ledger, manager/
 - **AC-23b** — Given a payment where the callback never arrives, when the reconciliation poll finds it confirmed, then the renewal completes automatically.
 - **AC-24a** — Given the app's DB role, when an UPDATE on a ledger row is attempted, then the database refuses it.
 - **AC-25a** — Given a refunded renewal, then the ledger shows original + reversing entry (net 0), balance is restored, and expiry rolled back — with the original entry untouched.
+- **AC-59a** — Given an expired subscriber submitting a card code at midnight, then within 5 s they have a 1-day provisional renewal (online-in-expired-pool case restored via CoA) and a pending item exists in the verification queue; a second submission while pending is rejected with a clear message.
+- **AC-59b** — Given an admin approving a pending card payment on day 0 for a 30-day profile, then the subscriber's expiry = trial start + 30 days (not +31); given a rejection, then the ledger nets to 0 for the trial, the subscriber is expired again, and a rejected notification (with reason) is delivered.
+- **AC-59c** — Given the card-payments list API, then card codes never appear in it; the reveal action returns the code once and writes an audit entry naming the revealing manager.
 
 ## 4. Data & interfaces
 
-**Owned entities:** `ledger_transactions` (append-only, fields per FR-24), `payments` (intent lifecycle, gateway ref, receipt no), `vouchers` + `voucher_batches`, `gateway_configs` (per-gateway creds, encrypted at rest per NFR-4), promo fields on pricing.
+**Owned entities:** `ledger_transactions` (append-only, fields per FR-24), `payments` (intent lifecycle, gateway ref, receipt no), `vouchers` + `voucher_batches`, `gateway_configs` (per-gateway creds, encrypted at rest per NFR-4), `card_payments` (FR-59: subscriber, profile, card type, card_code_enc, state `pending|approved|rejected`, trial ledger ref, decided_by/at, reject_reason), promo fields on pricing.
 
 **Exposes:**
 - `POST /api/v1/subscribers/{id}/renew` (the single renewal path, FR-19.3), `POST /api/v1/subscribers/{id}/refund`
@@ -87,6 +100,7 @@ All money movement: prepaid renewals, the immutable transaction ledger, manager/
 - `POST /api/v1/managers/{id}/topup`, `GET /api/v1/managers/{id}/balance`
 - `GET /api/v1/ledger?filters…` (+ CSV export)
 - `POST /api/v1/payments/{gateway}/create`, `POST /api/v1/payments/{gateway}/callback` (public webhook endpoint, signature-verified), reconciliation worker.
+- FR-59: `POST /api/v1/portal/card-payments {card_type, code}` (portal-scoped), `GET /api/v1/card-payments?state=` (queue), `POST /api/v1/card-payments/{id}/reveal`, `POST /api/v1/card-payments/{id}/approve`, `POST /api/v1/card-payments/{id}/reject {reason}`.
 - Revenue aggregates for dashboard/reports ([03](03-lossless-accounting-live-monitoring.md), [08](08-reports.md)).
 - Renewal/payment events (subscriber, amount, receipt no, new expiry) published for [03](03-lossless-accounting-live-monitoring.md) FR-55 WhatsApp receipt delivery — money logic here, message delivery there.
 

@@ -1,6 +1,6 @@
 # HikRAD — Product Requirements Document
 
-> Version 1.1 — 2026-07-08 (amended 2026-07-09: FR-55–58 added, Decisions 16–20) — Status: Draft (all decisions user-confirmed)
+> Version 1.3 — 2026-07-08 (amended 2026-07-09: FR-55–58 added, Decisions 16–20; amended 2026-07-10: FR-41/FR-44 portal data-display rules, Decision 21; amended 2026-07-11: FR-59 scratch-card payments + FR-60 device monitoring added, v2 backlog established — Decisions 22–24) — Status: Draft (all decisions user-confirmed)
 > Decomposed into domain sub-PRDs: see [docs/prd/00-index.md](prd/00-index.md)
 
 ## 1. Overview
@@ -46,7 +46,7 @@ Today ISPs tolerate SAS4's UX because nothing else covers the same feature set f
 | **Sara — front-desk operator** | Renews users, activates vouchers, answers "why am I offline?" calls | Low | Needs to find any user in seconds, see their live session/usage, and renew or fix them in a few clicks. Trained in one hour. |
 | **Ali — network engineer** | Installs HikRAD, adds NAS devices, defines profiles | High (MikroTik expert, Linux basics) | Needs the installer, NAS wizard with copy-paste MikroTik config, RADIUS debugging tools, and CoA that actually works. |
 | **Hassan — field agent** | Collects cash in a neighborhood, credits subscriber accounts | Low (phone-first) | Needs a limited manager account: search his users, renew from his balance, see his own collection report — installed on his phone as the panel PWA (FR-54). |
-| **Noor — subscriber** | End customer of the ISP | Low | Portal (Arabic/Kurdish/English) to check remaining days/quota, current speed, usage history, and renew via e-wallet or voucher code. |
+| **Noor — subscriber** | End customer of the ISP | Low | Portal (Arabic/Kurdish/English) to check remaining days, consumed data, current speed, usage history, and renew via e-wallet or voucher code. |
 
 ## 5. User Stories & Key Flows
 
@@ -125,6 +125,7 @@ Priorities: **M**ust / **S**hould / **C**ould / **W**on't (this release). All Mu
 - **FR-23 (M):** Iraqi e-wallet payments from the subscriber portal via a **pluggable gateway interface**; v1 ships adapters for ZainCash, FastPay, and Qi (subset shippable per gateway merchant-account availability — see Open Questions), with webhook/callback verification and automatic renewal on confirmed payment.
 - **FR-24 (M):** Full transaction ledger: immutable, filterable by manager/user/date/type, exportable; discounts and manual adjustments are explicit ledger entries, never edits.
 - **FR-25 (S):** Refund/cancel-renewal flow with reason, reversing ledger entries and expiry.
+- **FR-59 (S):** Telecom scratch-card payment with **manual verification and a trial window** (no carrier API — fully offline-capable, NFR-7): a subscriber submits a Zain/Asiacell (card type list configurable) airtime-card code from the portal and immediately receives a **1-day provisional renewal** ("test internet"); the payment sits `pending` in an admin verification queue until an admin redeems the physical card value and approves (→ full renewal from the trial's start, standard FR-19 path) or rejects (→ reversing ledger entry, expiry rolled back, subscriber returns to expired/deactivated state per FR-9). The subscriber is notified of each state change (pending/approved/rejected) via portal notifications and the FR-55 channels. Abuse guards: one pending card payment per subscriber, a rejected attempt blocks new submissions for a configurable cooldown, card codes encrypted at rest and visible only to the verifying permission; every step audit-logged.
 - **FR-26 (C):** Promo pricing (temporary profile price override with start/end dates).
 
 ### 6.5 Managers, roles & security
@@ -144,13 +145,14 @@ Priorities: **M**ust / **S**hould / **C**ould / **W**on't (this release). All Mu
 - **FR-38 (M):** Stale-session reaper: sessions with missed interims are marked stale, then closed with a synthesized Stop after a configurable timeout, flagged as "reaped" (never silently deleted).
 - **FR-39 (S):** RADIUS debug tool: live tail of auth attempts for a given username/NAS with human-readable reject reasons (bad password, expired, session limit, unknown NAS...).
 - **FR-40 (M):** Pipeline audit counters: received/enqueued/persisted/deduplicated totals exposed on the health page, proving M2 (zero loss) at any moment.
+- **FR-60 (S):** Infrastructure device monitoring: CRUD for **monitored devices** that are not NASes (wireless APs, switches, servers: name, IP, type, optional SNMP community, location, notes) probed by the same `hikrad-monitor` engine as FR-34 (ICMP always, SNMP when configured), with `device_down`/`device_up` alert rules (FR-36 channels), probe history per device, and a devices health section beside the NAS cards. Devices have no RADIUS role — they never appear in NAS lists, wizards, or FreeRADIUS client config.
 - **FR-55 (S):** Subscriber-facing WhatsApp messaging: expiry reminders (N days before expiry) and payment receipts delivered to the subscriber's WhatsApp number using Meta-approved template messages in the subscriber's language; per-subscriber opt-in (phone consent); reuses the FR-36 delivery infrastructure (routing, quiet hours, retry, delivery isolation); internet-dependent, so it queues/skips gracefully per NFR-7.
 
 ### 6.7 Subscriber self-care portal
-- **FR-41 (M):** Subscriber login (username/password) to a mobile-responsive portal: status, expiry, remaining quota, current speed, usage graphs, payment history.
+- **FR-41 (M):** Subscriber login (username/password) to a mobile-responsive portal: status, expiry, **consumed data** (the portal never displays the plan's quota ceiling or remaining-quota balance — Decision 21), current speed, usage graphs, payment history, and the subscriber's own subscription/account details.
 - **FR-42 (M):** Portal renewal: redeem voucher code; pay via enabled e-wallet gateways.
 - **FR-43 (M):** Portal fully localized (Arabic RTL, Kurdish Sorani RTL, English) with ISP branding (logo, name, colors) set in admin settings.
-- **FR-44 (C):** Password self-change and phone-number confirmation.
+- **FR-44 (S):** Self-service account maintenance: the subscriber can log in and update their own password and contact details (phone confirmation flow) — promoted from Could per Decision 21.
 - **FR-54 (M):** Both the subscriber portal and the admin/manager panel ship as installable **PWAs**: web app manifest (per-ISP icon/name from branding settings), service worker with app-shell caching and an offline "no connection" state, HTTPS-served, "Add to Home Screen" install prompt. Push notifications via Web Push where the platform allows (Android fully; iOS after home-screen install). This replaces native mobile apps; an optional TWA wrapper for Play Store distribution is a post-v1 item.
 
 ### 6.8 Reports
@@ -212,10 +214,10 @@ ASAP pacing, sized for a solo developer with AI assistance; sequenced so somethi
 | **P1 — Skeleton & auth** | Repo, Docker Compose, DB schema/migrations, FreeRADIUS wired to Go policy API, first PPPoE Accept against real MikroTik | FR-49, FR-1 (partial), FR-8, FR-13–14, FR-17 | 2–3 wks |
 | **P2 — Accounting & live data** | Lossless pipeline, sessions, Live Sessions table, usage graphs, CoA disconnect, stale reaper, dual-service auth, NAS discovery | FR-31, FR-33, FR-15, FR-37–38, FR-40, FR-58, FR-56 (discovery) | 2–3 wks |
 | **P3 — Users, profiles, billing** | Full user mgmt + search, profile behaviors (expiry/quota), renewals, manager balances/ledger, receipts, vouchers | FR-1–5, FR-9–10, FR-16, FR-19–22, FR-24 | 3–4 wks |
-| **P4 — Managers, monitoring, alerts** *(MVP)* | Roles/permissions, 2FA, audit log, dashboard, NAS/system health, alert engine | FR-27–29, FR-32, FR-34–36 | 2–3 wks |
-| **P5 — Portal & payments** | Subscriber portal (3 languages, RTL), voucher redeem, e-wallet gateway interface + first adapter(s), Hotspot login page, PWA packaging of portal + panel, subscriber WhatsApp messaging, NAS API auto-setup | FR-41–43, FR-54, FR-23, FR-18, FR-55, FR-56 (API apply) | 2–3 wks |
+| **P4 — Managers, monitoring, alerts** *(MVP)* | Roles/permissions, 2FA, audit log, dashboard, NAS/system health, infrastructure device monitoring, alert engine | FR-27–29, FR-32, FR-34–36, FR-60 | 2–3 wks |
+| **P5 — Portal & payments** | Subscriber portal (3 languages, RTL), voucher redeem, e-wallet gateway interface + first adapter(s), scratch-card payment flow, Hotspot login page, PWA packaging of portal + panel, subscriber WhatsApp messaging, NAS API auto-setup | FR-41–43, FR-54, FR-23, FR-59, FR-18, FR-55, FR-56 (API apply) | 2–3 wks |
 | **P6 — Reports, install & license** *(v1)* | Reports, backup/restore & updates, license system, install wizard polish, CSV import, optional Cloudflare tunnel, docs; pilot ISP go-live | FR-45–46, FR-50–53, FR-57, FR-6 | 2–3 wks |
-| **P7+ (post-v1)** | Card system + designer, reseller tree, TWA wrapper for Play Store (if needed), public API docs, more gateways/vendors | (Phase-2 backlog) | — |
+| **P7+ (post-v1 / v2)** | Card system + designer, reseller tree, TWA wrapper for Play Store (if needed), public API docs, more gateways/vendors. **Committed v2 items with prepared briefs in [docs/v2/](../docs/v2/00-v2-index.md):** Hotspot management (hotspot-only subscriber accounts, multi hotspot/PPPoE servers per router), AsiaHawala + Areeba gateway adapters (Decision 24) | (v2 backlog) | — |
 
 ## 10. Risks & Mitigations
 
@@ -253,6 +255,10 @@ ASAP pacing, sized for a solo developer with AI assistance; sequenced so somethi
 | 18 | Remote access | Optional off-by-default Cloudflare Zero Trust tunnel container (FR-57); daily operation never depends on it (NFR-7 holds) | User (2026-07-09) |
 | 19 | Dual-service subscribers | A PPPoE account may also log in on Hotspot (FR-58): +1 session beyond the PPPoE limit (max one concurrent Hotspot), counts against expiry but not data quota, Hotspot-specific rate limit on the profile | User (2026-07-09) |
 | 20 | Rejected additions | Application-aware QoS and installing HikRAD on MikroTik containers were considered and **skipped** (post-v1 backlog at most; container install ruled out by NFR-3 sizing) | User (2026-07-09) |
+| 21 | Portal data display | Portal shows **consumed** data only — never the plan's quota ceiling or remaining balance (business choice: subscribers see usage, not entitlement); subscribers can self-update details/password (FR-44 promoted C→S) | User (2026-07-10) |
+| 22 | Scratch-card payments | Telecom scratch cards (Zain/Asiacell airtime) accepted via **manual admin verification with a 1-day trial window** (FR-59) — no carrier API needed, fully offline-capable; v1: backend+portal in P5(plan Phase 4), panel verification queue in P6(plan Phase 5) | User (2026-07-11) |
+| 23 | Device monitoring | Infrastructure device monitoring (wireless APs, switches — FR-60) added to v1: same probe engine as FR-34, lands with monitoring in P4 (plan Phase 3) since the probe engine is built then anyway | User (2026-07-11) |
+| 24 | v2 backlog committed | Hotspot management (hotspot-only subscriber accounts via `service_type`, multi hotspot/PPPoE servers on one router) and AsiaHawala/Areeba gateway adapters are **v2** — they would rework Phase-2-built code (subscriber model, policy engine, NAS model) or need merchant accounts; briefs + kickoff prompts in `docs/v2/`. Phases 1–2 stay as built | User (2026-07-11) |
 
 ## 12. Open Questions
 

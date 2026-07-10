@@ -1,6 +1,6 @@
 # HikRAD — Sub-PRD 03: Lossless Accounting, Live Data & Monitoring
 
-> Derived from [docs/PRD.md](../PRD.md) v1.1 on 2026-07-08 (updated 2026-07-09: FR-55 added, FR-36 gains the WhatsApp channel — Decision 16). Owns: FR-31, FR-32, FR-33, FR-34, FR-35, FR-36, FR-37, FR-38, FR-39, FR-40, FR-55 · NFR-2 · Risks: lossless-pipeline complexity, competing with entrenched SAS4
+> Derived from [docs/PRD.md](../PRD.md) v1.1 on 2026-07-08 (updated 2026-07-09: FR-55 added, FR-36 gains the WhatsApp channel — Decision 16; updated 2026-07-11 for master v1.3: FR-60 infrastructure device monitoring added — Decision 23). Owns: FR-31, FR-32, FR-33, FR-34, FR-35, FR-36, FR-37, FR-38, FR-39, FR-40, FR-55, FR-60 · NFR-2 · Risks: lossless-pipeline complexity, competing with entrenched SAS4
 > Depends on: [01-platform-install-licensing](01-platform-install-licensing.md) (Compose volumes for disk-backed queue, settings for retention/SMTP/Telegram/WhatsApp), [02-radius-nas-aaa](02-radius-nas-aaa.md) (accounting packet feed, CoA service, NAS registry), [05-billing-payments-vouchers](05-billing-payments-vouchers.md) (renewal/payment events for FR-55 receipts) · Depended on by: [04-subscribers-profiles](04-subscribers-profiles.md) (usage graphs on user page, quota counters), [05-billing-payments-vouchers](05-billing-payments-vouchers.md) (low-agent-balance alerts), [08-reports](08-reports.md) (usage report data)
 
 ## 1. Scope & context
@@ -56,6 +56,14 @@ This module is HikRAD's deliberate specialty and market wedge: **monitoring and 
 **Master:** ICMP probe (latency/loss) always; SNMP (CPU, memory, uptime, port traffic) when community configured; per-NAS status page with probe history.
 
 *Elaboration:* `hikrad-monitor` probes every NAS (interval default 15 s ICMP, 60 s SNMP); N consecutive misses (default 4) = down → alert (key flow 3); recovery fires all-clear + triggers FR-38.3 reconciliation. Probe results stored in the `health_probes` hypertable; per-NAS page shows latency/loss/SNMP history and current status. Status feeds the NAS cards ([02](02-radius-nas-aaa.md) UX) and dashboard.
+
+### FR-60 (S) — Infrastructure device monitoring
+**Master (v1.3):** CRUD for monitored devices that are not NASes (wireless APs, switches, servers: name, IP, type, optional SNMP community, location, notes) probed by the same `hikrad-monitor` engine as FR-34 (ICMP always, SNMP when configured), with `device_down`/`device_up` alert rules (FR-36 channels), probe history per device, and a devices health section beside the NAS cards. Devices have no RADIUS role.
+
+*Elaboration:*
+- **FR-60.1** — `monitored_devices` table (name, ip, type `ap|switch|router|server|other`, snmp_community_enc?, location, notes, enabled); probes share FR-34's scheduler, state machine (N-miss down detection, recovery all-clear), and `health_probes` hypertable (device_id alongside nas_id — one probe engine, two target kinds).
+- **FR-60.2** — Alerting: `device_down`/`device_up` rule types in the FR-36 engine, same channels/quiet-hours/cooldown; a devices section on the dashboard health area and a per-device status page (probe history) mirroring the per-NAS page.
+- **FR-60.3** — Strict separation: devices never appear in NAS lists, the FR-14 wizard, FreeRADIUS client config, or discovery-driven NAS creation (though FR-56 discovery results may offer "add as monitored device" for non-NAS MikroTik hardware). SNMP communities encrypted at rest like NAS secrets (NFR-4).
 
 ### FR-35 (M) — System self-monitoring
 **Master:** FreeRADIUS up/throughput/auth-reject rate, backend API health, DB health, queue depth of the accounting pipeline, disk space — all on an admin health page.

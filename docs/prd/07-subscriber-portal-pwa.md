@@ -1,20 +1,20 @@
 # HikRAD — Sub-PRD 07: Subscriber Portal, Localization & PWA
 
-> Derived from [docs/PRD.md](../PRD.md) v1.0 on 2026-07-08. Owns: FR-41, FR-42, FR-43, FR-44, FR-54 · NFR-6 · Risk: RTL/trilingual UI effort
+> Derived from [docs/PRD.md](../PRD.md) v1.0 on 2026-07-08; updated 2026-07-10 for master v1.2 (Decision 21: portal shows consumed data only, never quota ceiling/remaining; FR-44 promoted C→S). Owns: FR-41, FR-42, FR-43, FR-44, FR-54 · NFR-6 · Risk: RTL/trilingual UI effort
 > Depends on: [04-subscribers-profiles](04-subscribers-profiles.md) (subscriber state, quota), [03-lossless-accounting-live-monitoring](03-lossless-accounting-live-monitoring.md) (usage graph data), [05-billing-payments-vouchers](05-billing-payments-vouchers.md) (voucher redeem + e-wallet payment APIs, payment history), [06-managers-roles-security](06-managers-roles-security.md) (password storage + rate-limit policy), [01-platform-install-licensing](01-platform-install-licensing.md) (branding settings, Caddy/HTTPS) · Depended on by: none (leaf module), though the **panel PWA packaging** in FR-54 wraps the panel built by modules 02–06/08.
 
 ## 1. Scope & context
 
-The subscriber-facing surface (**Noor**'s product) and two cross-cutting frontend concerns the whole product inherits: trilingual localization with true RTL (NFR-6) and PWA packaging of *both* portal and panel (FR-54 — this is the v1 "mobile app", a user-confirmed decision replacing native apps; a TWA store wrapper is post-v1 only if needed). The portal lets a subscriber check status, quota, speed and usage, see payments, and renew via voucher or e-wallet at midnight without calling anyone (Noor's user story) — branded per ISP.
+The subscriber-facing surface (**Noor**'s product) and two cross-cutting frontend concerns the whole product inherits: trilingual localization with true RTL (NFR-6) and PWA packaging of *both* portal and panel (FR-54 — this is the v1 "mobile app", a user-confirmed decision replacing native apps; a TWA store wrapper is post-v1 only if needed). The portal lets a subscriber check status, consumed data, speed and usage, see payments, manage their own details/password, and renew via voucher or e-wallet at midnight without calling anyone (Noor's user story) — branded per ISP. Per Decision 21 the portal shows what the subscriber has *consumed*, never the plan's quota ceiling or remaining balance.
 
 ## 2. Owned requirements — elaborated
 
 ### FR-41 (M) — Subscriber login & self-care portal
-**Master:** Subscriber login (username/password) to a mobile-responsive portal: status, expiry, remaining quota, current speed, usage graphs, payment history.
+**Master (v1.2):** Subscriber login (username/password) to a mobile-responsive portal: status, expiry, consumed data (never the quota ceiling or remaining balance — Decision 21), current speed, usage graphs, payment history, and the subscriber's own subscription/account details.
 
 *Elaboration:*
 - **FR-41.1** — Login with RADIUS username/password (same credential as PPPoE; verified against the NFR-4.2 encrypted store via a server-side check — cleartext never leaves the backend). Rate-limited per NFR-4.6 using [06](06-managers-roles-security.md) FR-28.2's mechanism. Portal sessions are separate from panel sessions (long-lived refresh appropriate for a phone app).
-- **FR-41.2** — Home screen answers Noor's questions at a glance: status (active/expired + online now), days remaining, quota remaining (progress bar), current speed (profile rate, live session rate when online — from [03](03-lossless-accounting-live-monitoring.md)), with Renew as the primary action.
+- **FR-41.2** — Home screen answers Noor's questions at a glance: status (active/expired + online now), days remaining, **data consumed this cycle** (a plain figure/trend — never a quota total, remaining balance, or progress-toward-limit bar, per Decision 21), current speed (profile rate, live session rate when online — from [03](03-lossless-accounting-live-monitoring.md)), profile/subscription details, with Renew as the primary action.
 - **FR-41.3** — Usage: daily/monthly graphs ([03](03-lossless-accounting-live-monitoring.md) FR-33 API, scoped to self); payment history ([05](05-billing-payments-vouchers.md) ledger, scoped to self). All portal endpoints are subscriber-scoped server-side — a subscriber token can never read another subscriber's data.
 
 ### FR-42 (M) — Portal renewal
@@ -27,10 +27,10 @@ The subscriber-facing surface (**Noor**'s product) and two cross-cutting fronten
 
 *Elaboration:* branding (logo, name, colors from [01](01-platform-install-licensing.md) FR-53.2) applied at runtime — no rebuild per ISP; per-subscriber language preference persisted; language switcher on the login page itself.
 
-### FR-44 (C) — Password self-change & phone confirmation
-**Master:** Password self-change and phone-number confirmation.
+### FR-44 (S) — Self-service account maintenance (password & details)
+**Master (v1.2):** Self-service account maintenance: the subscriber can log in and update their own password and contact details (phone confirmation flow) — promoted from Could per Decision 21.
 
-*Elaboration (Could):* password change re-encrypts per NFR-4.2 and calls `InvalidatePolicy` ([02](02-radius-nas-aaa.md)) — the PPPoE credential changes too, which the UI must warn about; phone confirmation = operator-verified or code-based confirmation flag on the subscriber record. Build only if v1 schedule allows.
+*Elaboration:* password change re-encrypts per NFR-4.2 and calls `InvalidatePolicy` ([02](02-radius-nas-aaa.md)) — the PPPoE credential changes too, which the UI must warn about; phone confirmation = operator-verified or code-based confirmation flag on the subscriber record. Detail edits are limited to subscriber-safe fields (phone, contact info, language) — never profile, expiry, MAC, or status; every change is audit-logged.
 
 ### FR-54 (M) — PWA packaging of portal and panel
 **Master:** Both the subscriber portal and the admin/manager panel ship as installable PWAs: web app manifest (per-ISP icon/name from branding settings), service worker with app-shell caching and an offline "no connection" state, HTTPS-served, "Add to Home Screen" install prompt. Push notifications via Web Push where the platform allows (Android fully; iOS after home-screen install). This replaces native mobile apps; an optional TWA wrapper for Play Store distribution is a post-v1 item.
@@ -52,7 +52,7 @@ The subscriber-facing surface (**Noor**'s product) and two cross-cutting fronten
 
 ## 3. Acceptance criteria
 
-- **AC-41a** — Given Noor's PPPoE credentials, when she logs into the portal on a phone, then status, days remaining, quota bar, and current speed are visible without scrolling past the fold.
+- **AC-41a** — Given Noor's PPPoE credentials, when she logs into the portal on a phone, then status, days remaining, consumed data, and current speed are visible without scrolling past the fold — and no quota ceiling/remaining figure appears anywhere in the portal (Decision 21).
 - **AC-41b** — Given a valid subscriber token, when it requests another subscriber's usage or payments by ID manipulation, then the API returns 403/404 (scoping is server-side).
 - **AC-42a** — Given a valid voucher at 00:00 with no staff awake, when Noor redeems it, then her expiry extends and (if online in the expired pool) full speed resumes without a call (her user story, end-to-end).
 - **AC-42b** — Given all gateways unreachable, when Noor opens Renew, then she sees an explanatory message and can still redeem a voucher.
@@ -67,7 +67,7 @@ The subscriber-facing surface (**Noor**'s product) and two cross-cutting fronten
 **Owned entities:** `portal_sessions` (subscriber tokens), subscriber language preference, Web Push subscriptions (endpoint, keys, surface panel/portal), locale string catalogs.
 
 **Exposes:**
-- Portal API surface (all subscriber-scoped): `POST /api/v1/portal/login`, `GET /api/v1/portal/me` (status/expiry/quota/speed), `GET /api/v1/portal/usage`, `GET /api/v1/portal/payments`, `POST /api/v1/portal/vouchers/redeem`, `POST /api/v1/portal/payments/{gateway}/create`.
+- Portal API surface (all subscriber-scoped): `POST /api/v1/portal/login`, `GET /api/v1/portal/me` (status/expiry/consumed-data/speed — no quota total/remaining fields, Decision 21), `GET /api/v1/portal/usage`, `GET /api/v1/portal/payments`, `POST /api/v1/portal/vouchers/redeem`, `POST /api/v1/portal/payments/{gateway}/create`, `PUT /api/v1/portal/me` (FR-44 detail/password self-update).
 - `GET /manifest.webmanifest` (per-surface, branded), service workers for both apps, `POST /api/v1/push/subscribe`.
 - Localization framework + locale files consumed by **every** UI module (02–06, 08).
 

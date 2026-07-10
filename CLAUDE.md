@@ -14,7 +14,7 @@ HikRAD is a commercial RADIUS AAA + billing platform for Iraqi ISPs (a Snono SAS
 2. [docs/prd/](docs/prd/00-index.md) — 8 domain sub-PRDs elaborating the master (requirement ownership, acceptance criteria, API/data contracts per domain). If a sub-PRD disagrees with the master, the master wins — fix the sub-PRD.
 3. [docs/phases/](docs/phases/00-team.md) — multi-agent execution plan: 6 agent roles, 5 phases, one task PRD per agent per phase. Each phase's `00-phase.md` contains **frozen contracts** (API shapes, schema, events) and an integration gate. Read the phase brief for the area you're touching before changing its contracts — they are frozen for that phase and amended explicitly, never silently.
 
-Requirement IDs (FR-1…FR-58, NFR-1…NFR-8) are used everywhere; trace any implementation work back to them. Every FR is owned by exactly one sub-PRD (mapping in [docs/prd/00-index.md](docs/prd/00-index.md)).
+Requirement IDs (FR-1…FR-60, NFR-1…NFR-8) are used everywhere; trace any implementation work back to them. Every FR is owned by exactly one sub-PRD (mapping in [docs/prd/00-index.md](docs/prd/00-index.md)). Deferred v2 features live as briefs + AI kickoff prompts in [docs/v2/](docs/v2/00-v2-index.md); the multi-agent execution rules include a binding token-efficiency protocol ([docs/phases/00-team.md](docs/phases/00-team.md) §Execution-efficiency).
 
 ## Agent path ownership (for reference — respect even when working solo)
 
