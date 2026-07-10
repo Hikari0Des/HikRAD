@@ -70,9 +70,63 @@ names (`reply`, here). `Tmp-String-0`/`Tmp-String-1` are FreeRADIUS's
 generic scratch attributes; they're never encoded onto the wire, so parking
 them in the reply list is harmless.
 
-Accounting is left as the stock log-only stub (`detail` + `unix` in
-`sites-enabled/default`'s `accounting {}`) — forwarding to hikrad-acct's
-lossless ingest pipeline is Phase 2.
+Accounting forwarding to hikrad-acct's lossless ingest is wired in Phase 2
+(see "Phase 2 additions" below); the stock `detail` + `unix` logs remain but
+run only after a durable enqueue is confirmed.
+
+## Phase 2 additions (Agent 2 / RADIUS & NAS)
+
+### Service discrimination (FR-58)
+
+`scripts/authorize.pl` now sends the real `service` field: `hotspot` when the
+Access-Request carries `Service-Type = Login-User` (how MikroTik Hotspot logins
+present), `pppoe` otherwise. The backend accepts a Hotspot login for a PPPoE
+subscriber only when that subscriber opted in.
+
+The accept-path attribute mapping gained two intents: `static_ip` →
+`Framed-IP-Address` (precedence over `Framed-Pool`, FR-16.2) and
+`redirect_expired` → `Mikrotik-Address-List` (walled-garden, FR-9). The backend
+never emits both `static_ip` and `address_pool` for one accept.
+
+### Accounting forward (contract C6)
+
+`accounting {}` in `sites-enabled/default` calls `hikrad_accounting`
+(`mods-enabled/hikrad_accounting` → `scripts/accounting.pl`) which POSTs each
+record to `hikrad-acct` (`$HIKRAD_ACCT_URL`, default
+`http://hikrad-acct:8082/acct`) in the C6 JSON shape. It **fails closed**: any
+error exits non-zero, the section `reject`s, no Accounting-Response is sent, and
+the NAS retransmits — this is the never-lose-a-packet guarantee (M2). Only a 2xx
+(hikrad-acct confirmed a durable enqueue) lets FreeRADIUS ack. The ingest
+endpoint's semantics are Agent 3's (contract C6); this config is B's.
+
+### DB-driven clients: the decision (FR-13.2, sub-PRD 02 open question)
+
+The open question was **rlm_sql dynamic clients vs. config-regeneration +
+reload**. We chose **config-regeneration**, because NFR-4 requires NAS secrets
+encrypted at rest and `rlm_sql`'s `read_clients` needs the secret in cleartext
+in a column FreeRADIUS can read — that would defeat the encryption. Instead:
+
+- `hikrad-api` owns the source of truth (the encrypted `nas` table) and, on
+  every NAS create/update/delete, regenerates a plain `client { … }` file
+  (decrypting each secret only in-process) to `HIKRAD_RADIUS_CLIENTS_PATH`,
+  which points at `clients-generated.conf` (this tree `$INCLUDE`s it; it ships
+  empty so the server starts before the first regeneration).
+- **Instant effect with no restart (AC-13a)** comes from the *authorize-time
+  known-NAS check*: `hikrad-api`'s policy engine rejects `unknown_nas` for any
+  source IP not in the `nas` table (a hot, cached DB read), so a NAS created in
+  the panel authenticates immediately. `clients-generated.conf` is the
+  transport-layer hardening FreeRADIUS applies on its next reload.
+- **Reload transport** is deployment-specific and left as a logged hook
+  (`reloadFreeRADIUS`): production should wire a FreeRADIUS control socket
+  (`radmin`) or a container reload signal. The DB and the generated file stay
+  correct regardless; only FreeRADIUS's in-memory client list waits for the
+  reload. The broad `docker_bridge_dev` client keeps the harness/CI path
+  working without per-NAS clients.
+
+CoA/Disconnect is sent by `hikrad-api` *directly* to each NAS's `coa_port`
+(layeh radius over UDP), not through FreeRADIUS — so no `originate-coa` / CoA
+listener config is needed here. The RouterOS side accepts it via the
+`/radius incoming set accept=yes` line the FR-14 config snippet emits.
 
 ## Adding a test NAS IP
 

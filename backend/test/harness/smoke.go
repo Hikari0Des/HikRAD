@@ -86,7 +86,7 @@ func runSmoke(ctx context.Context, addr string, secret []byte, nasIP string, tim
 			continue
 		}
 		if c.wantAccept && res.rateLimit != c.wantRateLimit {
-			report(c.name, false, fmt.Sprintf("Mikrotik-Rate-Limit=%q, want %q", res.rateLimit, c.wantRateLimit))
+			report(c.name, false, fmt.Sprintf("rate-limit VSA=%q, want %q", res.rateLimit, c.wantRateLimit))
 			failures++
 			continue
 		}

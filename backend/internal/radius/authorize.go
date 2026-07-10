@@ -1,46 +1,22 @@
-// Package radius serves the FreeRADIUS policy endpoint (contract C4):
-// FreeRADIUS's rlm_rest calls POST /internal/radius/authorize for every
-// Access-Request, and deploy/freeradius/ maps the response's abstract
-// intents onto vendor VSAs (Mikrotik-Rate-Limit, Framed-Pool,
-// Session-Timeout) — no vendor name ever appears in this package (FR-17
-// vendor neutrality).
+// Package radius serves the FreeRADIUS policy endpoint (contract C4) and owns
+// the NAS registry, IP pools, CoA service, vendor-adapter layer and RADIUS
+// packet harness (Phase 2, Agent 2). FreeRADIUS's exec bridge calls POST
+// /internal/radius/authorize for every Access-Request; deploy/freeradius/ maps
+// the response's abstract intents onto the vendor's concrete VSAs (rate-limit,
+// address-pool, …) — no vendor attribute name ever appears here (FR-17).
 //
-// Phase 1 is a stub (stub_policy.go): only the seeded testuser
-// (backend/internal/seed) can accept, looked up live from the C6
-// subscribers table so the packet harness exercises the real DB + AES-GCM
-// decrypt path (NFR-4.2), for both PAP and CHAP. Phase 2 replaces
-// stub_policy.go with the full policy engine; this file's HTTP wiring is
-// expected to survive unchanged.
+// The authorize decision is the full policy engine (policy.go): credentials
+// (PAP+CHAP against AES-GCM-sealed passwords), status/expiry with per-profile
+// behavior, quota, simultaneous-session limit, MAC lock, and FR-58 dual-service
+// — all under the NFR-1 100 ms p99 budget using D's cached AuthView (C4) and
+// C's live counts (C6), both injected to avoid an import cycle.
 package radius
 
 import (
 	"net/http"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/hikrad/hikrad/internal/httpapi"
-	"github.com/hikrad/hikrad/internal/platform"
 )
-
-type Module struct{}
-
-func (Module) Name() string { return "radius" }
-
-func (Module) Register(r chi.Router, d httpapi.Deps) {
-	// Deps (C3) carries no encryption key, so this loads it directly.
-	// main() already called platform.LoadConfig() successfully before
-	// building the router, so this is deterministic re-reading of the same
-	// validated environment, not a new fallible step; failure here means the
-	// environment changed underneath a running process, which deserves a
-	// loud crash rather than a per-request 500.
-	cfg, err := platform.LoadConfig()
-	if err != nil {
-		panic("radius: reload config: " + err.Error())
-	}
-	// Internal-only route: served on :8080 but never proxied by Caddy (C4).
-	r.Post("/internal/radius/authorize", authorizeHandler(d, cfg.EncryptionKey))
-}
-
-func init() { httpapi.Add(Module{}) }
 
 // Request/response shapes frozen by contract C4.
 type authorizeRequest struct {
@@ -64,15 +40,15 @@ type authorizeResponse struct {
 	Attributes []attribute `json:"attributes"`
 }
 
-func authorizeHandler(d httpapi.Deps, encKey []byte) http.HandlerFunc {
+func (m *module) authorizeHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req authorizeRequest
 		if !httpapi.Bind(w, r, &req) {
 			return
 		}
-		resp, err := decide(r.Context(), d.DB, encKey, req)
+		resp, err := m.eng.decide(r.Context(), req)
 		if err != nil {
-			d.Log.Error("radius authorize failed", "error", err, "username", req.Username)
+			m.log.Error("radius authorize failed", "error", err, "username", req.Username)
 			httpapi.Error(w, http.StatusInternalServerError, "internal", "internal server error")
 			return
 		}

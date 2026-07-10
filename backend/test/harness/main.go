@@ -10,13 +10,30 @@ import (
 )
 
 func main() {
-	addr := flag.String("addr", "127.0.0.1:1812", "FreeRADIUS auth address (host:port)")
-	secret := flag.String("secret", "testing123", "RADIUS shared secret (must match a clients.conf entry)")
+	addr := flag.String("addr", "127.0.0.1:1812", "FreeRADIUS auth address (host:port); in coa-listen mode, the address to bind the mock NAS CoA server")
+	secret := flag.String("secret", "testing123", "RADIUS shared secret (must match a clients.conf/NAS entry)")
 	nasIP := flag.String("nas-ip", "10.0.0.99", "NAS-IP-Address to report in requests")
 	timeout := flag.Duration("timeout", 5*time.Second, "per-request timeout")
 	rate := flag.Float64("rate", 0, "load mode: requests/sec to sustain (0 = run the smoke suite once and exit)")
-	duration := flag.Duration("duration", 0, "load mode: how long to sustain -rate (required with -rate)")
+	duration := flag.Duration("duration", 10*time.Second, "duration for -rate load mode and for -mode mndp-announce")
+	mode := flag.String("mode", "smoke", "smoke | mndp-announce | coa-listen")
+	mndpTarget := flag.String("mndp-target", "255.255.255.255:5678", "mndp-announce: broadcast target host:port")
+	mndpIdentity := flag.String("mndp-identity", "HarnessRouter", "mndp-announce: announced identity")
+	mndpVersion := flag.String("mndp-version", "7.11", "mndp-announce: announced RouterOS version")
+	coaNAK := flag.Bool("coa-nak", false, "coa-listen: reply NAK instead of ACK")
 	flag.Parse()
+
+	switch *mode {
+	case "mndp-announce":
+		os.Exit(runMNDPAnnounce(*mndpTarget, *mndpIdentity, *mndpVersion, *duration))
+	case "coa-listen":
+		os.Exit(runCoAListener(*addr, []byte(*secret), *coaNAK))
+	case "smoke":
+		// fall through
+	default:
+		fmt.Fprintf(os.Stderr, "unknown -mode %q\n", *mode)
+		os.Exit(2)
+	}
 
 	if *rate > 0 {
 		if *duration <= 0 {

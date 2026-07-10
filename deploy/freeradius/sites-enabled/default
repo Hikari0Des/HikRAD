@@ -685,6 +685,18 @@ preacct {
 #  lossless ingest pipeline (sub-PRD 03) is Phase 2. Nothing here proxies or
 #  forwards.
 accounting {
+	#  HikRAD (Phase 2, Agent 2): forward every Accounting-Request to
+	#  hikrad-acct's lossless ingest (contract C6) FIRST. hikrad_accounting
+	#  fails closed — on any error it returns `fail`, so the `if (fail)` below
+	#  stops the section without an Accounting-Response and the NAS
+	#  retransmits (never-lose-a-packet, M2). The local detail/unix logs below
+	#  run only after a durable enqueue is confirmed.
+	hikrad_accounting
+	if (fail) {
+		#  Do NOT ack: let the NAS retransmit until the ingest confirms.
+		reject
+	}
+
 	#  Update accounting packet by adding the CUI attribute
 	#  recorded from the corresponding Access-Accept
 	#  use it only if your NAS boxes do not support CUI themselves

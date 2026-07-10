@@ -136,9 +136,15 @@ export interface PageParams {
   limit?: number
 }
 
-/** Fetch one page of a C2 list endpoint. */
-export function listPage<T>(path: string, params: PageParams = {}): Promise<Page<T>> {
-  return request<Page<T>>(path, { query: { cursor: params.cursor, limit: params.limit } })
+/** Fetch one page of a C2 list endpoint, optionally with extra filter params. */
+export function listPage<T>(
+  path: string,
+  params: PageParams = {},
+  extraQuery: Record<string, string | number | undefined> = {},
+): Promise<Page<T>> {
+  return request<Page<T>>(path, {
+    query: { ...extraQuery, cursor: params.cursor, limit: params.limit },
+  })
 }
 
 /** Walk a C2 list endpoint across cursors, yielding every item. */

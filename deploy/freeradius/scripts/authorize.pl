@@ -48,6 +48,14 @@ my $chap_response  = unwrap($ENV{CHAP_PASSWORD});
 my $nas_ip   = unwrap($ENV{NAS_IP_ADDRESS}) || unwrap($ENV{NAS_IPV6_ADDRESS});
 my $calling  = unwrap($ENV{CALLING_STATION_ID});
 
+# Service discrimination (FR-58): MikroTik Hotspot logins arrive as
+# Service-Type = Login-User, PPPoE as Framed-User. The backend policy engine
+# accepts a Hotspot login for a PPPoE subscriber only when the subscriber has
+# opted in; everything else defaults to pppoe. Match case-insensitively since
+# rlm_exec may render the value as the enum name or a raw number.
+my $service_type = unwrap($ENV{SERVICE_TYPE});
+my $service = ($service_type =~ /login/i) ? "hotspot" : "pppoe";
+
 sub emit_reject {
     my ($reason) = @_;
     print qq{Tmp-String-0 := "reject"\n};
@@ -70,7 +78,7 @@ my $body = eval {
         chap_response       => $chap_response,
         nas_ip              => $nas_ip,
         calling_station_id  => $calling,
-        service             => "pppoe",
+        service             => $service,
     });
 };
 emit_internal_error() if $@ || !defined $body;
@@ -98,8 +106,15 @@ for my $attr (@{ $decoded->{attributes} // [] }) {
         print qq{Mikrotik-Rate-Limit := "$value"\n};
     } elsif ($intent eq 'address_pool') {
         print qq{Framed-Pool := "$value"\n};
+    } elsif ($intent eq 'static_ip') {
+        # Framed-IP-Address takes precedence over Framed-Pool (FR-16.2); the
+        # backend never emits both for one accept.
+        print qq{Framed-IP-Address := $value\n};
     } elsif ($intent eq 'session_timeout') {
         print qq{Session-Timeout := $value\n};
+    } elsif ($intent eq 'redirect_expired') {
+        # Walled-garden address-list the router's expired-redirect rules match.
+        print qq{Mikrotik-Address-List := "$value"\n};
     }
 }
 exit 0;

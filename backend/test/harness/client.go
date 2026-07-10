@@ -1,8 +1,8 @@
 // Command harness is the MikroTik-simulating RADIUS packet harness (Phase 1,
 // Agent 2 / RADIUS & NAS; NFR-8). It proves the real path end to end:
 // harness -> FreeRADIUS (UDP 1812) -> hikrad_authorize exec -> hikrad-api's
-// /internal/radius/authorize (contract C4) -> back, mapped to
-// Mikrotik-Rate-Limit. Phase 2's full policy engine and Phase 5's perf gate
+// /internal/radius/authorize (contract C4) -> back, mapped to the vendor's
+// rate-limit VSA. Phase 2's full policy engine and Phase 5's perf gate
 // (-rate/-duration) both build on this same client.
 package main
 

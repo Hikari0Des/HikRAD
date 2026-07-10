@@ -41,13 +41,45 @@ authorize path is broken somewhere between FreeRADIUS and hikrad-api; check
 | `-nas-ip` | `10.0.0.99` | `NAS-IP-Address` reported in requests |
 | `-timeout` | `5s` | per-request timeout |
 | `-rate` | `0` | load mode: sustained requests/sec against `testuser`/`testpass` (PAP). `0` runs the five-case smoke suite once and exits |
-| `-duration` | — | required with `-rate`: how long to sustain it |
+| `-duration` | `10s` | how long to sustain `-rate` load mode / `-mode mndp-announce` |
+| `-mode` | `smoke` | `smoke` \| `mndp-announce` \| `coa-listen` (see below) |
 
 Load mode (`-rate`/`-duration`) is the NFR-1 perf-verification hook Phase 5
 drives for the sub-100ms p99 budget; it isn't part of the Phase-1 gate.
 
 ```sh
 go run ./test/harness -addr 127.0.0.1:1812 -rate 50 -duration 30s
+```
+
+**Note (Phase 2):** the backend authorize engine now rejects `unknown_nas`
+for any source IP not registered in the `nas` table. The smoke/load modes
+therefore require a NAS registered at `-nas-ip` (create one via
+`POST /api/v1/nas`, or the gate fixtures do). The stock `docker_bridge_dev`
+client still lets the packet reach FreeRADIUS; the authorize-time check is the
+new gate.
+
+## Phase 2 modes
+
+### `-mode mndp-announce` (gate item 7 — NAS discovery)
+
+Broadcasts a MikroTik Neighbor Discovery (MNDP) packet on UDP 5678 so
+`POST /api/v1/nas/discover` picks it up. Read-only; nothing is sent to a real
+router.
+
+```sh
+go run ./test/harness -mode mndp-announce \
+  -mndp-target 255.255.255.255:5678 -mndp-identity CoreRouter -mndp-version 7.11 -duration 8s
+```
+
+### `-mode coa-listen` (CoA/Disconnect round-trip)
+
+Impersonates a NAS's CoA server: binds `-addr`, prints every
+Disconnect/CoA-Request received, and replies ACK (or NAK with `-coa-nak`). Point
+a NAS record's `coa_port` at this address, then trigger a disconnect from the
+panel (or Phase 3 renewal) to assert the packet.
+
+```sh
+go run ./test/harness -mode coa-listen -addr 127.0.0.1:3799 -secret <nas-secret>
 ```
 
 ## As a Go test (CI)

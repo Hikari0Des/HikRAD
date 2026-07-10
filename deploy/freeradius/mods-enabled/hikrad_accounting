@@ -1,0 +1,19 @@
+# HikRAD (Phase 2, Agent 2 / RADIUS & NAS): forwards every Accounting-Request
+# to hikrad-acct's lossless ingest (contract C6) via scripts/accounting.pl.
+# Same exec-module rationale as hikrad_authorize (see scripts/authorize.pl):
+# the script owns both the HTTP round trip and the request→JSON mapping in one
+# process.
+#
+# LOSSLESS: the script exits non-zero on any failure, so this module returns
+# `fail` and the accounting {} section (sites-enabled/default) does NOT send an
+# Accounting-Response — the NAS retransmits until hikrad-acct confirms a
+# durable enqueue (2xx). output_pairs is intentionally omitted: the script
+# prints nothing, it only signals success/failure via its exit code.
+exec hikrad_accounting {
+	wait = yes
+	program = "/etc/raddb/scripts/accounting.pl"
+	input_pairs = request
+	# 3s bound; a slow/hung hikrad-acct becomes a retransmit, never a hang.
+	timeout = 4
+	shell_escape = yes
+}

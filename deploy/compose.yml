@@ -147,29 +147,42 @@ services:
           memory: 256M
 
   # ---------------------------------------------------------------------------
-  # Phase 2 (Agent C) — uncomment when cmd/hikrad-acct and cmd/hikrad-monitor
-  # land. Memory budget already reserved in the NFR-3 sizing above.
+  # Phase 2 (Agent 3) — lossless accounting ingest (FR-37/38/40). FreeRADIUS
+  # forwards accounting to http://hikrad-acct:8082/acct (contract C6). Memory
+  # budget already reserved in the NFR-3 sizing above.
   # ---------------------------------------------------------------------------
-  # hikrad-acct:
-  #   build:
-  #     context: ..
-  #     dockerfile: deploy/docker/acct.Dockerfile
-  #   restart: unless-stopped
-  #   environment:
-  #     HIKRAD_DB_URL: ${HIKRAD_DB_URL}
-  #     HIKRAD_REDIS_URL: ${HIKRAD_REDIS_URL:-redis://redis:6379/0}
-  #     HIKRAD_ENV: ${HIKRAD_ENV:-prod}
-  #   depends_on:
-  #     postgres:
-  #       condition: service_healthy
-  #     redis:
-  #       condition: service_healthy
-  #   volumes:
-  #     - ${HIKRAD_DATA_DIR:-./data}/acct-spill:/spill   # disk spill for the lossless queue
-  #   deploy:
-  #     resources:
-  #       limits:
-  #         memory: 1024M
+  hikrad-acct:
+    build:
+      context: ..
+      dockerfile: deploy/docker/acct.Dockerfile
+    restart: unless-stopped
+    environment:
+      HIKRAD_DB_URL: ${HIKRAD_DB_URL:?generate with scripts/gen-env.sh}
+      HIKRAD_REDIS_URL: ${HIKRAD_REDIS_URL:-redis://redis:6379/0}
+      HIKRAD_ENV: ${HIKRAD_ENV:-prod}
+      # Disk spill for the lossless queue (matches the volume mount below).
+      HIKRAD_ACCT_SPILL_DIR: /spill
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    # Port 8082 stays internal to the compose network: only FreeRADIUS calls it,
+    # by service name. Never proxied by Caddy.
+    expose:
+      - "8082"
+    volumes:
+      - ${HIKRAD_DATA_DIR:-./data}/acct-spill:/spill   # fsync'd WAL: survives restarts (NFR-2)
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8082/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 1024M
   #
   # hikrad-monitor:
   #   build:

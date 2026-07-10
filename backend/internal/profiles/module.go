@@ -1,86 +1,44 @@
-// Package profiles is the service-profile domain module. Phase 1 ships only
-// a placeholder list endpoint that proves the httpapi framework end to end;
-// full CRUD arrives in Phase 2 from this same agent role.
+// Package profiles is the service-profile domain module (Phase 2, Agent 4).
+// It owns profile CRUD (FR-8), the expiry/quota behaviors [02] enforces at auth
+// (FR-9/FR-10), the Hotspot rate fields (FR-58.1), and archive-not-delete. Every
+// mutation writes the audit log (C2) and, when applied immediately, invalidates
+// B's policy cache for the affected subscribers and returns the online ones so
+// the panel can offer a CoA rate refresh.
 package profiles
 
 import (
+	"log/slog"
 	"net/http"
-	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/hikrad/hikrad/internal/auth"
 	"github.com/hikrad/hikrad/internal/httpapi"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-type Module struct{}
+// Module is the httpapi registration hook (contract C3).
+type Module struct {
+	db  *pgxpool.Pool
+	log *slog.Logger
+}
 
 func (Module) Name() string { return "profiles" }
 
-func (Module) Register(r chi.Router, d httpapi.Deps) {
-	r.With(httpapi.RequireAuth).Get("/api/v1/profiles", listHandler(d))
+func (m *Module) Register(r chi.Router, d httpapi.Deps) {
+	m.db = d.DB
+	m.log = d.Log
+
+	r.With(auth.Require("profiles.view")).Get("/api/v1/profiles", m.listHandler)
+	r.With(auth.Require("profiles.view")).Get("/api/v1/profiles/{id}", m.getHandler)
+	r.With(auth.Require("profiles.create")).Post("/api/v1/profiles", m.createHandler)
+	r.With(auth.Require("profiles.edit")).Put("/api/v1/profiles/{id}", m.updateHandler)
+	r.With(auth.Require("profiles.edit")).Post("/api/v1/profiles/{id}/archive", m.archiveHandler)
 }
 
-func init() { httpapi.Add(Module{}) }
+func init() { httpapi.Add(&Module{}) }
 
-// Profile is the Phase-1 read shape (schema per contract C6).
-type Profile struct {
-	ID           string    `json:"id"`
-	Name         string    `json:"name"`
-	PriceIQD     int64     `json:"price_iqd"`
-	DurationDays int       `json:"duration_days"`
-	RateDownKbps int       `json:"rate_down_kbps"`
-	RateUpKbps   int       `json:"rate_up_kbps"`
-	CreatedAt    time.Time `json:"created_at"`
-}
-
-func listHandler(d httpapi.Deps) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		page, err := httpapi.ParsePage(r)
-		if err != nil {
-			httpapi.Error(w, http.StatusBadRequest, "invalid_pagination", err.Error())
-			return
-		}
-		var after *string
-		if len(page.Cursor) == 1 {
-			after = &page.Cursor[0]
-		} else if page.Cursor != nil {
-			httpapi.Error(w, http.StatusBadRequest, "invalid_pagination", "malformed cursor")
-			return
-		}
-		rows, err := d.DB.Query(r.Context(),
-			`SELECT id::text, name, price_iqd, duration_days, rate_down_kbps, rate_up_kbps, created_at
-			   FROM profiles
-			  WHERE $1::uuid IS NULL OR id > $1::uuid
-			  ORDER BY id
-			  LIMIT $2`,
-			after, page.Limit+1)
-		if err != nil {
-			d.Log.Error("profiles list query failed", "error", err)
-			httpapi.Error(w, http.StatusInternalServerError, "internal", "internal server error")
-			return
-		}
-		defer rows.Close()
-
-		items := make([]Profile, 0, page.Limit)
-		for rows.Next() {
-			var p Profile
-			if err := rows.Scan(&p.ID, &p.Name, &p.PriceIQD, &p.DurationDays, &p.RateDownKbps, &p.RateUpKbps, &p.CreatedAt); err != nil {
-				d.Log.Error("profiles list scan failed", "error", err)
-				httpapi.Error(w, http.StatusInternalServerError, "internal", "internal server error")
-				return
-			}
-			p.CreatedAt = p.CreatedAt.UTC()
-			items = append(items, p)
-		}
-		if rows.Err() != nil {
-			d.Log.Error("profiles list rows failed", "error", rows.Err())
-			httpapi.Error(w, http.StatusInternalServerError, "internal", "internal server error")
-			return
-		}
-		next := ""
-		if len(items) > page.Limit {
-			items = items[:page.Limit]
-			next = httpapi.EncodeCursor(items[len(items)-1].ID)
-		}
-		httpapi.JSON(w, http.StatusOK, httpapi.NewListResponse(items, next))
-	}
+// internalError logs a server-side failure and writes the C2 500 envelope.
+func (m *Module) internalError(w http.ResponseWriter, what string, err error) {
+	m.log.Error("profiles: "+what+" failed", "error", err)
+	httpapi.Error(w, http.StatusInternalServerError, "internal", "internal server error")
 }

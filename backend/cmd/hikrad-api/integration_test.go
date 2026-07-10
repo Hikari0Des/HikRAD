@@ -24,6 +24,7 @@ import (
 
 	"github.com/hikrad/hikrad/internal/httpapi"
 	"github.com/hikrad/hikrad/internal/platform"
+	"github.com/hikrad/hikrad/internal/platform/crypto"
 	"github.com/hikrad/hikrad/internal/seed"
 )
 
@@ -62,15 +63,21 @@ func TestIntegration(t *testing.T) {
 		t.Fatalf("connect: %v", err)
 	}
 	defer db.Close()
-	if err := seed.Run(ctx, db, encryptionKey); err != nil {
+	// RunBase (not Run): the lean fixture set. The full Run adds 200 demo
+	// subscribers for screenshots; this whole-table pagination test needs a small,
+	// predictable table, so it seeds only the base (admin, NAS, plans, testuser).
+	if err := seed.RunBase(ctx, db, encryptionKey); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
-	if err := seed.Run(ctx, db, encryptionKey); err != nil {
+	if err := seed.RunBase(ctx, db, encryptionKey); err != nil {
 		t.Fatalf("seed must be idempotent, rerun failed: %v", err)
 	}
 
-	httpapi.SetAuthenticator(httpapi.JWTAuthenticator{Secret: jwtSecret})
-	httpapi.EnableDevLogin(jwtSecret)
+	// Phase 2: the internal/auth module installs the real authenticator and
+	// mounts /api/v1/auth/login itself during Register (the dev stub is gone),
+	// so this wiring no longer touches the httpapi auth seams. Redis is left
+	// nil — login's rate limiter degrades to a no-op without a broker, which
+	// is all this DB-focused integration test needs.
 	deps := httpapi.Deps{DB: db, Settings: platform.NewSettings(db), Log: log}
 	srv := httptest.NewServer(httpapi.NewRouter(deps, true))
 	defer srv.Close()
@@ -97,21 +104,36 @@ func TestIntegration(t *testing.T) {
 			} `json:"items"`
 			NextCursor *string `json:"next_cursor"`
 		}
-		body := getJSON(t, srv.URL+"/api/v1/subscribers", access, &list)
+		// Other Phase-2 suites may add subscribers to the shared DB concurrently,
+		// so paginate (bounded) to locate testuser rather than assuming page 1.
 		found := false
-		for _, it := range list.Items {
-			if it.Username == "testuser" {
-				found = true
-				if it.Status != "active" {
-					t.Fatalf("testuser status = %q", it.Status)
+		next := ""
+		for pages := 0; pages < 500 && !found; pages++ {
+			url := srv.URL + "/api/v1/subscribers?limit=100"
+			if next != "" {
+				url += "&cursor=" + next
+			}
+			list.Items = nil
+			list.NextCursor = nil
+			body := getJSON(t, url, access, &list)
+			if bytes.Contains([]byte(body), []byte("password")) {
+				t.Fatalf("password material leaked in list response: %s", body)
+			}
+			for _, it := range list.Items {
+				if it.Username == "testuser" {
+					found = true
+					if it.Status != "active" {
+						t.Fatalf("testuser status = %q", it.Status)
+					}
 				}
 			}
+			if list.NextCursor == nil {
+				break
+			}
+			next = *list.NextCursor
 		}
 		if !found {
-			t.Fatalf("testuser not in %s", body)
-		}
-		if bytes.Contains([]byte(body), []byte("password")) {
-			t.Fatalf("password material leaked in list response: %s", body)
+			t.Fatalf("testuser not found across pages")
 		}
 	})
 
@@ -136,24 +158,27 @@ func TestIntegration(t *testing.T) {
 	})
 
 	t.Run("keyset pagination is stable and complete", func(t *testing.T) {
-		// Add extra rows, then walk limit=2 pages and check every subscriber
-		// appears exactly once.
-		for i := 0; i < 5; i++ {
-			_, err := db.Exec(ctx,
+		// Insert uniquely-named rows so the assertion is self-scoped: on a shared
+		// DB other suites add subscribers concurrently, so we verify keyset
+		// correctness (page size respected, each of OUR rows seen exactly once,
+		// terminates) over our own rows rather than the whole table.
+		tag := fmt.Sprintf("pagetest-%d-", time.Now().UnixNano())
+		const extra = 5
+		for i := 0; i < extra; i++ {
+			if _, err := db.Exec(ctx,
 				`INSERT INTO subscribers (username, status) VALUES ($1, 'active')
-				 ON CONFLICT (username) DO NOTHING`,
-				fmt.Sprintf("pagetest-%d", i))
-			if err != nil {
+				 ON CONFLICT (username) DO NOTHING`, fmt.Sprintf("%s%d", tag, i)); err != nil {
 				t.Fatal(err)
 			}
 		}
 		seen := map[string]int{}
 		next := ""
+		const limit = 100
 		for pages := 0; ; pages++ {
-			if pages > 20 {
+			if pages > 5000 {
 				t.Fatal("pagination did not terminate")
 			}
-			url := srv.URL + "/api/v1/subscribers?limit=2"
+			url := fmt.Sprintf("%s/api/v1/subscribers?limit=%d", srv.URL, limit)
 			if next != "" {
 				url += "&cursor=" + next
 			}
@@ -164,7 +189,7 @@ func TestIntegration(t *testing.T) {
 				NextCursor *string `json:"next_cursor"`
 			}
 			getJSON(t, url, access, &list)
-			if len(list.Items) > 2 {
+			if len(list.Items) > limit {
 				t.Fatalf("page larger than limit: %d", len(list.Items))
 			}
 			for _, it := range list.Items {
@@ -178,8 +203,8 @@ func TestIntegration(t *testing.T) {
 		if seen["testuser"] != 1 {
 			t.Fatalf("testuser seen %d times", seen["testuser"])
 		}
-		for i := 0; i < 5; i++ {
-			u := fmt.Sprintf("pagetest-%d", i)
+		for i := 0; i < extra; i++ {
+			u := fmt.Sprintf("%s%d", tag, i)
 			if seen[u] != 1 {
 				t.Fatalf("%s seen %d times across pages", u, seen[u])
 			}
@@ -191,8 +216,10 @@ func TestIntegration(t *testing.T) {
 		if err := db.QueryRow(ctx, `SELECT password_enc FROM subscribers WHERE username = 'testuser'`).Scan(&enc); err != nil {
 			t.Fatal(err)
 		}
-		got, err := seed.DecryptPassword(enc, encryptionKey)
-		if err != nil || got != "testpass" {
+		// The Phase-1 seed AES helper was retired in Phase 2 (contract C3):
+		// seed.Run seals via platform/crypto, so decrypt with the same service.
+		got, err := crypto.Decrypt(enc)
+		if err != nil || string(got) != "testpass" {
 			t.Fatalf("decrypt = %q, %v", got, err)
 		}
 	})

@@ -1,0 +1,118 @@
+package auth
+
+// Token model (FR-52.2, FR-29):
+//   - Access token: short-lived HS256 JWT carrying sub/role/scoped/sid. It is
+//     verified statelessly on every request (no DB hit — keeps the auth
+//     overhead inside B's 100 ms budget). Revocation therefore takes effect
+//     within one access-token lifetime (≤ accessTTL), which is the FR-29 SLA.
+//   - Refresh token: opaque `<sessionID>.<secret>`. Only sha256(secret) is
+//     stored (panel_sessions.refresh_hash) and it rotates on every use.
+//     Presenting a rotated-away secret for a still-live session is treated as
+//     token theft and revokes the whole session (login.go).
+
+import (
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
+	"errors"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/golang-jwt/jwt/v5"
+)
+
+const (
+	// tokenTypeAccess matches httpapi's stub token type value so any consumer
+	// still keyed on "access" keeps working.
+	tokenTypeAccess = "access"
+
+	accessTTL        = 5 * time.Minute // FR-29: revocation SLA ≤ one access lifetime
+	refreshSecretLen = 32
+)
+
+var errBadToken = errors.New("auth: invalid token")
+
+// accessClaims is what an access token carries beyond the registered claims.
+type accessClaims struct {
+	ManagerID string
+	Role      string
+	Scoped    bool
+	SessionID string
+}
+
+type tokenService struct {
+	secret []byte
+}
+
+func newTokenService(secret []byte) *tokenService { return &tokenService{secret: secret} }
+
+// issueAccess signs a short-lived access JWT for the session.
+func (t *tokenService) issueAccess(c accessClaims, now time.Time) (string, error) {
+	tok := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"sub":    c.ManagerID,
+		"role":   c.Role,
+		"scoped": c.Scoped,
+		"sid":    c.SessionID,
+		"typ":    tokenTypeAccess,
+		"iat":    now.Unix(),
+		"exp":    now.Add(accessTTL).Unix(),
+	})
+	return tok.SignedString(t.secret)
+}
+
+// parseAccess validates signature, method, expiry and type, returning the
+// claims. It never touches the database.
+func (t *tokenService) parseAccess(raw string) (accessClaims, error) {
+	claims := jwt.MapClaims{}
+	_, err := jwt.ParseWithClaims(raw, claims, func(tok *jwt.Token) (any, error) {
+		if _, ok := tok.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method %v", tok.Header["alg"])
+		}
+		return t.secret, nil
+	}, jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Name}), jwt.WithExpirationRequired())
+	if err != nil {
+		return accessClaims{}, err
+	}
+	if typ, _ := claims["typ"].(string); typ != tokenTypeAccess {
+		return accessClaims{}, errBadToken
+	}
+	sub, _ := claims["sub"].(string)
+	if sub == "" {
+		return accessClaims{}, errBadToken
+	}
+	role, _ := claims["role"].(string)
+	scoped, _ := claims["scoped"].(bool)
+	sid, _ := claims["sid"].(string)
+	return accessClaims{ManagerID: sub, Role: role, Scoped: scoped, SessionID: sid}, nil
+}
+
+// newRefreshSecret generates a fresh refresh secret and its stored hash.
+func newRefreshSecret() (secret string, hash []byte, err error) {
+	buf := make([]byte, refreshSecretLen)
+	if _, err = rand.Read(buf); err != nil {
+		return "", nil, err
+	}
+	secret = base64.RawURLEncoding.EncodeToString(buf)
+	return secret, hashRefresh(secret), nil
+}
+
+// composeRefreshToken builds the opaque token handed to the client.
+func composeRefreshToken(sessionID, secret string) string {
+	return sessionID + "." + secret
+}
+
+// parseRefreshToken splits a refresh token into its session id and secret.
+func parseRefreshToken(tok string) (sessionID, secret string, ok bool) {
+	sessionID, secret, ok = strings.Cut(tok, ".")
+	if !ok || sessionID == "" || secret == "" {
+		return "", "", false
+	}
+	return sessionID, secret, true
+}
+
+// hashRefresh is the sha256 of a refresh secret stored in panel_sessions.
+func hashRefresh(secret string) []byte {
+	sum := sha256.Sum256([]byte(secret))
+	return sum[:]
+}

@@ -3,10 +3,12 @@ import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 
 import { I18nProvider } from '@hikrad/shared'
+import '@hikrad/shared/ui.css'
 
 import { App } from './App'
 import { AuthProvider } from './auth/AuthContext'
 import { ErrorBoundary } from './components/ErrorBoundary'
+import { ToastProvider } from './components/Toast'
 import './index.css'
 
 createRoot(document.getElementById('root')!).render(
@@ -15,7 +17,9 @@ createRoot(document.getElementById('root')!).render(
       <ErrorBoundary>
         <BrowserRouter>
           <AuthProvider>
-            <App />
+            <ToastProvider>
+              <App />
+            </ToastProvider>
           </AuthProvider>
         </BrowserRouter>
       </ErrorBoundary>

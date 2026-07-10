@@ -87,9 +87,11 @@ func run(cfg platform.Config, log *slog.Logger) error {
 	}
 }
 
-// buildDeps assembles the frozen C3 Deps struct and installs the Phase-1
-// stubs into the httpapi injection seams: the signature-only JWT
-// authenticator (Agent 1 swaps it in Phase 2) and, in dev, the C7 login stub.
+// buildDeps assembles the frozen C3 Deps struct. Phase 2 (Agent 1) retired the
+// Phase-1 auth seams handled here: the internal/auth module now installs the
+// real authenticator (httpapi.SetAuthenticator) and mounts POST
+// /api/v1/auth/login itself during Register, so buildDeps no longer touches the
+// authentication seams — the dev login stub is gone in every environment.
 func buildDeps(ctx context.Context, cfg platform.Config, log *slog.Logger) (httpapi.Deps, func(), error) {
 	db, err := platform.NewDB(ctx, cfg)
 	if err != nil {
@@ -99,10 +101,6 @@ func buildDeps(ctx context.Context, cfg platform.Config, log *slog.Logger) (http
 	if err != nil {
 		db.Close()
 		return httpapi.Deps{}, nil, err
-	}
-	httpapi.SetAuthenticator(httpapi.JWTAuthenticator{Secret: []byte(cfg.JWTSecret)})
-	if cfg.IsDev() {
-		httpapi.EnableDevLogin([]byte(cfg.JWTSecret))
 	}
 	cleanup := func() {
 		_ = rdb.Close()

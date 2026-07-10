@@ -10,13 +10,13 @@ package main
 // phase are imported; each future package's owner uncomments its line in
 // the phase that creates it.
 import (
+	_ "github.com/hikrad/hikrad/internal/auth"
 	_ "github.com/hikrad/hikrad/internal/platform"
 	_ "github.com/hikrad/hikrad/internal/profiles"
+	_ "github.com/hikrad/hikrad/internal/live"
 	_ "github.com/hikrad/hikrad/internal/radius"
 	_ "github.com/hikrad/hikrad/internal/subscribers"
-	// _ "github.com/hikrad/hikrad/internal/auth"      // Agent 1, Phase 2
 	// _ "github.com/hikrad/hikrad/internal/billing"   // Phase 3
-	// _ "github.com/hikrad/hikrad/internal/live"      // Phase 2
 	// _ "github.com/hikrad/hikrad/internal/portalapi" // Phase 4
 	// _ "github.com/hikrad/hikrad/internal/reports"   // Phase 5
 )

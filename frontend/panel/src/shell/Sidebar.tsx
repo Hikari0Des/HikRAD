@@ -3,17 +3,17 @@ import { NavLink } from 'react-router-dom'
 import { useT } from '@hikrad/shared'
 
 /**
- * Navigation slots for the whole product: Dashboard is live now; the other
- * entries are the Phase-2/3 screens (Subscribers, Profiles, NAS, Live
- * Sessions) rendered as disabled placeholders so later phases only flip
- * `placeholder: false` and add a route.
+ * Navigation slots for the whole product. The Phase-2 operator screens
+ * (Subscribers, Profiles, NAS, IP pools, Live Sessions) are live; Dashboard
+ * stays a placeholder until Phase 3 fills it (Omar's dashboard, FR-34+).
  */
 const NAV_ITEMS: readonly { key: string; to: string; placeholder?: boolean }[] = [
   { key: 'nav.dashboard', to: '/' },
-  { key: 'nav.subscribers', to: '/subscribers', placeholder: true },
-  { key: 'nav.profiles', to: '/profiles', placeholder: true },
-  { key: 'nav.nas', to: '/nas', placeholder: true },
-  { key: 'nav.sessions', to: '/sessions', placeholder: true },
+  { key: 'nav.subscribers', to: '/subscribers' },
+  { key: 'nav.profiles', to: '/profiles' },
+  { key: 'nav.nas', to: '/nas' },
+  { key: 'nav.pools', to: '/pools' },
+  { key: 'nav.sessions', to: '/sessions' },
 ]
 
 export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
