@@ -30,6 +30,12 @@ type profileInput struct {
 	QuotaBehavior       string  `json:"quota_behavior"`
 	HotspotRateDownKbps *int    `json:"hotspot_rate_down_kbps"`
 	HotspotRateUpKbps   *int    `json:"hotspot_rate_up_kbps"`
+	// Burst/priority segments (FR-11): optional abstract "rx/tx" intents.
+	BurstRate      *string `json:"burst_rate"`
+	BurstThreshold *string `json:"burst_threshold"`
+	BurstTime      *string `json:"burst_time"`
+	RatePriority   *string `json:"rate_priority"`
+	MinRate        *string `json:"min_rate"`
 	// Archived is only honored on update (create always makes an active profile).
 	Archived bool `json:"archived"`
 }

@@ -26,12 +26,13 @@ import (
 // in the same style as httpapi's authenticator seam, so other modules call
 // auth.Require/Audit with no wiring.
 type service struct {
-	db      *pgxpool.Pool
-	rdb     *redis.Client
-	log     *slog.Logger
-	tokens  *tokenService
-	limiter *loginLimiter
-	crypto  *crypto.Service
+	db       *pgxpool.Pool
+	rdb      *redis.Client
+	log      *slog.Logger
+	tokens   *tokenService
+	limiter  *loginLimiter
+	crypto   *crypto.Service
+	settings platform.Settings
 }
 
 var svc *service
@@ -49,12 +50,13 @@ func configure(d httpapi.Deps, jwtSecret, encKey []byte) error {
 		return err
 	}
 	svc = &service{
-		db:      d.DB,
-		rdb:     d.Redis,
-		log:     d.Log,
-		tokens:  newTokenService(jwtSecret),
-		limiter: newLoginLimiter(d.Redis),
-		crypto:  cs,
+		db:       d.DB,
+		rdb:      d.Redis,
+		log:      d.Log,
+		tokens:   newTokenService(jwtSecret),
+		limiter:  newLoginLimiter(d.Redis),
+		crypto:   cs,
+		settings: d.Settings,
 	}
 	httpapi.SetAuthenticator(httpAuthenticator{tokens: svc.tokens})
 	return nil
@@ -89,13 +91,35 @@ func (Module) Register(r chi.Router, d httpapi.Deps) {
 	r.With(Require("managers.create")).Post("/api/v1/managers", createManagerHandler)
 	r.With(Require("managers.edit")).Put("/api/v1/managers/{id}", updateManagerHandler)
 	r.With(Require("managers.edit")).Post("/api/v1/managers/{id}/unlock", unlockManagerHandler)
+	// Per-manager permission overrides + IP allowlist + admin 2FA reset (FR-27/28/30).
+	r.With(Require("managers.view")).Get("/api/v1/managers/{id}/permissions", getManagerPermissionsHandler)
+	r.With(Require("managers.edit")).Put("/api/v1/managers/{id}/permissions", putManagerOverridesHandler)
+	r.With(Require("managers.view")).Get("/api/v1/managers/{id}/ip-allowlist", getManagerAllowlistHandler)
+	r.With(Require("managers.edit")).Put("/api/v1/managers/{id}/ip-allowlist", putManagerAllowlistHandler)
+	r.With(Require("managers.edit")).Post("/api/v1/managers/{id}/totp/reset", resetManagerTOTPHandler)
+
+	// Roles + permission matrix (FR-27.1). Gated under the managers module.
+	r.With(Require("managers.view")).Get("/api/v1/permissions", listPermissionCatalogHandler)
+	r.With(Require("managers.view")).Get("/api/v1/roles", listRolesHandler)
+	r.With(Require("managers.view")).Get("/api/v1/roles/{id}", getRoleHandler)
+	r.With(Require("managers.create")).Post("/api/v1/roles", createRoleHandler)
+	r.With(Require("managers.edit")).Put("/api/v1/roles/{id}", updateRoleHandler)
+	r.With(Require("managers.delete")).Delete("/api/v1/roles/{id}", deleteRoleHandler)
+
+	// TOTP 2FA self-service (FR-28.1). enroll/verify accept a normal access
+	// token OR a limited enrolment grant (forced-enrolment flow); disable needs
+	// a full session.
+	r.With(enrollOrAccess).Post("/api/v1/auth/totp/enroll", enrollTOTPHandler)
+	r.With(enrollOrAccess).Post("/api/v1/auth/totp/verify", verifyTOTPHandler)
+	r.With(Require("")).Post("/api/v1/auth/totp/disable", disableTOTPHandler)
 
 	// Panel session management (own; admins any).
 	r.With(Require("")).Get("/api/v1/panel-sessions", listPanelSessionsHandler)
 	r.With(Require("")).Delete("/api/v1/panel-sessions/{id}", deletePanelSessionHandler)
 
-	// Audit log reader (permission-gated).
+	// Audit log reader + CSV export (permission-gated).
 	r.With(Require("audit.view")).Get("/api/v1/audit-log", listAuditLogHandler)
+	r.With(Require("export")).Get("/api/v1/audit-log/export", exportAuditLogHandler)
 }
 
 func init() { httpapi.Add(Module{}) }

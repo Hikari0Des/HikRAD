@@ -17,39 +17,49 @@ type managerAuthRow struct {
 	PasswordHash string
 	Role         string
 	Scoped       bool
+	// TOTP + 2FA-enforcement fields (FR-28.1), loaded for the login flow.
+	TOTPEnabled    bool
+	TOTPSecretEnc  []byte
+	RoleRequire2FA bool
 }
 
 // managerView is the API read shape (no secret material).
 type managerView struct {
-	ID        string    `json:"id"`
-	Username  string    `json:"username"`
-	Role      string    `json:"role"`
-	Scoped    bool      `json:"scoped"`
-	CreatedAt time.Time `json:"created_at"`
+	ID          string    `json:"id"`
+	Username    string    `json:"username"`
+	Role        string    `json:"role"`
+	RoleID      *string   `json:"role_id"`
+	Scoped      bool      `json:"scoped"`
+	TOTPEnabled bool      `json:"totp_enabled"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
+const managerAuthCols = `m.id::text, m.username::text, m.password_hash, m.role, m.scoped,
+	 m.totp_enabled, m.totp_secret_enc, COALESCE(r.require_2fa, false)`
+
+func scanManagerAuth(row interface {
+	Scan(dest ...any) error
+}) (*managerAuthRow, error) {
+	var m managerAuthRow
+	if err := row.Scan(&m.ID, &m.Username, &m.PasswordHash, &m.Role, &m.Scoped,
+		&m.TOTPEnabled, &m.TOTPSecretEnc, &m.RoleRequire2FA); err != nil {
+		return nil, err
+	}
+	return &m, nil
 }
 
 func lookupManagerByUsername(ctx context.Context, db *pgxpool.Pool, username string) (*managerAuthRow, error) {
-	var m managerAuthRow
-	err := db.QueryRow(ctx,
-		`SELECT id::text, username::text, password_hash, role, scoped
-		   FROM managers WHERE username = $1`, username).
-		Scan(&m.ID, &m.Username, &m.PasswordHash, &m.Role, &m.Scoped)
-	if err != nil {
-		return nil, err
-	}
-	return &m, nil
+	return scanManagerAuth(db.QueryRow(ctx,
+		`SELECT `+managerAuthCols+`
+		   FROM managers m LEFT JOIN roles r ON r.id = m.role_id
+		  WHERE m.username = $1`, username))
 }
 
 func lookupManagerByID(ctx context.Context, db *pgxpool.Pool, id string) (*managerAuthRow, error) {
-	var m managerAuthRow
-	err := db.QueryRow(ctx,
-		`SELECT id::text, username::text, password_hash, role, scoped
-		   FROM managers WHERE id = $1::uuid`, id).
-		Scan(&m.ID, &m.Username, &m.PasswordHash, &m.Role, &m.Scoped)
-	if err != nil {
-		return nil, err
-	}
-	return &m, nil
+	return scanManagerAuth(db.QueryRow(ctx,
+		`SELECT `+managerAuthCols+`
+		   FROM managers m LEFT JOIN roles r ON r.id = m.role_id
+		  WHERE m.id = $1::uuid`, id))
 }
 
 // updatePasswordHash re-points a manager's stored hash (used by the argon2id
@@ -59,56 +69,68 @@ func updatePasswordHash(ctx context.Context, db *pgxpool.Pool, id, hash string) 
 	return err
 }
 
-func insertManager(ctx context.Context, db *pgxpool.Pool, username, hash, role string, scoped bool) (managerView, error) {
+// managerViewCols is aliased for SELECTs over `managers m`; managerViewColsRet
+// is the same list unqualified, for INSERT/UPDATE ... RETURNING (no alias in
+// scope there). Both scan in the order scanManagerView expects.
+const managerViewCols = `m.id::text, m.username::text, m.role, m.role_id::text, m.scoped, m.totp_enabled, m.created_at`
+const managerViewColsRet = `id::text, username::text, role, role_id::text, scoped, totp_enabled, created_at`
+
+func scanManagerView(row interface {
+	Scan(dest ...any) error
+}) (managerView, error) {
 	var v managerView
-	err := db.QueryRow(ctx,
-		`INSERT INTO managers (username, password_hash, role, scoped)
-		 VALUES ($1, $2, $3, $4)
-		 RETURNING id::text, username::text, role, scoped, created_at`,
-		username, hash, role, scoped).
-		Scan(&v.ID, &v.Username, &v.Role, &v.Scoped, &v.CreatedAt)
+	err := row.Scan(&v.ID, &v.Username, &v.Role, &v.RoleID, &v.Scoped, &v.TOTPEnabled, &v.CreatedAt)
 	v.CreatedAt = v.CreatedAt.UTC()
 	return v, err
 }
 
+// insertManager creates a manager assigned to the role named `role` (role text
+// kept for display/back-compat; role_id is the authoritative link).
+func insertManager(ctx context.Context, db *pgxpool.Pool, username, hash, role string, scoped bool) (managerView, error) {
+	return scanManagerView(db.QueryRow(ctx,
+		`INSERT INTO managers (username, password_hash, role, role_id, scoped)
+		 VALUES ($1, $2, $3, (SELECT id FROM roles WHERE name = $3), $4)
+		 RETURNING `+managerViewColsRet,
+		username, hash, role, scoped))
+}
+
 func getManagerView(ctx context.Context, db *pgxpool.Pool, id string) (managerView, error) {
-	var v managerView
-	err := db.QueryRow(ctx,
-		`SELECT id::text, username::text, role, scoped, created_at
-		   FROM managers WHERE id = $1::uuid`, id).
-		Scan(&v.ID, &v.Username, &v.Role, &v.Scoped, &v.CreatedAt)
-	v.CreatedAt = v.CreatedAt.UTC()
-	return v, err
+	return scanManagerView(db.QueryRow(ctx,
+		`SELECT `+managerViewCols+` FROM managers m WHERE m.id = $1::uuid`, id))
 }
 
 func listManagerViews(ctx context.Context, db *pgxpool.Pool) ([]managerView, error) {
 	rows, err := db.Query(ctx,
-		`SELECT id::text, username::text, role, scoped, created_at
-		   FROM managers ORDER BY created_at, id`)
+		`SELECT `+managerViewCols+` FROM managers m ORDER BY m.created_at, m.id`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	out := []managerView{}
 	for rows.Next() {
-		var v managerView
-		if err := rows.Scan(&v.ID, &v.Username, &v.Role, &v.Scoped, &v.CreatedAt); err != nil {
+		v, err := scanManagerView(rows)
+		if err != nil {
 			return nil, err
 		}
-		v.CreatedAt = v.CreatedAt.UTC()
 		out = append(out, v)
 	}
 	return out, rows.Err()
 }
 
-// updateManagerRoleScope updates role and/or scoped, returning the new view.
+// updateManagerRoleScope updates role (by name) and/or scoped, returning the
+// new view. role_id is kept in sync with the role text.
 func updateManagerRoleScope(ctx context.Context, db *pgxpool.Pool, id, role string, scoped bool) (managerView, error) {
-	var v managerView
-	err := db.QueryRow(ctx,
-		`UPDATE managers SET role = $2, scoped = $3 WHERE id = $1::uuid
-		 RETURNING id::text, username::text, role, scoped, created_at`,
-		id, role, scoped).
-		Scan(&v.ID, &v.Username, &v.Role, &v.Scoped, &v.CreatedAt)
-	v.CreatedAt = v.CreatedAt.UTC()
-	return v, err
+	return scanManagerView(db.QueryRow(ctx,
+		`UPDATE managers
+		    SET role = $2, role_id = (SELECT id FROM roles WHERE name = $2), scoped = $3
+		  WHERE id = $1::uuid
+		 RETURNING `+managerViewColsRet,
+		id, role, scoped))
+}
+
+// roleExists reports whether a role with the given name exists.
+func roleExists(ctx context.Context, db *pgxpool.Pool, name string) (bool, error) {
+	var exists bool
+	err := db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM roles WHERE name = $1)`, name).Scan(&exists)
+	return exists, err
 }

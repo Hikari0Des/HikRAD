@@ -97,4 +97,74 @@ describe('LoginPage', () => {
     expect(alert).toHaveTextContent(en.login.error.network)
     expect(screen.queryByTestId('dashboard')).not.toBeInTheDocument()
   })
+
+  it('prompts for a TOTP code on totp_required, then logs in with the code (FR-28.1)', async () => {
+    // First submit → 401 totp_required; second submit (with code) → session.
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse(401, { error: { code: 'totp_required', message: 'code required' } }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse(200, {
+          access_token: 'access-2fa',
+          refresh_token: 'refresh-2fa',
+          manager: { id: 'm1', username: 'admin', role: 'admin' },
+        }),
+      )
+
+    renderLogin()
+    const user = await submitCredentials('admin', 'admin')
+
+    // The code entry step appears.
+    const codeInput = await screen.findByLabelText(en.login.totpCode)
+    await user.type(codeInput, '123456')
+    await user.click(screen.getByRole('button', { name: en.login.verifyCode }))
+
+    expect(await screen.findByTestId('dashboard')).toBeInTheDocument()
+    // The second request carried the code.
+    const [, init] = fetchMock.mock.calls[1] as [string, RequestInit]
+    expect(JSON.parse(init.body as string)).toEqual({
+      username: 'admin',
+      password: 'admin',
+      totp_code: '123456',
+    })
+  })
+
+  it('shows an invalid-code error when the TOTP code is rejected', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse(401, { error: { code: 'totp_required', message: 'code required' } }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse(401, { error: { code: 'totp_required', message: 'bad code' } }),
+      )
+
+    renderLogin()
+    const user = await submitCredentials('admin', 'admin')
+    const codeInput = await screen.findByLabelText(en.login.totpCode)
+    await user.type(codeInput, '000000')
+    await user.click(screen.getByRole('button', { name: en.login.verifyCode }))
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(en.login.error.invalid_totp)
+    expect(screen.queryByTestId('dashboard')).not.toBeInTheDocument()
+  })
+
+  it('drives forced enrolment when 2FA is required but not set up', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse(200, { totp_enrollment_required: true, enrollment_token: 'enroll-tok' }),
+      )
+      // TotpEnroll mounts and requests an enrolment secret.
+      .mockResolvedValueOnce(
+        jsonResponse(200, { otpauth_uri: 'otpauth://totp/x', secret: 'ABCDEF123456' }),
+      )
+
+    renderLogin()
+    await submitCredentials('admin', 'admin')
+
+    expect(await screen.findByText(en.login.enrollRequired)).toBeInTheDocument()
+    // The manual setup key is shown for entry.
+    expect(await screen.findByText('ABCDEF123456')).toBeInTheDocument()
+  })
 })

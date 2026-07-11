@@ -16,11 +16,22 @@ func main() {
 	timeout := flag.Duration("timeout", 5*time.Second, "per-request timeout")
 	rate := flag.Float64("rate", 0, "load mode: requests/sec to sustain (0 = run the smoke suite once and exit)")
 	duration := flag.Duration("duration", 10*time.Second, "duration for -rate load mode and for -mode mndp-announce")
-	mode := flag.String("mode", "smoke", "smoke | mndp-announce | coa-listen")
+	mode := flag.String("mode", "smoke", "smoke | mndp-announce | coa-listen | enforce | seed-session | voucher-login")
 	mndpTarget := flag.String("mndp-target", "255.255.255.255:5678", "mndp-announce: broadcast target host:port")
 	mndpIdentity := flag.String("mndp-identity", "HarnessRouter", "mndp-announce: announced identity")
 	mndpVersion := flag.String("mndp-version", "7.11", "mndp-announce: announced RouterOS version")
 	coaNAK := flag.Bool("coa-nak", false, "coa-listen: reply NAK instead of ACK")
+	// enforce mode (FR-9/FR-10 gate item 4): seed a live session + publish an
+	// enforce.* event, observe the CoA the worker sends back to this mock NAS.
+	redisURL := flag.String("redis", "redis://127.0.0.1:6379/0", "enforce: Redis URL")
+	subID := flag.String("subscriber", "", "enforce: subscriber id to enforce")
+	username := flag.String("username", "testuser", "enforce/voucher-login: username (or voucher code)")
+	nasID := flag.String("nas-id", "", "enforce: NAS id whose coa target is this harness")
+	sessionID := flag.String("session-id", "harness-sess-1", "enforce: seeded Acct-Session-Id")
+	framedIP := flag.String("framed-ip", "10.10.10.10", "enforce: seeded session IP")
+	service := flag.String("service", "pppoe", "enforce/voucher-login: pppoe | hotspot")
+	enforceEvent := flag.String("enforce-event", "quota", "enforce: quota | expired")
+	observe := flag.Duration("observe", 15*time.Second, "enforce: how long to wait for the CoA")
 	flag.Parse()
 
 	switch *mode {
@@ -28,6 +39,27 @@ func main() {
 		os.Exit(runMNDPAnnounce(*mndpTarget, *mndpIdentity, *mndpVersion, *duration))
 	case "coa-listen":
 		os.Exit(runCoAListener(*addr, []byte(*secret), *coaNAK))
+	case "enforce":
+		if *subID == "" || *nasID == "" {
+			fmt.Fprintln(os.Stderr, "enforce mode requires -subscriber and -nas-id")
+			os.Exit(2)
+		}
+		os.Exit(runEnforceScenario(enforceOpts{
+			coaAddr: *addr, coaSecret: []byte(*secret), redisURL: *redisURL,
+			subscriber: *subID, username: *username, nasID: *nasID, sessionID: *sessionID,
+			ip: *framedIP, service: *service, event: *enforceEvent, observe: *observe,
+		}))
+	case "seed-session":
+		if *subID == "" || *nasID == "" {
+			fmt.Fprintln(os.Stderr, "seed-session mode requires -subscriber and -nas-id")
+			os.Exit(2)
+		}
+		os.Exit(runSeedSession(enforceOpts{
+			redisURL: *redisURL, subscriber: *subID, username: *username, nasID: *nasID,
+			sessionID: *sessionID, ip: *framedIP, service: *service,
+		}))
+	case "voucher-login":
+		os.Exit(runVoucherLogin(*addr, []byte(*secret), *username, *nasIP, *timeout))
 	case "smoke":
 		// fall through
 	default:

@@ -64,15 +64,27 @@ func TestScopeFilterOnlyForScoped(t *testing.T) {
 	}
 }
 
-func TestValidRole(t *testing.T) {
-	for _, r := range []string{RoleAdmin, RoleOperator, RoleAgent} {
-		if !validRole(r) {
-			t.Errorf("%s should be valid", r)
-		}
+// TestEffectiveSetOverridesFallback proves the embedded resolved set is
+// authoritative over the builtin-role fallback: a Manager carrying an explicit
+// Perms set is judged solely by it (wildcard grants all), while a Manager with
+// a nil set falls back to the builtin role map (Phase-2 semantics preserved).
+func TestEffectiveSetOverridesFallback(t *testing.T) {
+	// Wildcard set → allow-all regardless of role text.
+	admin := &Manager{Role: "", Perms: map[string]bool{permWildcard: true}}
+	if !admin.Can("anything.invented") {
+		t.Fatal("wildcard set must allow all")
 	}
-	for _, r := range []string{"", "superuser", "Admin"} {
-		if validRole(r) {
-			t.Errorf("%s should be invalid", r)
-		}
+	// Explicit narrow set overrides the (privileged) role text.
+	narrow := &Manager{Role: RoleAdmin, Perms: map[string]bool{"subscribers.view": true}}
+	if narrow.Can("managers.create") {
+		t.Fatal("embedded set must be authoritative over role fallback")
+	}
+	if !narrow.Can("subscribers.view") {
+		t.Fatal("embedded set must grant its own permissions")
+	}
+	// Nil set → builtin-role fallback.
+	op := &Manager{Role: RoleOperator}
+	if !op.Can("subscribers.view") || op.Can("managers.view") {
+		t.Fatal("nil set must fall back to builtin role map")
 	}
 }

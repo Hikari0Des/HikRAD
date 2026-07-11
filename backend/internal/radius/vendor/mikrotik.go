@@ -126,4 +126,35 @@ func (mikrotikAdapter) Snippet(in SnippetInput) (string, error) {
 
 func secs(n int) string { return strconv.Itoa(n) + "s" }
 
+// ComposeRate renders the MikroTik-Rate-Limit string (FR-11). The MikroTik
+// grammar is strictly positional:
+//
+//	rx/tx [rx-burst/tx-burst rx-thr/tx-thr rx-time/tx-time [priority [rx-min/tx-min]]]
+//
+// so burst needs the full rate/threshold/time triple, and priority/min-rate are
+// only valid once burst is present. Segments beyond what the spec provides are
+// omitted (MikroTik defaults them). This is the ONLY place the burst syntax is
+// assembled — the engine and CoA path stay vendor-neutral (FR-17).
+func (mikrotikAdapter) ComposeRate(spec RateSpec) string {
+	if spec.Rate == "" {
+		return ""
+	}
+	parts := []string{spec.Rate}
+	hasBurst := spec.BurstRate != "" && spec.BurstThreshold != "" && spec.BurstTime != ""
+	if hasBurst {
+		parts = append(parts, spec.BurstRate, spec.BurstThreshold, spec.BurstTime)
+		switch {
+		case spec.Priority != "" && spec.MinRate != "":
+			parts = append(parts, spec.Priority, spec.MinRate)
+		case spec.Priority != "":
+			parts = append(parts, spec.Priority)
+		case spec.MinRate != "":
+			// min-rate is positionally after priority, so emit the MikroTik
+			// default priority (8, lowest) to keep the string valid.
+			parts = append(parts, "8", spec.MinRate)
+		}
+	}
+	return strings.Join(parts, " ")
+}
+
 func init() { Register(mikrotikAdapter{}) }

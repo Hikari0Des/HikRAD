@@ -1,6 +1,8 @@
 import { useT } from '@hikrad/shared'
 
 import { GlobalSearch } from '../components/GlobalSearch'
+import { BalanceWidget } from './BalanceWidget'
+import { NotificationBell } from './notifications'
 import { UserMenu } from './UserMenu'
 
 export function TopBar({ onOpenMenu }: { onOpenMenu: () => void }) {
@@ -29,7 +31,9 @@ export function TopBar({ onOpenMenu }: { onOpenMenu: () => void }) {
       </button>
       {/* FR-2 global search: '/' shortcut lives inside the component. */}
       <GlobalSearch />
-      <div className="ms-auto">
+      <div className="ms-auto flex items-center gap-2 sm:gap-3">
+        <BalanceWidget />
+        <NotificationBell />
         <UserMenu />
       </div>
     </header>

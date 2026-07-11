@@ -28,10 +28,25 @@ type Manager struct {
 	SessionID string
 	IP        string
 	UA        string
+	// Perms is the resolved effective permission set from the access token
+	// (FR-27). When nil (a Manager built without a resolved set, e.g. in unit
+	// tests), Can falls back to the builtin role map.
+	Perms map[string]bool
+	// AllowedIPs is the resolved CIDR allowlist from the token (FR-30); empty
+	// means unrestricted.
+	AllowedIPs []string
 }
 
-// Can reports whether the manager holds a permission string (contract C2).
-func (m *Manager) Can(perm string) bool { return roleCan(m.Role, perm) }
+// Can reports whether the manager holds a permission string (contract C2/C7).
+// The embedded resolved set is authoritative when present (wildcard '*' grants
+// all); otherwise it falls back to the builtin role map so a Manager
+// constructed without a resolved set (unit tests) preserves Phase-2 semantics.
+func (m *Manager) Can(perm string) bool {
+	if m.Perms != nil {
+		return m.Perms[permWildcard] || m.Perms[perm]
+	}
+	return roleCan(m.Role, perm)
+}
 
 // ManagerScope is the ownership filter returned by ScopeFilter.
 type ManagerScope struct {
@@ -80,6 +95,13 @@ func Require(perm string) func(http.Handler) http.Handler {
 				return
 			}
 			ctx := withManager(r.Context(), m)
+			// IP allowlist (FR-30): enforced on every request against the set
+			// embedded in the token. Empty list = unrestricted.
+			if !ipAllowed(m.IP, m.AllowedIPs) {
+				_ = Audit(ctx, "auth.ip_denied", "manager", m.ID, nil, ipDeniedDetail{IP: m.IP})
+				httpapi.Error(w, http.StatusForbidden, "ip_not_allowed", "your network is not permitted for this account")
+				return
+			}
 			if perm != "" && !m.Can(perm) {
 				// Denials are audited (AC-27a) with the actor already in ctx.
 				_ = Audit(ctx, "auth.denied", "permission", perm, nil, deniedDetail{Permission: perm, Method: r.Method, Path: r.URL.Path})
@@ -97,6 +119,10 @@ type deniedDetail struct {
 	Path       string `json:"path"`
 }
 
+type ipDeniedDetail struct {
+	IP string `json:"ip"`
+}
+
 // managerFromRequest parses and validates the access token into a Manager.
 func managerFromRequest(r *http.Request) (*Manager, error) {
 	raw, ok := bearerToken(r)
@@ -107,13 +133,19 @@ func managerFromRequest(r *http.Request) (*Manager, error) {
 	if err != nil {
 		return nil, err
 	}
+	perms := make(map[string]bool, len(claims.Perms))
+	for _, p := range claims.Perms {
+		perms[p] = true
+	}
 	return &Manager{
-		ID:        claims.ManagerID,
-		Role:      claims.Role,
-		Scoped:    claims.Scoped,
-		SessionID: claims.SessionID,
-		IP:        clientIP(r),
-		UA:        r.UserAgent(),
+		ID:         claims.ManagerID,
+		Role:       claims.Role,
+		Scoped:     claims.Scoped,
+		SessionID:  claims.SessionID,
+		IP:         clientIP(r),
+		UA:         r.UserAgent(),
+		Perms:      perms,
+		AllowedIPs: claims.AllowedIPs,
 	}, nil
 }
 

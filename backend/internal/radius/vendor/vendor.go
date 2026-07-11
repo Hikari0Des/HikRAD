@@ -29,6 +29,21 @@ type Attr struct {
 	Value  string
 }
 
+// RateSpec is the abstract, vendor-neutral description of a rate limit with
+// optional burst and time-of-day boost segments (FR-11). All rate fields are
+// "rx/tx" pair strings (e.g. "10M/10M"); the adapter renders them into the
+// concrete vendor rate string. Burst requires the full triple
+// (BurstRate+BurstThreshold+BurstTime) to be meaningful; Priority/MinRate are
+// only positionally valid once burst is present.
+type RateSpec struct {
+	Rate           string // base "rx/tx", required
+	BurstRate      string // "rx/tx"
+	BurstThreshold string // "rx/tx"
+	BurstTime      string // "rx/tx" seconds
+	Priority       string // single 1..8 (MikroTik queue priority)
+	MinRate        string // "rx/tx" committed information rate
+}
+
 // SnippetInput is everything the FR-14 config wizard needs to render a NAS's
 // copy-paste bootstrap config.
 type SnippetInput struct {
@@ -53,6 +68,10 @@ type Adapter interface {
 	Apply(p *radius.Packet, attrs []Attr) error
 	// Snippet renders the FR-14 copy-paste NAS config.
 	Snippet(in SnippetInput) (string, error)
+	// ComposeRate renders a RateSpec (base rate + optional burst/priority) into
+	// the concrete vendor rate string used as the rate_limit intent value
+	// (FR-11 burst syntax). An empty base rate yields "".
+	ComposeRate(spec RateSpec) string
 }
 
 var registry = map[string]Adapter{}

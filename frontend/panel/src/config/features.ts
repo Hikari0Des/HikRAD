@@ -4,6 +4,6 @@
  * button, for instance, activates when D delivers FR-19 in Phase 3.
  */
 export const FEATURES = {
-  /** Renew flow (FR-19) — Phase 3. Until then the button shows disabled. */
-  renew: false,
+  /** Renew flow (FR-19) — live since Phase 3 (Agent 5). */
+  renew: true,
 } as const

@@ -57,6 +57,8 @@ export interface RequestOptions {
   body?: unknown
   query?: Record<string, string | number | undefined>
   signal?: AbortSignal
+  /** Extra request headers (e.g. Idempotency-Key on renewal, contract C2). */
+  headers?: Record<string, string>
 }
 
 function buildUrl(path: string, query?: RequestOptions['query']): string {
@@ -86,7 +88,7 @@ function parseEnvelope(status: number, payload: unknown): ApiError {
 }
 
 export async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const headers: Record<string, string> = { Accept: 'application/json' }
+  const headers: Record<string, string> = { Accept: 'application/json', ...options.headers }
   const token = tokenStore.getAccessToken()
   if (token) headers['Authorization'] = `Bearer ${token}`
   if (options.body !== undefined) headers['Content-Type'] = 'application/json'

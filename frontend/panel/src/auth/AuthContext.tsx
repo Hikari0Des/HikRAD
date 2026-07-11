@@ -1,14 +1,24 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
 
-import { login as apiLogin, logout as apiLogout, type Manager } from '../api/auth'
+import {
+  login as apiLogin,
+  logout as apiLogout,
+  type LoginOutcome,
+  type Manager,
+} from '../api/auth'
 import { UNAUTHORIZED_EVENT } from '../api/client'
-import { hasPermission } from './permissions'
+import { decodeTokenPerms, hasPermission, permsHave } from './permissions'
 import { tokenStore } from './tokenStore'
 
 interface AuthContextValue {
   manager: Manager | null
-  login: (username: string, password: string) => Promise<void>
+  /**
+   * Attempt a login. Returns the outcome so the login screen can drive the 2FA
+   * branch (code prompt / forced enrolment). A `session` outcome establishes the
+   * signed-in manager as a side effect.
+   */
+  login: (username: string, password: string, totpCode?: string) => Promise<LoginOutcome>
   logout: () => void
   /** Whether the signed-in manager holds a permission string (contract C2). */
   can: (permission: string) => boolean
@@ -31,11 +41,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const value = useMemo<AuthContextValue>(
     () => ({
       manager,
-      async login(username, password) {
-        const res = await apiLogin(username, password)
-        tokenStore.setTokens(res.access_token, res.refresh_token)
-        tokenStore.setManager(res.manager)
-        setManager(res.manager)
+      async login(username, password, totpCode) {
+        const outcome = await apiLogin(username, password, totpCode)
+        if (outcome.kind === 'session') {
+          const { access_token, refresh_token, manager: mgr } = outcome.response
+          tokenStore.setTokens(access_token, refresh_token)
+          tokenStore.setManager(mgr)
+          setManager(mgr)
+        }
+        return outcome
       },
       logout() {
         // Best-effort server-side revocation, then drop the local session
@@ -44,7 +58,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         tokenStore.clear()
         setManager(null)
       },
-      can: (permission) => hasPermission(manager?.role, permission),
+      // Prefer the effective set the backend embedded in the access token
+      // (DB-backed roles + overrides, C7); fall back to the builtin role matrix
+      // for legacy Phase-2 tokens with no `perms` claim.
+      can(permission) {
+        const perms = decodeTokenPerms(tokenStore.getAccessToken())
+        if (perms) return permsHave(perms, permission)
+        return hasPermission(manager?.role, permission)
+      },
     }),
     [manager],
   )

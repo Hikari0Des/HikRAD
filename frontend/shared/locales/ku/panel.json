@@ -1,5 +1,4 @@
 {
-  "_comment": "Kurdish (Sorani) keys are present per the Phase-1 contract; content intentionally lags behind en/ar during development and is tracked by i18n:check (must be fully translated before the v1 cut). Fallback chain is ku→en, never ku→ar.",
   "login": {
     "title": "Sign in to HikRAD",
     "subtitle": "Manager panel",
@@ -7,8 +6,14 @@
     "password": "Password",
     "submit": "Sign in",
     "submitting": "Signing in…",
+    "totpPrompt": "Enter the 6-digit code from your authenticator app.",
+    "totpCode": "Authenticator code",
+    "verifyCode": "Verify",
+    "enrollRequired": "Two-factor authentication is required for your account. Set it up to continue.",
+    "enrollDone": "Two-factor set up. Sign in with a code from your app.",
     "error": {
       "invalid_credentials": "Wrong username or password.",
+      "invalid_totp": "That code is not valid. Try again.",
       "network": "Can't reach the HikRAD server. Check that it is running and try again.",
       "generic": "Something went wrong. Please try again."
     }
@@ -20,6 +25,21 @@
     "nas": "NAS devices",
     "pools": "IP pools",
     "sessions": "Live sessions",
+    "ledger": "Ledger",
+    "vouchers": "Vouchers",
+    "devices": "Devices",
+    "alerts": "Alerts",
+    "health": "System health",
+    "debug": "RADIUS debug",
+    "managers": "Managers",
+    "roles": "Roles",
+    "auditLog": "Audit log",
+    "account": "My security",
+    "group": {
+      "billing": "Billing",
+      "network": "Network",
+      "admin": "Administration"
+    },
     "comingSoon": "Coming soon",
     "menu": "Open menu",
     "close": "Close menu"
@@ -43,6 +63,20 @@
   },
   "dashboard": {
     "title": "Dashboard",
+    "onlineNow": "Online now",
+    "onlineTrend": "Online (24h trend)",
+    "revenueToday": "Revenue today",
+    "radiusRps": "RADIUS requests",
+    "rps": "req/s",
+    "subsActive": "Active subscribers",
+    "subsExpired": "Expired subscribers",
+    "subsExpiring": "Expiring within 7 days",
+    "pipeline": "Accounting pipeline",
+    "pipelineOk": "Pipeline healthy — no lost records.",
+    "pipelineBroken": "Pipeline invariant broken — investigate immediately.",
+    "queueDepth": "Queue depth {n}",
+    "nasHealth": "NAS health",
+    "noNas": "No NAS devices registered.",
     "empty": {
       "title": "Nothing here yet",
       "body": "Subscriber, profile and live-session screens will appear here."
@@ -93,6 +127,7 @@
     "choose": "Choose…",
     "yes": "Yes",
     "no": "No",
+    "done": "Done",
     "unknown": "Unknown"
   },
   "users": {
@@ -387,6 +422,379 @@
       "extend_expiry": "Extend expiry",
       "move_owner": "Move owner",
       "set_allow_hotspot": "Set Hotspot access"
+    }
+  },
+  "renew": {
+    "title": "Renew {username}",
+    "profile": "Plan",
+    "currentTag": "current",
+    "price": "Amount",
+    "note": "Note (optional)",
+    "confirm": "Renew",
+    "success": "Renewed successfully.",
+    "newExpiry": "New expiry",
+    "charged": "Charged",
+    "coa": "Session update",
+    "receiptNo": "Receipt no.",
+    "printEn": "Print (EN)",
+    "printAr": "Print (AR)",
+    "receiptLangNote": "Receipts print in Arabic or English.",
+    "coaResult": {
+      "restored": "Speed restored — no re-dial needed",
+      "disconnect_fallback": "Disconnected to reconnect at full speed",
+      "not_online": "Not online — applies on next connection",
+      "failed": "Live update failed — disconnect manually"
+    },
+    "error": {
+      "insufficient_balance": "Not enough balance to renew.",
+      "insufficient_balance_hint": "Top up the agent's balance and try again.",
+      "profile_archived": "That plan was archived. The list has been refreshed — pick another plan."
+    }
+  },
+  "notifications": {
+    "title": "Notifications",
+    "empty": "No notifications yet."
+  },
+  "balance": {
+    "mine": "Balance",
+    "low": "Low"
+  },
+  "ledger": {
+    "title": "Ledger",
+    "export": "Export CSV",
+    "empty": "No transactions match.",
+    "refund": "Refund",
+    "reversal": "Reversal",
+    "reversed": "Reversed",
+    "refundTitle": "Refund transaction",
+    "refundConsequence": "Refunding rolls back the subscriber's expiry to before this transaction.",
+    "refundReason": "Reason",
+    "refundDone": "Refund recorded.",
+    "filter": {
+      "type": "Type",
+      "allTypes": "All types",
+      "manager": "Manager",
+      "managerId": "Manager ID",
+      "from": "From",
+      "to": "To"
+    },
+    "type": {
+      "renewal": "Renewal",
+      "topup": "Top-up",
+      "manual_payment": "Manual payment",
+      "voucher_redeem": "Voucher redeem",
+      "refund": "Refund",
+      "adjustment": "Adjustment",
+      "discount": "Discount"
+    },
+    "col": {
+      "at": "Date",
+      "type": "Type",
+      "amount": "Amount",
+      "balance": "Balance",
+      "note": "Note"
+    }
+  },
+  "vouchers": {
+    "title": "Vouchers",
+    "create": "Create batch",
+    "empty": "No voucher batches yet.",
+    "void": "Void",
+    "voided": "Voided {n} unused voucher(s).",
+    "voidTitle": "Void this batch?",
+    "voidBody": "This voids {n} unused voucher(s) and credits them back. Used vouchers are unaffected.",
+    "createTitle": "Create voucher batch",
+    "profile": "Plan",
+    "pickProfile": "Choose a plan…",
+    "count": "Count",
+    "prefix": "Prefix",
+    "expiry": "Expiry",
+    "expiryHint": "Leave blank for no expiry.",
+    "csvNote": "The codes download as a CSV — this is the only time they are shown in the clear.",
+    "createDownload": "Create & download CSV",
+    "created": "Batch {id} created.",
+    "detailTitle": "Voucher batch",
+    "col": {
+      "prefix": "Prefix",
+      "count": "Count",
+      "used": "Used",
+      "unused": "Unused",
+      "price": "Unit price"
+    },
+    "state": {
+      "unused": "Unused",
+      "used": "Used",
+      "void": "Void"
+    },
+    "redeem": "Redeem voucher",
+    "redeemTitle": "Redeem a voucher",
+    "redeemDone": "Voucher redeemed.",
+    "redeemInvalid": "That voucher code is not valid.",
+    "code": "Voucher code"
+  },
+  "managers": {
+    "title": "Managers",
+    "create": "Add manager",
+    "createTitle": "Add manager",
+    "editTitle": "Edit manager",
+    "saved": "Manager saved.",
+    "username": "Username",
+    "role": "Role",
+    "newPassword": "New password",
+    "password": "Password",
+    "passwordEditHint": "Leave blank to keep the current password.",
+    "scopedLabel": "Data-scoped",
+    "scopedHint": "Only sees subscribers they own.",
+    "scoped": "Scoped",
+    "global": "Global",
+    "unlocked": "Manager unlocked.",
+    "totpReset": "Two-factor reset.",
+    "topup": "Top up",
+    "topupTitle": "Top up {name}",
+    "topupAmount": "Amount (IQD)",
+    "topupNote": "Note",
+    "topupDone": "Balance topped up.",
+    "allowlist": "IP allowlist",
+    "unlock": "Unlock",
+    "resetTotp": "Reset 2FA",
+    "col": {
+      "username": "Username",
+      "role": "Role",
+      "scope": "Scope",
+      "twofa": "2FA",
+      "balance": "Balance"
+    }
+  },
+  "allowlist": {
+    "title": "IP allowlist — {name}",
+    "warning": "An empty list allows any network. A non-empty list restricts logins — make sure your own network is included, or you may be locked out.",
+    "emptyMeansAny": "No entries — logins are allowed from any network.",
+    "cidrPlaceholder": "e.g. 192.168.1.0/24",
+    "notePlaceholder": "Note",
+    "add": "Add entry",
+    "saved": "Allowlist saved."
+  },
+  "roles": {
+    "moduleCol": "Module",
+    "permsCol": "Permissions",
+    "title": "Roles",
+    "subtitle": "Roles group the permissions a manager holds.",
+    "create": "Create role",
+    "builtin": "Built-in",
+    "memberCount": "{n} member(s)",
+    "permCount": "{n} permission(s)",
+    "requires2fa": "Requires 2FA",
+    "deleted": "Role deleted.",
+    "deleteTitle": "Delete this role?",
+    "deleteBody": "Delete role {name}? Managers must be reassigned first.",
+    "editTitle": "Edit role",
+    "createTitle": "Create role",
+    "name": "Name",
+    "description": "Description",
+    "require2faLabel": "Require two-factor for this role",
+    "permissions": "Permissions",
+    "saved": "Role saved.",
+    "module": {
+      "subscribers": "Subscribers",
+      "profiles": "Profiles",
+      "nas": "NAS",
+      "pools": "IP pools",
+      "billing": "Billing",
+      "vouchers": "Vouchers",
+      "monitoring": "Monitoring",
+      "reports": "Reports",
+      "settings": "Settings",
+      "managers": "Managers",
+      "live": "Live",
+      "audit": "Audit",
+      "actions": "Actions"
+    },
+    "verb": {
+      "view": "View",
+      "create": "Create",
+      "edit": "Edit",
+      "delete": "Delete",
+      "renew": "Renew",
+      "disconnect": "Disconnect",
+      "topup": "Top up",
+      "export": "Export"
+    }
+  },
+  "auditlog": {
+    "title": "Audit log",
+    "export": "Export CSV",
+    "empty": "No audit entries match.",
+    "before": "Before",
+    "after": "After",
+    "filter": {
+      "action": "Action",
+      "entity": "Entity type"
+    },
+    "summary": {
+      "generic": "{action} on {entity}"
+    }
+  },
+  "account": {
+    "title": "My security",
+    "twofaTitle": "Two-factor authentication",
+    "twofaHint": "Protect your account with an authenticator app.",
+    "enableTwofa": "Enable two-factor",
+    "sessionsTitle": "Active sessions",
+    "sessionRevoked": "Session revoked.",
+    "unknownDevice": "Unknown device",
+    "thisDevice": "This device",
+    "revoke": "Revoke"
+  },
+  "totp": {
+    "error": {
+      "invalidCode": "That code is not valid. Try again."
+    },
+    "enrolled": "Two-factor authentication is on.",
+    "backupTitle": "Backup codes",
+    "backupHint": "Store these somewhere safe — each works once if you lose your device.",
+    "downloadBackup": "Download codes",
+    "manualKey": "Setup key",
+    "manualKeyHint": "Enter this key in your authenticator app (Google Authenticator, Authy, …).",
+    "showUri": "Show setup URI",
+    "enterCode": "Enter the code from your app",
+    "verify": "Verify & enable"
+  },
+  "monitoring": {
+    "status": {
+      "up": "Up",
+      "down": "Down",
+      "degraded": "Degraded",
+      "unknown": "Unknown"
+    },
+    "ms": "{n} ms",
+    "latency": "Latency",
+    "noData": "Not enough data yet.",
+    "latencyPeak": "Peak {n} ms",
+    "downtimeLog": "Downtime log",
+    "noDowntime": "No downtime recorded.",
+    "ongoing": "ongoing",
+    "durationS": "{n}s"
+  },
+  "devices": {
+    "title": "Monitored devices",
+    "subtitle": "APs, switches and other devices to ping/SNMP — separate from RADIUS NAS.",
+    "create": "Add device",
+    "empty": "No monitored devices yet.",
+    "deleted": "Device deleted.",
+    "deleteTitle": "Delete this device?",
+    "deleteBody": "Stop monitoring {name}?",
+    "saved": "Device saved.",
+    "editTitle": "Edit device",
+    "createTitle": "Add device",
+    "name": "Name",
+    "ip": "IP address",
+    "deviceType": "Type",
+    "location": "Location",
+    "snmp": "SNMP community",
+    "snmpHint": "Optional — enables SNMP metrics.",
+    "enabled": "Enabled",
+    "type": {
+      "ap": "Access point",
+      "switch": "Switch",
+      "router": "Router",
+      "server": "Server",
+      "other": "Other"
+    }
+  },
+  "health": {
+    "title": "System health",
+    "api": "API",
+    "db": "Database",
+    "redis": "Redis",
+    "freeradius": "FreeRADIUS",
+    "up": "Up",
+    "down": "Down",
+    "pipelineTitle": "Accounting pipeline",
+    "invariantOk": "Counter invariant holds — no records lost",
+    "invariantBroken": "Counter invariant broken — records may be lost",
+    "queueDepth": "Queue depth",
+    "drainRate": "Drain rate",
+    "enforceFailures": "Enforcement failures",
+    "diskTitle": "Disk usage",
+    "usedPercent": "{n}% used",
+    "freeGb": "{n} GB free"
+  },
+  "alerts": {
+    "title": "Alerts",
+    "create": "Create rule",
+    "empty": "No alert rules yet.",
+    "disabled": "Disabled",
+    "tabRules": "Rules",
+    "tabEvents": "Events",
+    "noEvents": "No alert events yet.",
+    "saved": "Rule saved.",
+    "editTitle": "Edit alert rule",
+    "createTitle": "Create alert rule",
+    "name": "Name",
+    "ruleType": "Trigger",
+    "threshold": "Threshold",
+    "channels": "Channels",
+    "whatsappRecipients": "WhatsApp numbers",
+    "telegramRecipients": "Telegram chat IDs",
+    "emailRecipients": "Email addresses",
+    "recipientsHint": "Comma-separated.",
+    "quietStart": "Quiet hours start",
+    "quietEnd": "Quiet hours end",
+    "enabledLabel": "Enabled",
+    "type": {
+      "nas_down": "NAS down",
+      "nas_up": "NAS recovered",
+      "device_down": "Device down",
+      "device_up": "Device recovered",
+      "radius_reject_spike": "RADIUS reject spike",
+      "acct_backlog": "Accounting backlog",
+      "disk_low": "Low disk space",
+      "expiring_digest": "Expiring subscribers digest",
+      "agent_balance_low": "Agent balance low"
+    },
+    "channel": {
+      "inapp": "In-app",
+      "telegram": "Telegram",
+      "email": "Email",
+      "whatsapp": "WhatsApp"
+    },
+    "thresholdHint": {
+      "radius_reject_spike": "Rejects per minute before alerting.",
+      "acct_backlog": "Queue depth before alerting.",
+      "disk_low": "Percent used before alerting.",
+      "agent_balance_low": "Balance (IQD) before alerting."
+    }
+  },
+  "debug": {
+    "title": "RADIUS debug",
+    "subtitle": "Live authorize decisions — filter to a user or NAS to troubleshoot.",
+    "filterUser": "Username",
+    "filterNas": "NAS IP",
+    "apply": "Apply",
+    "resume": "Resume",
+    "pause": "Pause",
+    "clear": "Clear",
+    "waiting": "Waiting for authorize decisions…",
+    "col": {
+      "at": "Time",
+      "user": "User",
+      "nas": "NAS",
+      "outcome": "Outcome",
+      "reason": "Reason"
+    },
+    "outcome": {
+      "accept": "Accept",
+      "reject": "Reject"
+    },
+    "reason": {
+      "ok": "OK",
+      "no_such_user": "No such user",
+      "wrong_password": "Wrong password",
+      "expired": "Expired",
+      "mac_mismatch": "MAC mismatch",
+      "session_limit": "Session limit reached",
+      "quota_exhausted": "Quota exhausted",
+      "disabled": "Disabled"
     }
   }
 }

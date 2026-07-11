@@ -26,19 +26,29 @@ const (
 	// tokenTypeAccess matches httpapi's stub token type value so any consumer
 	// still keyed on "access" keeps working.
 	tokenTypeAccess = "access"
+	// tokenTypeEnroll is a limited grant issued when login succeeds but 2FA
+	// enrolment is required (FR-28.1): it authorizes only the TOTP enroll/verify
+	// endpoints, nothing else.
+	tokenTypeEnroll = "enroll"
 
-	accessTTL        = 5 * time.Minute // FR-29: revocation SLA ≤ one access lifetime
+	accessTTL        = 5 * time.Minute  // FR-29: revocation SLA ≤ one access lifetime
+	enrollTTL        = 10 * time.Minute // window to complete forced enrolment
 	refreshSecretLen = 32
 )
 
 var errBadToken = errors.New("auth: invalid token")
 
 // accessClaims is what an access token carries beyond the registered claims.
+// Perms is the manager's fully-resolved effective permission set (FR-27) and
+// AllowedIPs the resolved CIDR allowlist (FR-30); both are embedded at
+// login/refresh so authorization and allowlist enforcement need no DB round-trip.
 type accessClaims struct {
-	ManagerID string
-	Role      string
-	Scoped    bool
-	SessionID string
+	ManagerID  string
+	Role       string
+	Scoped     bool
+	SessionID  string
+	Perms      []string
+	AllowedIPs []string
 }
 
 type tokenService struct {
@@ -54,11 +64,47 @@ func (t *tokenService) issueAccess(c accessClaims, now time.Time) (string, error
 		"role":   c.Role,
 		"scoped": c.Scoped,
 		"sid":    c.SessionID,
+		"perms":  c.Perms,
+		"ips":    c.AllowedIPs,
 		"typ":    tokenTypeAccess,
 		"iat":    now.Unix(),
 		"exp":    now.Add(accessTTL).Unix(),
 	})
 	return tok.SignedString(t.secret)
+}
+
+// issueEnroll signs a limited enrolment-grant JWT (FR-28.1). It carries only
+// the manager id and is accepted solely by the TOTP enroll/verify endpoints.
+func (t *tokenService) issueEnroll(managerID string, now time.Time) (string, error) {
+	tok := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"sub": managerID,
+		"typ": tokenTypeEnroll,
+		"iat": now.Unix(),
+		"exp": now.Add(enrollTTL).Unix(),
+	})
+	return tok.SignedString(t.secret)
+}
+
+// parseEnroll validates an enrolment-grant token and returns the manager id.
+func (t *tokenService) parseEnroll(raw string) (string, error) {
+	claims := jwt.MapClaims{}
+	_, err := jwt.ParseWithClaims(raw, claims, func(tok *jwt.Token) (any, error) {
+		if _, ok := tok.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method %v", tok.Header["alg"])
+		}
+		return t.secret, nil
+	}, jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Name}), jwt.WithExpirationRequired())
+	if err != nil {
+		return "", err
+	}
+	if typ, _ := claims["typ"].(string); typ != tokenTypeEnroll {
+		return "", errBadToken
+	}
+	sub, _ := claims["sub"].(string)
+	if sub == "" {
+		return "", errBadToken
+	}
+	return sub, nil
 }
 
 // parseAccess validates signature, method, expiry and type, returning the
@@ -84,7 +130,29 @@ func (t *tokenService) parseAccess(raw string) (accessClaims, error) {
 	role, _ := claims["role"].(string)
 	scoped, _ := claims["scoped"].(bool)
 	sid, _ := claims["sid"].(string)
-	return accessClaims{ManagerID: sub, Role: role, Scoped: scoped, SessionID: sid}, nil
+	return accessClaims{
+		ManagerID:  sub,
+		Role:       role,
+		Scoped:     scoped,
+		SessionID:  sid,
+		Perms:      stringSlice(claims["perms"]),
+		AllowedIPs: stringSlice(claims["ips"]),
+	}, nil
+}
+
+// stringSlice coerces a JWT array claim (decoded as []any) to []string.
+func stringSlice(v any) []string {
+	arr, ok := v.([]any)
+	if !ok {
+		return nil
+	}
+	out := make([]string, 0, len(arr))
+	for _, e := range arr {
+		if s, ok := e.(string); ok {
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 // newRefreshSecret generates a fresh refresh secret and its stored hash.

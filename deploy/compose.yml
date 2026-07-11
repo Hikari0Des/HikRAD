@@ -183,22 +183,39 @@ services:
       resources:
         limits:
           memory: 1024M
-  #
-  # hikrad-monitor:
-  #   build:
-  #     context: ..
-  #     dockerfile: deploy/docker/monitor.Dockerfile
-  #   restart: unless-stopped
-  #   environment:
-  #     HIKRAD_DB_URL: ${HIKRAD_DB_URL}
-  #     HIKRAD_REDIS_URL: ${HIKRAD_REDIS_URL:-redis://redis:6379/0}
-  #     HIKRAD_ENV: ${HIKRAD_ENV:-prod}
-  #   depends_on:
-  #     postgres:
-  #       condition: service_healthy
-  #     redis:
-  #       condition: service_healthy
-  #   deploy:
-  #     resources:
-  #       limits:
-  #         memory: 512M
+
+  # ---------------------------------------------------------------------------
+  # Phase 3 (Agent 3) — monitoring service (FR-32/34/35/36/60). Runs the
+  # ICMP/SNMP probe engine + up/down state machine, the alerts engine, the
+  # self-checks and the dashboard sampler. The read/CRUD HTTP surface for all of
+  # it is served by hikrad-api (the internal/monitorsvc module); this container
+  # owns only the background loops, so it publishes no ports.
+  # ---------------------------------------------------------------------------
+  hikrad-monitor:
+    build:
+      context: ..
+      dockerfile: deploy/docker/monitor.Dockerfile
+    restart: unless-stopped
+    # NET_RAW lets the container's ping issue ICMP echoes for reachability probes
+    # without running as root.
+    cap_add:
+      - NET_RAW
+    environment:
+      HIKRAD_DB_URL: ${HIKRAD_DB_URL:?generate with scripts/gen-env.sh}
+      HIKRAD_REDIS_URL: ${HIKRAD_REDIS_URL:-redis://redis:6379/0}
+      # SNMP community decryption (optional; ICMP-only without it).
+      HIKRAD_ENCRYPTION_KEY: ${HIKRAD_ENCRYPTION_KEY:?generate with scripts/gen-env.sh}
+      HIKRAD_ENV: ${HIKRAD_ENV:-prod}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      # Wait for the API so the schema (monitoring migrations) is applied before
+      # the probe/condition loops touch it.
+      hikrad-api:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 512M

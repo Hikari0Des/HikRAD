@@ -32,15 +32,23 @@ type Profile struct {
 	QuotaBehavior       string  `json:"quota_behavior"`
 	HotspotRateDownKbps *int    `json:"hotspot_rate_down_kbps"`
 	HotspotRateUpKbps   *int    `json:"hotspot_rate_up_kbps"`
-	Archived            bool    `json:"archived"`
-	CreatedAt           string  `json:"created_at"`
-	UpdatedAt           string  `json:"updated_at"`
+	// Burst/priority segments (FR-11): abstract "rx/tx" intents surfaced to B via
+	// the AuthView and rendered to VSAs only by B's vendor adapter (FR-17).
+	BurstRate      *string `json:"burst_rate"`
+	BurstThreshold *string `json:"burst_threshold"`
+	BurstTime      *string `json:"burst_time"`
+	RatePriority   *string `json:"rate_priority"`
+	MinRate        *string `json:"min_rate"`
+	Archived       bool    `json:"archived"`
+	CreatedAt      string  `json:"created_at"`
+	UpdatedAt      string  `json:"updated_at"`
 }
 
 const profileColumns = `id::text, name, price_iqd, duration_days, rate_down_kbps, rate_up_kbps,
 	pool_id::text, session_limit_default, quota_mode, quota_total_bytes, quota_down_bytes,
 	quota_up_bytes, throttle_rate, expiry_behavior, quota_behavior,
-	hotspot_rate_down_kbps, hotspot_rate_up_kbps, archived,
+	hotspot_rate_down_kbps, hotspot_rate_up_kbps,
+	burst_rate, burst_threshold, burst_time, rate_priority, min_rate, archived,
 	to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
 	to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')`
 
@@ -49,7 +57,9 @@ func scanProfile(row pgx.Row) (Profile, error) {
 	err := row.Scan(&p.ID, &p.Name, &p.PriceIQD, &p.DurationDays, &p.RateDownKbps, &p.RateUpKbps,
 		&p.PoolID, &p.SessionLimitDefault, &p.QuotaMode, &p.QuotaTotalBytes, &p.QuotaDownBytes,
 		&p.QuotaUpBytes, &p.ThrottleRate, &p.ExpiryBehavior, &p.QuotaBehavior,
-		&p.HotspotRateDownKbps, &p.HotspotRateUpKbps, &p.Archived, &p.CreatedAt, &p.UpdatedAt)
+		&p.HotspotRateDownKbps, &p.HotspotRateUpKbps,
+		&p.BurstRate, &p.BurstThreshold, &p.BurstTime, &p.RatePriority, &p.MinRate,
+		&p.Archived, &p.CreatedAt, &p.UpdatedAt)
 	return p, err
 }
 
@@ -88,13 +98,15 @@ func insertProfile(ctx context.Context, db *pgxpool.Pool, in profileInput) (Prof
 		   (name, price_iqd, duration_days, rate_down_kbps, rate_up_kbps, pool_id,
 		    session_limit_default, quota_mode, quota_total_bytes, quota_down_bytes,
 		    quota_up_bytes, throttle_rate, expiry_behavior, quota_behavior,
-		    hotspot_rate_down_kbps, hotspot_rate_up_kbps)
-		 VALUES ($1,$2,$3,$4,$5,$6::uuid,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+		    hotspot_rate_down_kbps, hotspot_rate_up_kbps,
+		    burst_rate, burst_threshold, burst_time, rate_priority, min_rate)
+		 VALUES ($1,$2,$3,$4,$5,$6::uuid,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
 		 RETURNING `+profileColumns,
 		in.Name, in.PriceIQD, in.DurationDays, in.RateDownKbps, in.RateUpKbps, in.PoolID,
 		in.SessionLimitDefault, in.QuotaMode, in.QuotaTotalBytes, in.QuotaDownBytes,
 		in.QuotaUpBytes, in.ThrottleRate, in.ExpiryBehavior, in.QuotaBehavior,
-		in.HotspotRateDownKbps, in.HotspotRateUpKbps))
+		in.HotspotRateDownKbps, in.HotspotRateUpKbps,
+		in.BurstRate, in.BurstThreshold, in.BurstTime, in.RatePriority, in.MinRate))
 }
 
 func updateProfile(ctx context.Context, db *pgxpool.Pool, id string, in profileInput) (Profile, error) {
@@ -104,13 +116,15 @@ func updateProfile(ctx context.Context, db *pgxpool.Pool, id string, in profileI
 		    pool_id=$7::uuid, session_limit_default=$8, quota_mode=$9, quota_total_bytes=$10,
 		    quota_down_bytes=$11, quota_up_bytes=$12, throttle_rate=$13, expiry_behavior=$14,
 		    quota_behavior=$15, hotspot_rate_down_kbps=$16, hotspot_rate_up_kbps=$17,
+		    burst_rate=$19, burst_threshold=$20, burst_time=$21, rate_priority=$22, min_rate=$23,
 		    archived=$18
 		  WHERE id=$1::uuid
 		 RETURNING `+profileColumns,
 		id, in.Name, in.PriceIQD, in.DurationDays, in.RateDownKbps, in.RateUpKbps, in.PoolID,
 		in.SessionLimitDefault, in.QuotaMode, in.QuotaTotalBytes, in.QuotaDownBytes,
 		in.QuotaUpBytes, in.ThrottleRate, in.ExpiryBehavior, in.QuotaBehavior,
-		in.HotspotRateDownKbps, in.HotspotRateUpKbps, in.Archived))
+		in.HotspotRateDownKbps, in.HotspotRateUpKbps, in.Archived,
+		in.BurstRate, in.BurstThreshold, in.BurstTime, in.RatePriority, in.MinRate))
 }
 
 func archiveProfile(ctx context.Context, db *pgxpool.Pool, id string) (Profile, error) {

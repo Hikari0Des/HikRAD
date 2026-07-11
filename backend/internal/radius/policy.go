@@ -10,6 +10,8 @@ import (
 	"context"
 	"crypto/subtle"
 	"strings"
+
+	"github.com/hikrad/hikrad/internal/radius/vendor"
 )
 
 // outcomeMode selects the reply-attribute set once the gating checks pass.
@@ -46,10 +48,27 @@ func (e *engine) decide(ctx context.Context, req authorizeRequest) (authorizeRes
 	e.markSeen(ctx, req.NasIP)
 	ev.Checks = append(ev.Checks, "nas")
 
+	hotspot := req.Service == "hotspot"
+
 	// 2. Resolve the read-model (needed by the service check below).
 	view, found, err := e.resolveView(ctx, req.Username)
 	if err != nil {
 		return authorizeResponse{}, err
+	}
+	// 2b. Hotspot voucher login (FR-18): the voucher code is posted as the
+	// username. When it isn't a normal subscriber, try redeeming it as a voucher
+	// via D's seam; success authorizes the session (the voucher is the
+	// credential, so the password check is skipped).
+	voucherAuthed := false
+	if !found && hotspot {
+		vview, ok, verr := e.tryVoucher(ctx, req.Username)
+		if verr != nil {
+			return authorizeResponse{}, verr
+		}
+		if ok {
+			view, found, voucherAuthed = vview, true, true
+			ev.Checks = append(ev.Checks, "voucher")
+		}
 	}
 	if !found {
 		return e.reject(ctx, ev, ReasonUnknownUser), nil
@@ -57,20 +76,23 @@ func (e *engine) decide(ctx context.Context, req authorizeRequest) (authorizeRes
 	ev.Checks = append(ev.Checks, "user")
 
 	// 3. Service check (FR-58): a Hotspot login for a PPPoE subscriber is
-	// allowed only when the subscriber opts into Hotspot.
-	hotspot := req.Service == "hotspot"
-	if hotspot && !view.AllowHotspot {
+	// allowed only when the subscriber opts into Hotspot. A redeemed voucher is
+	// inherently a Hotspot credential, so it bypasses this gate.
+	if hotspot && !voucherAuthed && !view.AllowHotspot {
 		return e.reject(ctx, ev, ReasonServiceNotAllowed), nil
 	}
 	ev.Checks = append(ev.Checks, "service")
 
-	// 4. Credentials — decryption happens ONLY here (NFR-4.2).
-	plaintext, err := e.decrypt(view.PasswordEnc)
-	if err != nil {
-		return authorizeResponse{}, err
-	}
-	if !credentialsOK(string(plaintext), req) {
-		return e.reject(ctx, ev, ReasonBadPassword), nil
+	// 4. Credentials — decryption happens ONLY here (NFR-4.2). Skipped for a
+	// voucher login, which redemption already authenticated.
+	if !voucherAuthed {
+		plaintext, err := e.decrypt(view.PasswordEnc)
+		if err != nil {
+			return authorizeResponse{}, err
+		}
+		if !credentialsOK(string(plaintext), req) {
+			return e.reject(ctx, ev, ReasonBadPassword), nil
+		}
 	}
 	ev.Checks = append(ev.Checks, "credentials")
 
@@ -209,7 +231,10 @@ func (e *engine) replyIntents(view AuthView, hotspot bool, mode outcomeMode) []a
 		if hotspot && view.HotspotRateLimit != "" {
 			rate = view.HotspotRateLimit
 		}
-		add(IntentRateLimit, rate)
+		// Full-speed reply carries the profile's burst segments (FR-11); the
+		// vendor adapter renders the concrete rate string so no burst syntax
+		// leaks into the engine (FR-17). Non-empty burst fields only.
+		add(IntentRateLimit, composeRate(view, rate))
 	}
 
 	// Address assignment (normal/throttled). Static IP takes precedence.
@@ -219,6 +244,28 @@ func (e *engine) replyIntents(view AuthView, hotspot bool, mode outcomeMode) []a
 		add(IntentAddressPool, view.PoolName)
 	}
 	return attrs
+}
+
+// composeRate renders base (an abstract "rx/tx" rate) plus the view's optional
+// burst segments (FR-11) into the rate string carried by the rate_limit intent.
+// The MikroTik adapter owns the burst syntax (FR-17); when no burst fields are
+// set it returns base unchanged.
+func composeRate(view AuthView, base string) string {
+	if base == "" {
+		return ""
+	}
+	if view.BurstRate == "" && view.BurstThreshold == "" && view.BurstTime == "" &&
+		view.RatePriority == "" && view.MinRate == "" {
+		return base
+	}
+	return vendor.For("mikrotik").ComposeRate(vendor.RateSpec{
+		Rate:           base,
+		BurstRate:      view.BurstRate,
+		BurstThreshold: view.BurstThreshold,
+		BurstTime:      view.BurstTime,
+		Priority:       view.RatePriority,
+		MinRate:        view.MinRate,
+	})
 }
 
 // reject records the rejected attempt and returns the C4 reject response.

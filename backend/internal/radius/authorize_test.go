@@ -150,6 +150,21 @@ func TestPAPAcceptAndRate(t *testing.T) {
 	}
 }
 
+func TestPAPAcceptWithBurst(t *testing.T) {
+	env := newTestEnv(t, "10.0.0.1")
+	v := baseView("s1", "secret")
+	v.BurstRate = "20M/20M"
+	v.BurstThreshold = "15M/15M"
+	v.BurstTime = "16/16"
+	env.add("u", v)
+	resp := mustDecide(t, env, papReq("u", "secret"))
+	assertAccept(t, resp)
+	// The engine composed the MikroTik burst string via the vendor adapter.
+	if got := attrMap(resp)[string(IntentRateLimit)]; got != "10M/10M 20M/20M 15M/15M 16/16" {
+		t.Fatalf("burst rate = %q", got)
+	}
+}
+
 func TestPAPBadPassword(t *testing.T) {
 	env := newTestEnv(t, "10.0.0.1")
 	env.add("u", baseView("s1", "secret"))

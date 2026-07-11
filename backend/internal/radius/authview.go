@@ -51,6 +51,17 @@ type AuthView struct {
 	// nothing else in AuthView carries the address. Flagged as a required C4
 	// amendment for D to populate; defaults empty so it is backward-compatible.
 	StaticIP string `json:"static_ip"`
+	// Burst rate fields (FR-11): abstract "rx/tx" pairs D populates from the
+	// profile's burst columns (0200s). They apply only to the normal/full-speed
+	// reply; the vendor adapter renders them into the concrete rate string
+	// (ComposeRate) so no burst syntax leaks into this package (FR-17). All
+	// default empty → the base RateLimit is emitted unchanged (backward-compatible
+	// C4 extension, mirrors StaticIP above).
+	BurstRate      string `json:"burst_rate"`
+	BurstThreshold string `json:"burst_threshold"`
+	BurstTime      string `json:"burst_time"`
+	RatePriority   string `json:"rate_priority"`
+	MinRate        string `json:"min_rate"`
 }
 
 // PolicyProvider is D's C4 read-model, injected into the authorize path.

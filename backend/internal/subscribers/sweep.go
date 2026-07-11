@@ -14,6 +14,10 @@ import (
 	"github.com/hikrad/hikrad/internal/radius"
 )
 
+// chanEnforceExpired is the frozen C4 channel B's enforcement worker consumes to
+// throttle/move-pool/disconnect a subscriber whose paid time just lapsed.
+const chanEnforceExpired = "enforce.expired"
+
 func (m *Module) runSweep(ctx context.Context) {
 	ticker := time.NewTicker(sweepInterval)
 	defer ticker.Stop()
@@ -47,24 +51,34 @@ func (m *Module) sweepOnce(ctx context.Context) (int, error) {
 		         (status <> 'expired' AND expires_at IS NOT NULL AND expires_at <= now())
 		      OR (status =  'expired' AND (expires_at IS NULL OR expires_at > now()))
 		    )
-		 RETURNING id::text`)
+		 RETURNING id::text, status`)
 	if err != nil {
 		return 0, err
 	}
 	defer rows.Close()
-	var ids []string
+	type flip struct {
+		id      string
+		expired bool
+	}
+	var flips []flip
 	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
+		var id, status string
+		if err := rows.Scan(&id, &status); err != nil {
 			return 0, err
 		}
-		ids = append(ids, id)
+		flips = append(flips, flip{id: id, expired: status == "expired"})
 	}
 	if err := rows.Err(); err != nil {
 		return 0, err
 	}
-	for _, id := range ids {
-		_ = radius.InvalidatePolicy(id)
+	for _, f := range flips {
+		_ = radius.InvalidatePolicy(f.id)
+		// Publish enforce.expired (C4) for rows that just lapsed so B's enforcement
+		// worker moves online sessions to the expired pool / disconnects within one
+		// cycle. Best-effort: a publish failure never blocks the status alignment.
+		if f.expired && m.rdb != nil {
+			_ = m.rdb.Publish(ctx, chanEnforceExpired, f.id).Err()
+		}
 	}
-	return len(ids), nil
+	return len(flips), nil
 }

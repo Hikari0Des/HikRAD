@@ -54,6 +54,13 @@ func (p *policyProvider) GetAuthView(ctx context.Context, username string) (radi
 		staticIP     *string
 		poolName     *string
 		expiredPool  *string
+		// Burst/priority segments (FR-11): abstract rx/tx intents D populates from
+		// the profile's 0203 burst columns; B's vendor adapter renders the VSAs.
+		burstRate    *string
+		burstThresh  *string
+		burstTime    *string
+		ratePriority *string
+		minRate      *string
 	)
 	err := p.db.QueryRow(ctx,
 		`SELECT s.id::text, s.password_enc, s.status, s.expires_at,
@@ -63,7 +70,8 @@ func (p *policyProvider) GetAuthView(ctx context.Context, username string) (radi
 		        s.session_limit_override, s.rate_override, s.mac_lock_mode, s.learned_mac,
 		        host(s.static_ip), s.allow_hotspot,
 		        (SELECT name FROM ip_pools WHERE id = p.pool_id),
-		        (SELECT name FROM ip_pools WHERE purpose = 'expired' ORDER BY name LIMIT 1)
+		        (SELECT name FROM ip_pools WHERE purpose = 'expired' ORDER BY name LIMIT 1),
+		        p.burst_rate, p.burst_threshold, p.burst_time, p.rate_priority, p.min_rate
 		   FROM subscribers s
 		   LEFT JOIN profiles p ON p.id = s.profile_id
 		  WHERE s.username = $1`, username).Scan(
@@ -71,7 +79,8 @@ func (p *policyProvider) GetAuthView(ctx context.Context, username string) (radi
 		&expiryBeh, &quotaBeh, &rateDown, &rateUp,
 		&throttle, &sessDefault, &hsDown, &hsUp,
 		&sessOverride, &rateOverride, &v.MacLockMode, &learnedMac,
-		&staticIP, &v.AllowHotspot, &poolName, &expiredPool)
+		&staticIP, &v.AllowHotspot, &poolName, &expiredPool,
+		&burstRate, &burstThresh, &burstTime, &ratePriority, &minRate)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return radius.AuthView{}, radius.ErrNoSubscriber
 	}
@@ -89,6 +98,11 @@ func (p *policyProvider) GetAuthView(ctx context.Context, username string) (radi
 	v.ExpiredPoolName = strOr(expiredPool, "")
 	v.LearnedMac = strOr(learnedMac, "")
 	v.StaticIP = strOr(staticIP, "")
+	v.BurstRate = strOr(burstRate, "")
+	v.BurstThreshold = strOr(burstThresh, "")
+	v.BurstTime = strOr(burstTime, "")
+	v.RatePriority = strOr(ratePriority, "")
+	v.MinRate = strOr(minRate, "")
 
 	// Session limit: per-user override else profile default else 1.
 	switch {

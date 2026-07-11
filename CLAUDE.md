@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 HikRAD is a commercial RADIUS AAA + billing platform for Iraqi ISPs (a Snono SAS4 alternative), sold as a one-time license and installed on-premise via Docker. Its differentiator is monitoring: real-time session visibility and a **lossless accounting pipeline** — "never lose an Accounting-Request" is the core product claim (success metric M2) and drives most architectural decisions.
 
-**Current state: Phases 1 and 2 of the execution plan are complete** (Compose stack, real RADIUS policy engine, manager auth, subscribers/profiles, lossless accounting pipeline, live sessions, panel screens for all of the above). Phase 3 (billing/ledger, roles/2FA, alerts, dashboard) is next. Multiple agents may be working in this repo concurrently on different phases/domains — check `git status` before editing near a path-ownership boundary (see below).
+**Current state: Phases 1, 2 and 3 of the execution plan are complete** (Compose stack, real RADIUS policy engine, manager auth, subscribers/profiles, lossless accounting pipeline, live sessions, panel screens for all of the above; billing/ledger with renewals+vouchers+receipts+refunds, roles/2FA/audit, runtime enforcement, NAS/device monitoring + alerts, dashboard). Phase 3 integration gate passed 2026-07-11 (`docs/phases/phase-3-billing-security-monitoring/gate-result.md`) — GREEN, 8/8 gate items PASS. Phase 4 (portal, e-wallet, WhatsApp subscriber messaging) is next. Multiple agents may be working in this repo concurrently on different phases/domains — check `git status` before editing near a path-ownership boundary (see below).
 
 ## Document hierarchy (order of truth)
 

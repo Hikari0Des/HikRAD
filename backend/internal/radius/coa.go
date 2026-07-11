@@ -135,6 +135,11 @@ type coaAuditDetail struct {
 	Error         string `json:"error,omitempty"`
 }
 
+// auditCoA writes the audit entry on a context detached from ctx's deadline:
+// a caller retrying a CoA exchange across several attempts (e.g. the
+// enforcement worker's fixed per-cycle budget, FR-9/FR-10) can have already
+// burned that deadline by the time a later attempt's result is ready to
+// audit, which would otherwise drop the entry silently.
 func auditCoA(ctx context.Context, action string, ref SessionRef, param string, res CoAResult) {
 	d := coaAuditDetail{
 		NASID: ref.NASID, AcctSessionID: ref.AcctSessionID, Username: ref.Username,
@@ -143,7 +148,9 @@ func auditCoA(ctx context.Context, action string, ref SessionRef, param string, 
 	if res.Err != nil {
 		d.Error = res.Err.Error()
 	}
-	_ = auth.Audit(ctx, action, "session", ref.AcctSessionID, nil, d)
+	actx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	_ = auth.Audit(actx, action, "session", ref.AcctSessionID, nil, d)
 }
 
 // Disconnect ends a session (FR-15.2). No vendor attributes needed — session

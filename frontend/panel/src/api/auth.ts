@@ -1,5 +1,5 @@
-/** Auth API — contract C7/C2 (real Phase-2 endpoints; login shape unchanged). */
-import { request } from './client'
+/** Auth API — contract C7/C2. Login gains a 2FA branch in Phase 3 (FR-28). */
+import { ApiError, request } from './client'
 
 export interface Manager {
   id: string
@@ -13,8 +13,37 @@ export interface LoginResponse {
   manager: Manager
 }
 
-export function login(username: string, password: string): Promise<LoginResponse> {
-  return request<LoginResponse>('/auth/login', { body: { username, password } })
+interface EnrollChallenge {
+  totp_enrollment_required: true
+  enrollment_token: string
+}
+
+/**
+ * Result of a login attempt (FR-28.1). Either a session, a demand for a TOTP
+ * code (account has 2FA — resubmit with `totpCode`), or a forced-enrolment
+ * grant (2FA mandated but not yet set up — drive the enrolment flow with the
+ * returned token, then log in again with a code).
+ */
+export type LoginOutcome =
+  | { kind: 'session'; response: LoginResponse }
+  | { kind: 'totp_required' }
+  | { kind: 'enroll'; enrollmentToken: string }
+
+export async function login(
+  username: string,
+  password: string,
+  totpCode?: string,
+): Promise<LoginOutcome> {
+  try {
+    const res = await request<LoginResponse | EnrollChallenge>('/auth/login', {
+      body: { username, password, totp_code: totpCode },
+    })
+    if ('access_token' in res) return { kind: 'session', response: res }
+    return { kind: 'enroll', enrollmentToken: res.enrollment_token }
+  } catch (err) {
+    if (err instanceof ApiError && err.code === 'totp_required') return { kind: 'totp_required' }
+    throw err
+  }
 }
 
 /**

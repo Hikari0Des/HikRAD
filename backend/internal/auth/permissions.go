@@ -1,20 +1,39 @@
 package auth
 
-// Permission model — Phase 2 (contract C2). This phase ships hardcoded
-// role→permission sets; the full matrix editor is Phase 3. The frozen
-// contract is that code checks *permission strings* (`<module>.<verb>` and
-// bare action perms), never role names — so Phase 3 can swap the source of
-// the sets without touching a single call site.
+// Permission model — Phase 3 (contract C7, FR-27). Phase 2 shipped hardcoded
+// role→permission sets; this phase resolves the effective set from DB-backed
+// editable roles (`roles`/`role_permissions`) plus per-manager overrides
+// (`manager_permission_overrides`). The frozen contract is unchanged: code
+// checks *permission strings* (`<module>.<verb>` and bare action perms), never
+// role names, and deny-by-default holds.
+//
+// Resolution happens once, at login/refresh: the effective set is embedded in
+// the access token (see tokens.go) and read by Manager.Can with no per-request
+// DB hit. A role or override edit therefore takes effect within one
+// access-token lifetime (≤ accessTTL) — the same propagation SLA as revocation.
+//
+// The in-memory sets below are retained as (a) the seed source of truth the
+// 0210 migration mirrors and (b) a fallback for any Manager built without a
+// resolved set (e.g. unit tests, or a legacy manager row with no role_id).
 
-// Built-in role names (FR-27.3). Editable copies become DB-backed roles in
-// Phase 3; here they map to fixed permission sets.
+import (
+	"context"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+// Built-in role names (FR-27.3). These are seeded as editable DB rows by
+// migration 0210; the constants remain for the fallback path and seeding.
 const (
 	RoleAdmin    = "admin"
 	RoleOperator = "operator"
 	RoleAgent    = "agent"
 )
 
-// Action permissions (contract C2): granted independently of module verbs.
+// permWildcard is the allow-all permission held by the Admin role.
+const permWildcard = "*"
+
+// Action permissions (contract C2/C7): granted independently of module verbs.
 const (
 	PermRenew      = "renew"
 	PermDisconnect = "disconnect"
@@ -22,12 +41,10 @@ const (
 	PermExport     = "export"
 )
 
-// rolePermissions is the deny-by-default map for non-admin roles. Admin is
-// allow-all and is intentionally absent (see roleCan). Keys are permission
-// strings; presence == granted.
+// rolePermissions is the deny-by-default fallback map for non-admin builtin
+// roles, mirroring the seeded role_permissions rows. Admin is allow-all and is
+// intentionally absent (see roleCan). Keys are permission strings.
 var rolePermissions = map[string]map[string]bool{
-	// Operator = Sara (FR-27.3): subscriber view/create/edit, renew,
-	// disconnect; read-only elsewhere; no settings, no managers, no deletes.
 	RoleOperator: setOf(
 		"subscribers.view", "subscribers.create", "subscribers.edit",
 		"profiles.view",
@@ -39,9 +56,6 @@ var rolePermissions = map[string]map[string]bool{
 		"audit.view",
 		PermRenew, PermDisconnect, PermTopup, PermExport,
 	),
-	// Agent = Hassan (FR-27.3): scoped subscriber view, renew, own
-	// collection report. The `scoped` flag (per-manager) is what limits the
-	// rows he sees; the role just grants the verbs.
 	RoleAgent: setOf(
 		"subscribers.view",
 		"reports.view",
@@ -57,8 +71,10 @@ func setOf(perms ...string) map[string]bool {
 	return m
 }
 
-// roleCan reports whether a role grants a permission string. Admin is
-// unconditionally allowed; every other role is deny-by-default.
+// roleCan reports whether a builtin role name grants a permission string. Used
+// only as the fallback when a Manager carries no resolved permission set (see
+// Manager.Can). Admin is unconditionally allowed; every other role is
+// deny-by-default.
 func roleCan(role, perm string) bool {
 	if role == RoleAdmin {
 		return true
@@ -66,14 +82,78 @@ func roleCan(role, perm string) bool {
 	return rolePermissions[role][perm]
 }
 
-// validRole reports whether role is one this phase understands. Manager CRUD
-// rejects anything else so a typo can't silently create a permission-less
-// account.
-func validRole(role string) bool {
-	switch role {
-	case RoleAdmin, RoleOperator, RoleAgent:
-		return true
-	default:
-		return false
+// resolvePermissions computes a manager's effective permission set: the
+// permissions of their assigned role, then per-manager overrides applied on top
+// (granted adds, !granted removes). Returns a deduplicated, unordered slice.
+//
+// A manager with no role_id (legacy row) resolves from the in-memory fallback
+// keyed on the legacy role text so authorization never silently opens up.
+func resolvePermissions(ctx context.Context, db *pgxpool.Pool, managerID string) ([]string, error) {
+	set := map[string]bool{}
+
+	rows, err := db.Query(ctx,
+		`SELECT rp.permission
+		   FROM managers m
+		   JOIN role_permissions rp ON rp.role_id = m.role_id
+		  WHERE m.id = $1::uuid`, managerID)
+	if err != nil {
+		return nil, err
 	}
+	hadRole := false
+	for rows.Next() {
+		var p string
+		if err := rows.Scan(&p); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		set[p] = true
+		hadRole = true
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	// Legacy manager with no role_id: fall back to the builtin set by role text.
+	if !hadRole {
+		var role string
+		if err := db.QueryRow(ctx, `SELECT role FROM managers WHERE id = $1::uuid`, managerID).Scan(&role); err == nil {
+			if role == RoleAdmin {
+				set[permWildcard] = true
+			}
+			for p := range rolePermissions[role] {
+				set[p] = true
+			}
+		}
+	}
+
+	// Per-manager overrides layered last.
+	orows, err := db.Query(ctx,
+		`SELECT permission, granted FROM manager_permission_overrides WHERE manager_id = $1::uuid`, managerID)
+	if err != nil {
+		return nil, err
+	}
+	for orows.Next() {
+		var p string
+		var granted bool
+		if err := orows.Scan(&p, &granted); err != nil {
+			orows.Close()
+			return nil, err
+		}
+		if granted {
+			set[p] = true
+		} else {
+			delete(set, p)
+		}
+	}
+	orows.Close()
+	if err := orows.Err(); err != nil {
+		return nil, err
+	}
+
+	out := make([]string, 0, len(set))
+	for p := range set {
+		out = append(out, p)
+	}
+	return out, nil
 }

@@ -28,7 +28,7 @@ func listManagersHandler(w http.ResponseWriter, r *http.Request) {
 type createManagerRequest struct {
 	Username string `json:"username" validate:"required,min=3,max=64"`
 	Password string `json:"password" validate:"required,min=8,max=256"`
-	Role     string `json:"role" validate:"required,oneof=admin operator agent"`
+	Role     string `json:"role" validate:"required"`
 	Scoped   bool   `json:"scoped"`
 }
 
@@ -37,8 +37,12 @@ func createManagerHandler(w http.ResponseWriter, r *http.Request) {
 	if !httpapi.Bind(w, r, &req) {
 		return
 	}
-	if !validRole(req.Role) {
-		httpapi.Error(w, http.StatusUnprocessableEntity, "validation_failed", "invalid role")
+	if ok, err := roleExists(r.Context(), svc.db, req.Role); err != nil {
+		svc.log.Error("role lookup failed", "error", err)
+		httpapi.Error(w, http.StatusInternalServerError, "internal", "internal server error")
+		return
+	} else if !ok {
+		httpapi.Error(w, http.StatusUnprocessableEntity, "validation_failed", "unknown role")
 		return
 	}
 	hash, err := hashPassword(req.Password)
@@ -94,8 +98,12 @@ func updateManagerHandler(w http.ResponseWriter, r *http.Request) {
 
 	role := before.Role
 	if req.Role != nil {
-		if !validRole(*req.Role) {
-			httpapi.Error(w, http.StatusUnprocessableEntity, "validation_failed", "invalid role")
+		if ok, rerr := roleExists(ctx, svc.db, *req.Role); rerr != nil {
+			svc.log.Error("role lookup failed", "error", rerr)
+			httpapi.Error(w, http.StatusInternalServerError, "internal", "internal server error")
+			return
+		} else if !ok {
+			httpapi.Error(w, http.StatusUnprocessableEntity, "validation_failed", "unknown role")
 			return
 		}
 		role = *req.Role

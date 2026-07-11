@@ -14,9 +14,10 @@ import (
 	_ "github.com/hikrad/hikrad/internal/platform"
 	_ "github.com/hikrad/hikrad/internal/profiles"
 	_ "github.com/hikrad/hikrad/internal/live"
+	_ "github.com/hikrad/hikrad/internal/monitorsvc"
 	_ "github.com/hikrad/hikrad/internal/radius"
 	_ "github.com/hikrad/hikrad/internal/subscribers"
-	// _ "github.com/hikrad/hikrad/internal/billing"   // Phase 3
+	_ "github.com/hikrad/hikrad/internal/billing" // Phase 3
 	// _ "github.com/hikrad/hikrad/internal/portalapi" // Phase 4
 	// _ "github.com/hikrad/hikrad/internal/reports"   // Phase 5
 )

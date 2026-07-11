@@ -13,6 +13,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/hikrad/hikrad/internal/auth"
 	"github.com/hikrad/hikrad/internal/httpapi"
+	"github.com/hikrad/hikrad/internal/radius"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -33,6 +34,15 @@ func (m *Module) Register(r chi.Router, d httpapi.Deps) {
 	r.With(auth.Require("profiles.create")).Post("/api/v1/profiles", m.createHandler)
 	r.With(auth.Require("profiles.edit")).Put("/api/v1/profiles/{id}", m.updateHandler)
 	r.With(auth.Require("profiles.edit")).Post("/api/v1/profiles/{id}/archive", m.archiveHandler)
+
+	// Time-of-day windows (FR-11). B reads them via the provider seam below; the
+	// panel manages them per profile.
+	r.With(auth.Require("profiles.view")).Get("/api/v1/profiles/{id}/tod-windows", m.listTODHandler)
+	r.With(auth.Require("profiles.edit")).Post("/api/v1/profiles/{id}/tod-windows", m.createTODHandler)
+	r.With(auth.Require("profiles.edit")).Delete("/api/v1/profiles/{id}/tod-windows/{wid}", m.deleteTODHandler)
+
+	// Wire D's TOD read-model into B's boundary-sweep engine (once, at boot).
+	radius.SetTODProvider(&todProvider{db: d.DB})
 }
 
 func init() { httpapi.Add(&Module{}) }

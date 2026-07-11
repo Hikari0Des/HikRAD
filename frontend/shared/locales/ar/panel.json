@@ -6,8 +6,14 @@
     "password": "كلمة المرور",
     "submit": "تسجيل الدخول",
     "submitting": "جارٍ تسجيل الدخول…",
+    "totpPrompt": "أدخل الرمز المكوّن من 6 أرقام من تطبيق المصادقة.",
+    "totpCode": "رمز المصادقة",
+    "verifyCode": "تحقق",
+    "enrollRequired": "المصادقة الثنائية مطلوبة لحسابك. قم بإعدادها للمتابعة.",
+    "enrollDone": "تم إعداد المصادقة الثنائية. سجّل الدخول برمز من تطبيقك.",
     "error": {
       "invalid_credentials": "اسم المستخدم أو كلمة المرور غير صحيحة.",
+      "invalid_totp": "هذا الرمز غير صالح. حاول مرة أخرى.",
       "network": "تعذّر الوصول إلى خادم HikRAD. تأكد من أنه يعمل ثم حاول مجددًا.",
       "generic": "حدث خطأ ما. يرجى المحاولة مرة أخرى."
     }
@@ -19,6 +25,21 @@
     "nas": "أجهزة NAS",
     "pools": "مجمّعات العناوين",
     "sessions": "الجلسات المباشرة",
+    "ledger": "دفتر الحسابات",
+    "vouchers": "القسائم",
+    "devices": "الأجهزة",
+    "alerts": "التنبيهات",
+    "health": "صحة النظام",
+    "debug": "تصحيح RADIUS",
+    "managers": "المدراء",
+    "roles": "الأدوار",
+    "auditLog": "سجل التدقيق",
+    "account": "أماني",
+    "group": {
+      "billing": "الفوترة",
+      "network": "الشبكة",
+      "admin": "الإدارة"
+    },
     "comingSoon": "قريبًا",
     "menu": "فتح القائمة",
     "close": "إغلاق القائمة"
@@ -42,6 +63,20 @@
   },
   "dashboard": {
     "title": "لوحة المعلومات",
+    "onlineNow": "متصل الآن",
+    "onlineTrend": "المتصلون (اتجاه 24 ساعة)",
+    "revenueToday": "إيرادات اليوم",
+    "radiusRps": "طلبات RADIUS",
+    "rps": "طلب/ث",
+    "subsActive": "المشتركون النشطون",
+    "subsExpired": "المشتركون المنتهون",
+    "subsExpiring": "ينتهون خلال 7 أيام",
+    "pipeline": "خط المحاسبة",
+    "pipelineOk": "الخط سليم — لا سجلات مفقودة.",
+    "pipelineBroken": "خلل في ثابت الخط — تحقق فوراً.",
+    "queueDepth": "عمق الطابور {n}",
+    "nasHealth": "صحة أجهزة NAS",
+    "noNas": "لا توجد أجهزة NAS مسجّلة.",
     "empty": {
       "title": "لا يوجد شيء هنا بعد",
       "body": "ستظهر هنا شاشات المشتركين والباقات والجلسات المباشرة."
@@ -92,6 +127,7 @@
     "choose": "اختر…",
     "yes": "نعم",
     "no": "لا",
+    "done": "تم",
     "unknown": "غير معروف"
   },
   "users": {
@@ -386,6 +422,379 @@
       "extend_expiry": "تمديد الانتهاء",
       "move_owner": "نقل المالك",
       "set_allow_hotspot": "ضبط وصول Hotspot"
+    }
+  },
+  "renew": {
+    "title": "تجديد {username}",
+    "profile": "الباقة",
+    "currentTag": "الحالية",
+    "price": "المبلغ",
+    "note": "ملاحظة (اختياري)",
+    "confirm": "تجديد",
+    "success": "تم التجديد بنجاح.",
+    "newExpiry": "تاريخ الانتهاء الجديد",
+    "charged": "المبلغ المحصّل",
+    "coa": "تحديث الجلسة",
+    "receiptNo": "رقم الإيصال",
+    "printEn": "طباعة (EN)",
+    "printAr": "طباعة (AR)",
+    "receiptLangNote": "تُطبع الإيصالات بالعربية أو الإنجليزية.",
+    "coaResult": {
+      "restored": "تمت استعادة السرعة — دون إعادة اتصال",
+      "disconnect_fallback": "تم قطع الاتصال لإعادة الاتصال بالسرعة الكاملة",
+      "not_online": "غير متصل — يُطبّق عند الاتصال التالي",
+      "failed": "فشل التحديث المباشر — اقطع الاتصال يدوياً"
+    },
+    "error": {
+      "insufficient_balance": "الرصيد غير كافٍ للتجديد.",
+      "insufficient_balance_hint": "اشحن رصيد الوكيل وحاول مجدداً.",
+      "profile_archived": "تمت أرشفة هذه الباقة. تم تحديث القائمة — اختر باقة أخرى."
+    }
+  },
+  "notifications": {
+    "title": "الإشعارات",
+    "empty": "لا إشعارات بعد."
+  },
+  "balance": {
+    "mine": "الرصيد",
+    "low": "منخفض"
+  },
+  "ledger": {
+    "title": "دفتر الحسابات",
+    "export": "تصدير CSV",
+    "empty": "لا توجد معاملات مطابقة.",
+    "refund": "استرداد",
+    "reversal": "قيد عكسي",
+    "reversed": "تم عكسه",
+    "refundTitle": "استرداد معاملة",
+    "refundConsequence": "الاسترداد يُرجع تاريخ انتهاء المشترك إلى ما قبل هذه المعاملة.",
+    "refundReason": "السبب",
+    "refundDone": "تم تسجيل الاسترداد.",
+    "filter": {
+      "type": "النوع",
+      "allTypes": "كل الأنواع",
+      "manager": "المدير",
+      "managerId": "معرّف المدير",
+      "from": "من",
+      "to": "إلى"
+    },
+    "type": {
+      "renewal": "تجديد",
+      "topup": "شحن",
+      "manual_payment": "دفعة يدوية",
+      "voucher_redeem": "استبدال قسيمة",
+      "refund": "استرداد",
+      "adjustment": "تسوية",
+      "discount": "خصم"
+    },
+    "col": {
+      "at": "التاريخ",
+      "type": "النوع",
+      "amount": "المبلغ",
+      "balance": "الرصيد",
+      "note": "ملاحظة"
+    }
+  },
+  "vouchers": {
+    "title": "القسائم",
+    "create": "إنشاء دفعة",
+    "empty": "لا توجد دفعات قسائم بعد.",
+    "void": "إلغاء",
+    "voided": "تم إلغاء {n} قسيمة غير مستخدمة.",
+    "voidTitle": "إلغاء هذه الدفعة؟",
+    "voidBody": "يلغي {n} قسيمة غير مستخدمة ويعيد رصيدها. القسائم المستخدمة لا تتأثر.",
+    "createTitle": "إنشاء دفعة قسائم",
+    "profile": "الباقة",
+    "pickProfile": "اختر باقة…",
+    "count": "العدد",
+    "prefix": "البادئة",
+    "expiry": "الانتهاء",
+    "expiryHint": "اتركه فارغاً لعدم الانتهاء.",
+    "csvNote": "تُنزَّل الرموز كملف CSV — هذه المرة الوحيدة التي تظهر فيها بوضوح.",
+    "createDownload": "إنشاء وتنزيل CSV",
+    "created": "تم إنشاء الدفعة {id}.",
+    "detailTitle": "دفعة القسائم",
+    "col": {
+      "prefix": "البادئة",
+      "count": "العدد",
+      "used": "مستخدمة",
+      "unused": "غير مستخدمة",
+      "price": "سعر الوحدة"
+    },
+    "state": {
+      "unused": "غير مستخدمة",
+      "used": "مستخدمة",
+      "void": "ملغاة"
+    },
+    "redeem": "استبدال قسيمة",
+    "redeemTitle": "استبدال قسيمة",
+    "redeemDone": "تم استبدال القسيمة.",
+    "redeemInvalid": "رمز القسيمة غير صالح.",
+    "code": "رمز القسيمة"
+  },
+  "managers": {
+    "title": "المدراء",
+    "create": "إضافة مدير",
+    "createTitle": "إضافة مدير",
+    "editTitle": "تعديل مدير",
+    "saved": "تم حفظ المدير.",
+    "username": "اسم المستخدم",
+    "role": "الدور",
+    "newPassword": "كلمة مرور جديدة",
+    "password": "كلمة المرور",
+    "passwordEditHint": "اتركها فارغة للإبقاء على الحالية.",
+    "scopedLabel": "مقيّد بالبيانات",
+    "scopedHint": "يرى فقط المشتركين الذين يملكهم.",
+    "scoped": "مقيّد",
+    "global": "عام",
+    "unlocked": "تم فتح قفل المدير.",
+    "totpReset": "تمت إعادة ضبط المصادقة الثنائية.",
+    "topup": "شحن",
+    "topupTitle": "شحن {name}",
+    "topupAmount": "المبلغ (د.ع)",
+    "topupNote": "ملاحظة",
+    "topupDone": "تم شحن الرصيد.",
+    "allowlist": "قائمة IP المسموحة",
+    "unlock": "فتح القفل",
+    "resetTotp": "إعادة ضبط 2FA",
+    "col": {
+      "username": "اسم المستخدم",
+      "role": "الدور",
+      "scope": "النطاق",
+      "twofa": "2FA",
+      "balance": "الرصيد"
+    }
+  },
+  "allowlist": {
+    "title": "قائمة IP المسموحة — {name}",
+    "warning": "القائمة الفارغة تسمح بأي شبكة. القائمة غير الفارغة تقيّد تسجيل الدخول — تأكد من تضمين شبكتك وإلا قد يُمنع دخولك.",
+    "emptyMeansAny": "لا مدخلات — تسجيل الدخول مسموح من أي شبكة.",
+    "cidrPlaceholder": "مثال: 192.168.1.0/24",
+    "notePlaceholder": "ملاحظة",
+    "add": "إضافة مدخل",
+    "saved": "تم حفظ القائمة."
+  },
+  "roles": {
+    "moduleCol": "الوحدة",
+    "permsCol": "الصلاحيات",
+    "title": "الأدوار",
+    "subtitle": "تجمع الأدوار الصلاحيات التي يملكها المدير.",
+    "create": "إنشاء دور",
+    "builtin": "مدمج",
+    "memberCount": "{n} عضو",
+    "permCount": "{n} صلاحية",
+    "requires2fa": "يتطلب 2FA",
+    "deleted": "تم حذف الدور.",
+    "deleteTitle": "حذف هذا الدور؟",
+    "deleteBody": "حذف الدور {name}؟ يجب إعادة تعيين المدراء أولاً.",
+    "editTitle": "تعديل الدور",
+    "createTitle": "إنشاء دور",
+    "name": "الاسم",
+    "description": "الوصف",
+    "require2faLabel": "اشترط المصادقة الثنائية لهذا الدور",
+    "permissions": "الصلاحيات",
+    "saved": "تم حفظ الدور.",
+    "module": {
+      "subscribers": "المشتركون",
+      "profiles": "الباقات",
+      "nas": "NAS",
+      "pools": "مجمّعات IP",
+      "billing": "الفوترة",
+      "vouchers": "القسائم",
+      "monitoring": "المراقبة",
+      "reports": "التقارير",
+      "settings": "الإعدادات",
+      "managers": "المدراء",
+      "live": "المباشر",
+      "audit": "التدقيق",
+      "actions": "الإجراءات"
+    },
+    "verb": {
+      "view": "عرض",
+      "create": "إنشاء",
+      "edit": "تعديل",
+      "delete": "حذف",
+      "renew": "تجديد",
+      "disconnect": "قطع",
+      "topup": "شحن",
+      "export": "تصدير"
+    }
+  },
+  "auditlog": {
+    "title": "سجل التدقيق",
+    "export": "تصدير CSV",
+    "empty": "لا مدخلات تدقيق مطابقة.",
+    "before": "قبل",
+    "after": "بعد",
+    "filter": {
+      "action": "الإجراء",
+      "entity": "نوع الكيان"
+    },
+    "summary": {
+      "generic": "{action} على {entity}"
+    }
+  },
+  "account": {
+    "title": "أماني",
+    "twofaTitle": "المصادقة الثنائية",
+    "twofaHint": "احمِ حسابك بتطبيق مصادقة.",
+    "enableTwofa": "تفعيل المصادقة الثنائية",
+    "sessionsTitle": "الجلسات النشطة",
+    "sessionRevoked": "تم إبطال الجلسة.",
+    "unknownDevice": "جهاز غير معروف",
+    "thisDevice": "هذا الجهاز",
+    "revoke": "إبطال"
+  },
+  "totp": {
+    "error": {
+      "invalidCode": "هذا الرمز غير صالح. حاول مجدداً."
+    },
+    "enrolled": "المصادقة الثنائية مفعّلة.",
+    "backupTitle": "رموز احتياطية",
+    "backupHint": "احفظها في مكان آمن — كل رمز يعمل مرة واحدة إذا فقدت جهازك.",
+    "downloadBackup": "تنزيل الرموز",
+    "manualKey": "مفتاح الإعداد",
+    "manualKeyHint": "أدخل هذا المفتاح في تطبيق المصادقة (Google Authenticator، Authy، …).",
+    "showUri": "إظهار رابط الإعداد",
+    "enterCode": "أدخل الرمز من تطبيقك",
+    "verify": "تحقق وفعّل"
+  },
+  "monitoring": {
+    "status": {
+      "up": "يعمل",
+      "down": "متوقف",
+      "degraded": "متدهور",
+      "unknown": "غير معروف"
+    },
+    "ms": "{n} م.ث",
+    "latency": "زمن الاستجابة",
+    "noData": "لا توجد بيانات كافية بعد.",
+    "latencyPeak": "الذروة {n} م.ث",
+    "downtimeLog": "سجل التوقف",
+    "noDowntime": "لا توقف مسجّل.",
+    "ongoing": "مستمر",
+    "durationS": "{n}ث"
+  },
+  "devices": {
+    "title": "الأجهزة المراقبة",
+    "subtitle": "نقاط وصول ومبدّلات وأجهزة أخرى للفحص — منفصلة عن NAS.",
+    "create": "إضافة جهاز",
+    "empty": "لا أجهزة مراقبة بعد.",
+    "deleted": "تم حذف الجهاز.",
+    "deleteTitle": "حذف هذا الجهاز؟",
+    "deleteBody": "إيقاف مراقبة {name}؟",
+    "saved": "تم حفظ الجهاز.",
+    "editTitle": "تعديل الجهاز",
+    "createTitle": "إضافة جهاز",
+    "name": "الاسم",
+    "ip": "عنوان IP",
+    "deviceType": "النوع",
+    "location": "الموقع",
+    "snmp": "مجتمع SNMP",
+    "snmpHint": "اختياري — يفعّل مقاييس SNMP.",
+    "enabled": "مفعّل",
+    "type": {
+      "ap": "نقطة وصول",
+      "switch": "مبدّل",
+      "router": "راوتر",
+      "server": "خادم",
+      "other": "أخرى"
+    }
+  },
+  "health": {
+    "title": "صحة النظام",
+    "api": "API",
+    "db": "قاعدة البيانات",
+    "redis": "Redis",
+    "freeradius": "FreeRADIUS",
+    "up": "يعمل",
+    "down": "متوقف",
+    "pipelineTitle": "خط المحاسبة",
+    "invariantOk": "ثابت العدّاد سليم — لا سجلات مفقودة",
+    "invariantBroken": "خلل في ثابت العدّاد — قد تُفقد سجلات",
+    "queueDepth": "عمق الطابور",
+    "drainRate": "معدل التصريف",
+    "enforceFailures": "إخفاقات التطبيق",
+    "diskTitle": "استخدام القرص",
+    "usedPercent": "{n}% مستخدم",
+    "freeGb": "{n} غ.ب متاح"
+  },
+  "alerts": {
+    "title": "التنبيهات",
+    "create": "إنشاء قاعدة",
+    "empty": "لا قواعد تنبيه بعد.",
+    "disabled": "معطّل",
+    "tabRules": "القواعد",
+    "tabEvents": "الأحداث",
+    "noEvents": "لا أحداث تنبيه بعد.",
+    "saved": "تم حفظ القاعدة.",
+    "editTitle": "تعديل قاعدة التنبيه",
+    "createTitle": "إنشاء قاعدة تنبيه",
+    "name": "الاسم",
+    "ruleType": "المُطلِق",
+    "threshold": "العتبة",
+    "channels": "القنوات",
+    "whatsappRecipients": "أرقام واتساب",
+    "telegramRecipients": "معرّفات تيليجرام",
+    "emailRecipients": "عناوين البريد",
+    "recipientsHint": "مفصولة بفواصل.",
+    "quietStart": "بداية ساعات الهدوء",
+    "quietEnd": "نهاية ساعات الهدوء",
+    "enabledLabel": "مفعّل",
+    "type": {
+      "nas_down": "توقف NAS",
+      "nas_up": "تعافى NAS",
+      "device_down": "توقف جهاز",
+      "device_up": "تعافى جهاز",
+      "radius_reject_spike": "ارتفاع رفض RADIUS",
+      "acct_backlog": "تراكم المحاسبة",
+      "disk_low": "مساحة قرص منخفضة",
+      "expiring_digest": "ملخص المشتركين المنتهين",
+      "agent_balance_low": "رصيد وكيل منخفض"
+    },
+    "channel": {
+      "inapp": "داخل التطبيق",
+      "telegram": "تيليجرام",
+      "email": "بريد",
+      "whatsapp": "واتساب"
+    },
+    "thresholdHint": {
+      "radius_reject_spike": "عدد الرفض في الدقيقة قبل التنبيه.",
+      "acct_backlog": "عمق الطابور قبل التنبيه.",
+      "disk_low": "النسبة المستخدمة قبل التنبيه.",
+      "agent_balance_low": "الرصيد (د.ع) قبل التنبيه."
+    }
+  },
+  "debug": {
+    "title": "تصحيح RADIUS",
+    "subtitle": "قرارات التفويض المباشرة — رشّح حسب مستخدم أو NAS لاستكشاف الأخطاء.",
+    "filterUser": "اسم المستخدم",
+    "filterNas": "عنوان NAS",
+    "apply": "تطبيق",
+    "resume": "استئناف",
+    "pause": "إيقاف مؤقت",
+    "clear": "مسح",
+    "waiting": "بانتظار قرارات التفويض…",
+    "col": {
+      "at": "الوقت",
+      "user": "المستخدم",
+      "nas": "NAS",
+      "outcome": "النتيجة",
+      "reason": "السبب"
+    },
+    "outcome": {
+      "accept": "قبول",
+      "reject": "رفض"
+    },
+    "reason": {
+      "ok": "موافق",
+      "no_such_user": "لا يوجد مستخدم",
+      "wrong_password": "كلمة مرور خاطئة",
+      "expired": "منتهٍ",
+      "mac_mismatch": "عدم تطابق MAC",
+      "session_limit": "بلغ حد الجلسات",
+      "quota_exhausted": "نفدت الحصة",
+      "disabled": "معطّل"
     }
   }
 }

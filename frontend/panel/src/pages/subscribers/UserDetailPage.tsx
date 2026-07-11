@@ -14,10 +14,11 @@ import { Button } from '../../components/Button'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
 import { PageHeader } from '../../components/PageHeader'
 import { useToast } from '../../components/Toast'
-import { FEATURES } from '../../config/features'
 import { useAsync } from '../../hooks/useAsync'
 import { AuditTrail } from './AuditTrail'
 import { LiveWidget } from './LiveWidget'
+import { RedeemVoucherModal } from './RedeemVoucherModal'
+import { RenewModal } from './RenewModal'
 import { SessionHistory } from './SessionHistory'
 import { SubscriberFormModal } from './SubscriberFormModal'
 import { UsagePanel } from './UsagePanel'
@@ -39,6 +40,8 @@ export function UserDetailPage() {
 
   const [tab, setTab] = useState<Tab>('usage')
   const [editOpen, setEditOpen] = useState(false)
+  const [renewOpen, setRenewOpen] = useState(false)
+  const [redeemOpen, setRedeemOpen] = useState(false)
   const [resetOpen, setResetOpen] = useState(false)
   const [disconnectOffer, setDisconnectOffer] = useState(false)
 
@@ -64,16 +67,13 @@ export function UserDetailPage() {
         title={s.username}
         actions={
           <>
-            {FEATURES.renew ? (
-              <Button size="sm" disabled={!can(PERM_RENEW)}>
-                {t('subscriber.renew')}
+            <Button size="sm" disabled={!can(PERM_RENEW)} onClick={() => setRenewOpen(true)}>
+              {t('subscriber.renew')}
+            </Button>
+            {can(PERM_RENEW) && (
+              <Button size="sm" variant="secondary" onClick={() => setRedeemOpen(true)}>
+                {t('vouchers.redeem')}
               </Button>
-            ) : (
-              <span title={t('subscriber.renewPhase3')}>
-                <Button size="sm" disabled>
-                  {t('subscriber.renew')}
-                </Button>
-              </span>
             )}
             {canEdit && (
               <Button size="sm" variant="secondary" onClick={() => setResetOpen(true)}>
@@ -187,6 +187,22 @@ export function UserDetailPage() {
           {tab === 'audit' && <AuditTrail subscriberId={id} />}
         </div>
       </div>
+
+      <RenewModal
+        open={renewOpen}
+        onOpenChange={setRenewOpen}
+        subscriber={s}
+        currentProfileId={s.profile_id}
+        profiles={profiles}
+        onRenewed={reload}
+      />
+
+      <RedeemVoucherModal
+        open={redeemOpen}
+        onOpenChange={setRedeemOpen}
+        subscriberId={id}
+        onRedeemed={reload}
+      />
 
       <SubscriberFormModal
         open={editOpen}
