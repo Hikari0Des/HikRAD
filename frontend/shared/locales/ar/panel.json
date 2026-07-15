@@ -42,7 +42,12 @@
     },
     "comingSoon": "قريبًا",
     "menu": "فتح القائمة",
-    "close": "إغلاق القائمة"
+    "close": "إغلاق القائمة",
+    "cardPayments": "مدفوعات الكروت",
+    "reports": "التقارير",
+    "import": "استيراد المشتركين",
+    "settings": "الإعدادات",
+    "license": "الترخيص"
   },
   "search": {
     "label": "بحث شامل",
@@ -128,7 +133,8 @@
     "yes": "نعم",
     "no": "لا",
     "done": "تم",
-    "unknown": "غير معروف"
+    "unknown": "غير معروف",
+    "ok": "موافق"
   },
   "users": {
     "create": "إضافة مشترك",
@@ -265,8 +271,8 @@
     "type": "نوع الخدمة",
     "typeHint": "الخدمة التي ينهيها هذا الموجّه.",
     "typeName": {
-      "pppoe": "PPPoE",
-      "hotspot": "Hotspot"
+      "pppoe": "PPPoE‏",
+      "hotspot": "Hotspot‏"
     },
     "secret": "السر المشترك",
     "secretHint": "سر RADIUS المهيّأ على الموجّه.",
@@ -298,7 +304,7 @@
     "snippet": "الإعداد",
     "snippetTitle": "إعداد {name}",
     "snippetHint": "الصق هذا في طرفية الموجّه لتوجيهه إلى HikRAD.",
-    "rosTab": "RouterOS {v}",
+    "rosTab": "RouterOS {v}‏",
     "test": "اختبار الاتصال",
     "testSeen": "قام الموجّه بالاتصال ({when}).",
     "testUnseen": "لا توجد حزم من هذا الموجّه بعد. الصق الإعداد وحاول مجددًا.",
@@ -312,7 +318,33 @@
     "scanCidr": "نطاق IP للفحص (اختياري)",
     "scanCidrHint": "نطاق CIDR صغير، مثل 192.168.88.0/24.",
     "alreadyRegistered": "مضاف مسبقًا",
-    "useThis": "استخدم هذا"
+    "useThis": "استخدم هذا",
+    "autoSetup": {
+      "button": "إعداد تلقائي",
+      "title": "إعداد تلقائي — {name}",
+      "hint": "معاينة ما سيتغيّر بالضبط قبل كتابة أي شيء إلى الموجّه.",
+      "noCreds": "لا توجد بيانات اعتماد RouterOS API محفوظة لهذا الـ NAS. أضفها في التعديل أولاً.",
+      "preview": "معاينة الإعداد",
+      "conflictsTitle": "توجد تعارضات — لم يُكتب شيء",
+      "conflictsBody": "لدى الموجّه إعدادات موجودة تحتاج للتغيير. عالجها هناك، أو استخدم تبويب النسخ واللصق بدلاً من ذلك.",
+      "itemsTitle": "سيتم إجراء {count} تغيير",
+      "rosNotValidated": "التطبيق غير مُتحقَّق منه بعد لإصدار RouterOS هذا. استخدم تبويب النسخ واللصق بدلاً من ذلك.",
+      "useSnippet": "استخدام النسخ واللصق بدلاً من ذلك",
+      "apply": "تطبيق",
+      "applyOk": "تم تطبيق الإعداد التلقائي بنجاح.",
+      "applyPartial": "فشلت بعض الخطوات — راجع النتائج أدناه.",
+      "action": {
+        "add": "إضافة",
+        "set": "تعيين"
+      },
+      "errUnreachable": "تعذّر الاتصال بالموجّه.",
+      "errStale": "تغيّرت حالة الموجّه. أعد المعاينة وحاول مجدداً.",
+      "credsTitle": "بيانات اعتماد RouterOS API (للإعداد التلقائي)",
+      "apiUser": "اسم مستخدم API",
+      "apiPort": "منفذ API",
+      "apiPassword": "كلمة مرور API",
+      "apiPasswordSetHint": "اتركه فارغًا للإبقاء على كلمة المرور الحالية."
+    }
   },
   "pools": {
     "add": "إضافة مجمّع",
@@ -361,14 +393,14 @@
     "disconnectAck": "تم فصل الجلسة.",
     "disconnectFail": "لم يقم الموجّه بفصل الجلسة ({outcome}).",
     "service": {
-      "pppoe": "PPPoE",
-      "hotspot": "Hotspot"
+      "pppoe": "PPPoE‏",
+      "hotspot": "Hotspot‏"
     },
     "col": {
       "user": "المشترك",
-      "ip": "IP",
-      "mac": "MAC",
-      "nas": "NAS",
+      "ip": "IP‏",
+      "mac": "MAC‏",
+      "nas": "NAS‏",
       "uptime": "المدة",
       "usage": "الاستهلاك / السرعة",
       "service": "الخدمة",
@@ -388,7 +420,7 @@
     "started": "بدأت",
     "stopped": "توقفت",
     "ongoing": "جارية",
-    "ip": "IP",
+    "ip": "IP‏",
     "usage": "الاستهلاك",
     "cause": "سبب الإنهاء",
     "service": "الخدمة",
@@ -412,7 +444,7 @@
     "exported": "تم تنزيل التصدير.",
     "disabledReason": "السبب (اختياري)",
     "days": "أيام للإضافة",
-    "progress": "{done} / {total}",
+    "progress": "{done} من {total}",
     "done": "تم — نجح {succeeded}، فشل {failed}.",
     "failedCount": "فشل {count}",
     "action": {
@@ -561,7 +593,7 @@
       "username": "اسم المستخدم",
       "role": "الدور",
       "scope": "النطاق",
-      "twofa": "2FA",
+      "twofa": "2FA‏",
       "balance": "الرصيد"
     }
   },
@@ -597,7 +629,7 @@
     "module": {
       "subscribers": "المشتركون",
       "profiles": "الباقات",
-      "nas": "NAS",
+      "nas": "NAS‏",
       "pools": "مجمّعات IP",
       "billing": "الفوترة",
       "vouchers": "القسائم",
@@ -703,10 +735,10 @@
   },
   "health": {
     "title": "صحة النظام",
-    "api": "API",
+    "api": "API‏",
     "db": "قاعدة البيانات",
-    "redis": "Redis",
-    "freeradius": "FreeRADIUS",
+    "redis": "Redis‏",
+    "freeradius": "FreeRADIUS‏",
     "up": "يعمل",
     "down": "متوقف",
     "pipelineTitle": "خط المحاسبة",
@@ -778,7 +810,7 @@
     "col": {
       "at": "الوقت",
       "user": "المستخدم",
-      "nas": "NAS",
+      "nas": "NAS‏",
       "outcome": "النتيجة",
       "reason": "السبب"
     },
@@ -795,6 +827,363 @@
       "session_limit": "بلغ حد الجلسات",
       "quota_exhausted": "نفدت الحصة",
       "disabled": "معطّل"
+    }
+  },
+  "pwa": {
+    "offline": "لا يوجد اتصال — نعرض آخر البيانات المتوفرة.",
+    "installTitle": "تثبيت HikRAD",
+    "installAndroidBody": "أضف هذا التطبيق إلى شاشتك الرئيسية للوصول السريع بملء الشاشة.",
+    "installIosBody": "اضغط على مشاركة، ثم \"إضافة إلى الشاشة الرئيسية\"، للوصول السريع بملء الشاشة.",
+    "installDismiss": "ليس الآن",
+    "installAction": "تثبيت",
+    "updateAvailable": "يتوفر إصدار جديد.",
+    "updateAction": "تحديث",
+    "pushEnable": "تفعيل الإشعارات الفورية",
+    "pushDisable": "إيقاف الإشعارات الفورية"
+  },
+  "reports": {
+    "title": "التقارير",
+    "subtitle": "الإيرادات والتسوية والمشتركون والاستهلاك.",
+    "export": "تصدير CSV",
+    "print": "طباعة",
+    "groupBy": "تجميع حسب",
+    "groupBy.day": "اليوم",
+    "groupBy.month": "الشهر",
+    "groupBy.manager": "المدير",
+    "groupBy.profile": "الباقة",
+    "groupBy.method": "الطريقة",
+    "generatedAt": "أُنشئ في {at}",
+    "unattributed": "(غير محدد)",
+    "empty": {
+      "title": "لا توجد بيانات",
+      "body": "لا يوجد شيء لعرضه لهذه الفترة."
+    },
+    "range": {
+      "today": "اليوم",
+      "week": "هذا الأسبوع",
+      "month": "هذا الشهر",
+      "from": "من",
+      "to": "إلى"
+    },
+    "col": {
+      "amount": "المبلغ",
+      "count": "العدد",
+      "profile": "الباقة",
+      "username": "اسم المستخدم",
+      "name": "الاسم",
+      "status": "الحالة",
+      "expiresAt": "الانتهاء",
+      "nas": "NAS‏",
+      "down": "تنزيل",
+      "up": "رفع"
+    },
+    "index": {
+      "revenueThisMonth": "إيرادات هذا الشهر",
+      "expiringSoon": "تنتهي قريبًا (7 أيام)"
+    },
+    "revenue": {
+      "title": "تقرير الإيرادات",
+      "total": "إجمالي الإيرادات",
+      "desc": "الإيرادات حسب اليوم أو المدير أو الباقة أو الطريقة."
+    },
+    "settlement": {
+      "title": "تقرير التسوية",
+      "subtitle": "وثيقة تسليم التحصيلات.",
+      "desc": "الرصيد الافتتاحي والشحن والتجديدات والاستردادات لمدير واحد.",
+      "manager": "المدير",
+      "opening": "الرصيد الافتتاحي",
+      "topups": "الشحن",
+      "renewals": "التجديدات ({count})",
+      "refunds": "الاستردادات",
+      "closing": "الرصيد الختامي"
+    },
+    "subscribers": {
+      "title": "تقرير المشتركين",
+      "desc": "المشتركون الجدد أو المنتهون أو الذين على وشك الانتهاء أو غير النشطين.",
+      "view": "العرض",
+      "view.new": "جديد",
+      "view.expired": "منتهٍ",
+      "view.expiring": "على وشك الانتهاء",
+      "view.by_profile": "حسب الباقة",
+      "view.inactive": "غير نشط"
+    },
+    "usage": {
+      "title": "تقرير الاستهلاك",
+      "desc": "أكبر المستهلكين والإجماليات لكل NAS.",
+      "view": "العرض",
+      "view.top_consumers": "أكبر المستهلكين",
+      "view.per_nas": "حسب NAS"
+    }
+  },
+  "settings": {
+    "title": "الإعدادات",
+    "saved": "تم حفظ الإعدادات.",
+    "tab": {
+      "locale": "اللغة والمنطقة",
+      "branding": "الهوية",
+      "notifications": "الإشعارات",
+      "billing": "الفوترة",
+      "gateways": "بوابات الدفع",
+      "backups": "النسخ الاحتياطي",
+      "dataRetention": "الاحتفاظ بالبيانات",
+      "remoteAccess": "الوصول عن بُعد"
+    },
+    "locale": {
+      "timezone": "المنطقة الزمنية",
+      "currency": "العملة",
+      "dateFormat": "تنسيق التاريخ",
+      "language": "اللغة الافتراضية"
+    },
+    "branding": {
+      "name": "اسم الشركة",
+      "logo": "الشعار",
+      "logoHint": "استخدم صورة صغيرة (512 كيلوبايت أو أقل).",
+      "noLogo": "لا يوجد شعار",
+      "upload": "رفع الشعار",
+      "primaryColor": "اللون الأساسي",
+      "secondaryColor": "اللون الثانوي"
+    },
+    "notifications": {
+      "email": "البريد الإلكتروني (SMTP)",
+      "telegram": "تيليجرام",
+      "whatsapp": "واتساب",
+      "smtpHost": "خادم SMTP",
+      "smtpPort": "منفذ SMTP",
+      "smtpUsername": "اسم مستخدم SMTP",
+      "smtpPassword": "كلمة مرور SMTP",
+      "smtpFrom": "عنوان المرسل",
+      "botToken": "رمز بوت تيليجرام",
+      "accessToken": "رمز الوصول",
+      "phoneNumberId": "معرّف رقم الهاتف",
+      "sendTest": "إرسال اختبار",
+      "testRecipient": "المستلم (بريد أو معرّف محادثة أو رقم)",
+      "testOk": "تم إرسال رسالة الاختبار بنجاح.",
+      "testFailed": "فشل إرسال رسالة الاختبار."
+    },
+    "billing": {
+      "renewalAnchor": "مرجع التجديد",
+      "renewalAnchorHint": "احسب المدة الجديدة من تاريخ الانتهاء السابق، أو من الآن.",
+      "anchor": {
+        "fromExpiry": "من تاريخ الانتهاء",
+        "fromNow": "من الآن"
+      },
+      "adminBypass": "تجاوز رصيد المدير العام",
+      "adminBypassHint": "يمكن لدور المدير العام التجديد دون حد للرصيد.",
+      "receiptPrefix": "بادئة الإيصال",
+      "voucherPrefix": "بادئة القسيمة",
+      "receiptNumerals": "أرقام الإيصال",
+      "numerals": {
+        "auto": "تلقائي",
+        "latn": "لاتينية (123)",
+        "arab": "عربية-هندية (١٢٣)"
+      },
+      "receiptBranding": "إظهار الهوية على الإيصالات",
+      "cardPayments": "مدفوعات الكروت",
+      "cardTypes": "أنواع الكروت",
+      "cardTypesHint": "مفصولة بفواصل، مثل zain, asiacell.",
+      "cooldownDays": "فترة الانتظار بعد الرفض (أيام)",
+      "cardPaymentsPending": "غير متاح بعد",
+      "cardPaymentsPendingBody": "يحتاج هذا القسم إلى مجموعة إعدادات في الخلفية لم تُشحن بعد."
+    },
+    "gateways": {
+      "enabled": "مفعّلة",
+      "configured": "مُهيّأة",
+      "notConfigured": "غير مُهيّأة",
+      "merchantId": "معرّف التاجر",
+      "secretKey": "المفتاح السري",
+      "hint": "mock متاحة دائمًا؛ ZainCash يحتاج حساب تاجر."
+    },
+    "backups": {
+      "scheduleHour": "ساعة النسخ الاحتياطي (يوميًا)",
+      "scheduleHourHint": "ساعة اليوم بتوقيت بغداد (0-23).",
+      "retentionCount": "عدد النسخ المحتفظ بها",
+      "path": "مسار التخزين",
+      "ok": "النسخة الاحتياطية حديثة",
+      "stale": "النسخة الاحتياطية قديمة",
+      "never": "لم تُنفَّذ أي نسخة احتياطية بعد.",
+      "lastRun": "آخر نسخة احتياطية في {at}"
+    },
+    "retention": {
+      "rawMonths": "أشهر الجلسات الخام",
+      "rawMonthsFloor": "الحد الأدنى 12 شهرًا.",
+      "rollupYears": "سنوات الملخصات",
+      "rollupYearsFloor": "الحد الأدنى 3 سنوات."
+    },
+    "remoteAccess": {
+      "status": "حالة الاتصال",
+      "state": {
+        "connected": "متصل",
+        "disconnected": "غير متصل",
+        "unknown": "غير معروف"
+      },
+      "enable": "تفعيل الوصول عن بُعد",
+      "enableHint": "نفق Cloudflare — معطّل افتراضيًا.",
+      "token": "الرمز",
+      "tokenHint": "أدخل رمز نفق Cloudflare الخاص بك.",
+      "tokenSet": "تم ضبط رمز. أدخل رمزًا جديدًا لاستبداله."
+    }
+  },
+  "cardPayments": {
+    "title": "مدفوعات الكروت",
+    "filter": "تصفية",
+    "filter.all": "الكل",
+    "state": {
+      "pending": "قيد الانتظار",
+      "approved": "موافَق عليه",
+      "rejected": "مرفوض"
+    },
+    "empty": {
+      "title": "لا توجد مدفوعات كروت",
+      "body": "تظهر هنا طلبات مدفوعات الكروت للمراجعة."
+    },
+    "col": {
+      "subscriber": "المشترك",
+      "profile": "الباقة",
+      "cardType": "نوع الكرت",
+      "waiting": "الانتظار",
+      "decided": "تاريخ القرار"
+    },
+    "waitingMinutes": "{n} د",
+    "waitingHours": "{h} س {m} د",
+    "reveal": "إظهار الرمز",
+    "approve": "موافقة",
+    "reject": "رفض",
+    "revealTitle": "إظهار رمز الكرت",
+    "revealConfirm": "يُسجَّل إظهار الرمز في سجل التدقيق. المتابعة؟",
+    "revealedNote": "يظهر هذا الرمز مرة واحدة فقط.",
+    "approveTitle": "الموافقة على الدفع",
+    "approveConfirm": "الموافقة على هذا الطلب لباقة {profile}؟",
+    "approveDone": "تمت الموافقة على الدفع.",
+    "approveResult": "تاريخ الانتهاء الجديد: {at}",
+    "rejectTitle": "رفض الدفع",
+    "rejectConsequence": "الرفض ينهي تجربة المشترك المجانية ويرسل له إشعارًا.",
+    "rejectReason": "السبب",
+    "rejectDone": "تم رفض الدفع."
+  },
+  "import": {
+    "title": "استيراد المشتركين",
+    "subtitle": "استيراد ملف CSV من SAS4 أو نظام آخر.",
+    "upload": {
+      "body": "اختر ملف CSV للبدء."
+    },
+    "map": {
+      "detected": "الترميز: {encoding} — الأعمدة: {header}",
+      "sas4Preset": "استخدام قالب SAS4",
+      "notMapped": "غير مطابَق",
+      "dryRun": "تشغيل الفحص التجريبي"
+    },
+    "dryRun": {
+      "willCreate": "سيتم إنشاء {n}",
+      "willSkip": "سيتم تخطي {n}",
+      "download": "تنزيل التقرير",
+      "row": "الصف",
+      "action": "الإجراء",
+      "action.create": "إنشاء",
+      "action.skip": "تخطي",
+      "issues": "المشكلات"
+    },
+    "execute": "تنفيذ الاستيراد",
+    "executing": "الاستيراد قيد التنفيذ…",
+    "progress": "{done} من {total}",
+    "summary": {
+      "body": "تم إنشاء {succeeded}، وفشل {failed}."
+    },
+    "newImport": "استيراد جديد",
+    "tryAgain": "جرّب ملفًا آخر.",
+    "field": {
+      "username": "اسم المستخدم",
+      "password": "كلمة المرور",
+      "name": "الاسم",
+      "phone": "الهاتف",
+      "address": "العنوان",
+      "profile": "الباقة",
+      "expires_at": "الانتهاء"
+    },
+    "step": {
+      "upload": "الرفع",
+      "map": "المطابقة",
+      "dryrun": "فحص تجريبي",
+      "execute": "التنفيذ",
+      "summary": "الملخص"
+    }
+  },
+  "license": {
+    "title": "الترخيص",
+    "state": "حالة الترخيص",
+    "state.valid": "صالح",
+    "state.grace": "فترة سماح",
+    "state.expired_grace": "منتهٍ",
+    "licensee": "المرخَّص له",
+    "tier": "الفئة",
+    "maxSubscribers": "أقصى عدد مشتركين",
+    "graceExpires": "تنتهي فترة السماح في",
+    "fingerprint": "بصمة الجهاز",
+    "readOnlyNotice": "انتهت فترة سماح الترخيص. اللوحة للقراءة فقط حتى يتم تثبيت ترخيص صالح.",
+    "uploaded": "تم تثبيت الترخيص.",
+    "invalidJson": "JSON غير صالح. تحقق من ملف الترخيص أو حقلي الحمولة والتوقيع.",
+    "upload": {
+      "title": "تثبيت ترخيص",
+      "payload": "الحمولة",
+      "signature": "التوقيع",
+      "submit": "تثبيت الترخيص"
+    },
+    "requestBlob": {
+      "title": "طلب ترخيص جديد",
+      "body": "أرسل هذا الملف إلى مزوّد الترخيص للحصول على ترخيص جديد لهذا الجهاز.",
+      "download": "تنزيل الطلب"
+    },
+    "banner": {
+      "readOnly": "انتهى الترخيص — التغييرات معطّلة.",
+      "grace": "الترخيص يحتاج للتجديد — تنتهي فترة السماح في {at}.",
+      "graceNoDate": "الترخيص يحتاج للتجديد.",
+      "action": "إصلاح الترخيص"
+    }
+  },
+  "setup": {
+    "subtitle": "الإعداد الأول — خطوات سريعة لتجهيز HikRAD.",
+    "step": {
+      "license": "الترخيص",
+      "admin": "حساب المدير",
+      "nas": "أول NAS",
+      "profile": "أول باقة"
+    },
+    "license": {
+      "body": "ثبّت ترخيصًا الآن، أو تخطَّ وأضفه لاحقًا.",
+      "fingerprint": "بصمة الجهاز",
+      "payload": "الحمولة",
+      "signature": "التوقيع",
+      "offlineNote": "التحقق من الترخيص محلي بالكامل — لا حاجة لاتصال بالإنترنت.",
+      "skip": "تخطَّ الآن",
+      "installed": "تم تثبيت الترخيص.",
+      "invalidJson": "JSON غير صالح."
+    },
+    "admin": {
+      "username": "اسم المستخدم",
+      "password": "كلمة المرور",
+      "confirmPassword": "تأكيد كلمة المرور",
+      "mismatch": "كلمتا المرور غير متطابقتين."
+    },
+    "nas": {
+      "body": "أضف أول موجّه لديك الآن، أو افعل ذلك لاحقًا.",
+      "skip": "تخطَّ الآن"
+    },
+    "profile": {
+      "body": "أنشئ أول باقة خدمة لديك.",
+      "name": "الاسم",
+      "priceIqd": "السعر (دينار)",
+      "durationDays": "المدة (أيام)",
+      "rateKbps": "السرعة (كيلوبت/ث)",
+      "skip": "تخطَّ الآن"
+    },
+    "done": {
+      "title": "كل شيء جاهز!",
+      "body": "HikRAD جاهز الآن. يمكنك البدء بإدارة شبكتك.",
+      "whatNext": {
+        "subscribers": "أضف أول مشترك لديك",
+        "reports": "اطّلع على التقارير",
+        "settings": "جهّز الهوية والإشعارات"
+      },
+      "goToDashboard": "الذهاب إلى لوحة المعلومات"
     }
   }
 }

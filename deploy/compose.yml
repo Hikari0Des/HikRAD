@@ -40,9 +40,11 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
-    # AOF everysec: durable enough for the accounting queue's ack-after-enqueue
-    # posture (sub-PRD 03) without fsync-per-write latency.
-    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec"]
+    # AOF always: measured in Phase 5's chaos suite (docs/evidence/
+    # redis-durability-decision.md) to be the difference between 0/3 and
+    # occasional 1-record loss on kill-redis vs. everysec's fsync-per-second
+    # window — the M2 "never lose an Accounting-Request" claim requires it.
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "always"]
     volumes:
       - ${HIKRAD_DATA_DIR:-./data}/redis:/data
     healthcheck:
@@ -72,6 +74,15 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    # Bind-mounted read-only from the host so the license fingerprint (FR-50.2,
+    # internal/platform/license) identifies this SERVER, not the container —
+    # a container recreated by `docker compose up` (image update, `hikrad
+    # restart`, host reboot) gets a fresh /etc/machine-id of its own otherwise,
+    # which would look like a hardware change and trip grace mode on every
+    # routine restart. Missing on some minimal hosts; license.Current()
+    # tolerates that (falls back to the MAC-only half of the fingerprint).
+    volumes:
+      - /etc/machine-id:/etc/machine-id:ro
     # Port 8080 stays internal to the compose network: Caddy proxies /api/*,
     # and FreeRADIUS calls POST /internal/radius/authorize directly (C4 — the
     # /internal/* routes are deliberately NOT reachable through Caddy).
@@ -120,7 +131,9 @@ services:
           memory: 512M
 
   caddy:
-    image: caddy:2-alpine
+    build:
+      context: ..
+      dockerfile: deploy/docker/caddy.Dockerfile
     restart: unless-stopped
     depends_on:
       hikrad-api:
@@ -130,8 +143,6 @@ services:
       - "443:443"
     volumes:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
-      - ../frontend/panel/dist:/srv/panel:ro
-      - ../frontend/portal/dist:/srv/portal:ro
       - ${HIKRAD_DATA_DIR:-./data}/caddy:/data
       - ${HIKRAD_DATA_DIR:-./data}/caddy-config:/config
     healthcheck:
@@ -219,3 +230,34 @@ services:
       resources:
         limits:
           memory: 512M
+
+  # ---------------------------------------------------------------------------
+  # Phase 5 (Agent 1) — optional Cloudflare Zero Trust tunnel (FR-57, contract
+  # C7). Behind the `tunnel` compose profile: NEVER started by a plain
+  # `docker compose up` / `hikrad up`, only by `hikrad tunnel enable` (which
+  # passes --profile tunnel). No other service has a `depends_on` pointing at
+  # it and it publishes no host ports — LAN operation and RADIUS/CoA are
+  # unaffected whether this container exists, is stopped, or the internet is
+  # down (NFR-7). It only ever fronts Caddy: the token grants it a public
+  # hostname that proxies to Caddy inside the compose network, never to
+  # freeradius directly, so RADIUS (1812/1813) and CoA (3799) UDP are
+  # structurally unreachable through it (FR-57.4) — there is no config here
+  # that could route to those ports even by mistake.
+  # ---------------------------------------------------------------------------
+  cloudflared:
+    image: cloudflare/cloudflared:2024.8.3
+    restart: unless-stopped
+    profiles: ["tunnel"]
+    # The token is read from settings (`remote_access.token`, AES-GCM sealed
+    # at rest) and written to this file by `hikrad tunnel enable` just before
+    # starting the profile — never baked into the image or this compose file.
+    command: ["tunnel", "--no-autoupdate", "run", "--token-file", "/run/secrets/tunnel-token"]
+    volumes:
+      - ${HIKRAD_DATA_DIR:-./data}/cloudflared/tunnel-token:/run/secrets/tunnel-token:ro
+    depends_on:
+      caddy:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 128M

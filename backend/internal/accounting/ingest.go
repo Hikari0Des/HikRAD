@@ -38,8 +38,12 @@ func (s *Service) ingestHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// received counts the packet the instant it is accepted for durability,
-	// before we know whether it lands on the stream or the spill.
+	// before we know whether it lands on the stream or the spill. Mirrored
+	// into Redis (not just the periodic Postgres flush) so it survives an
+	// unclean crash the same way the stream itself does — see
+	// runCounterFlusher's doc comment.
 	s.counters.received.Add(1)
+	bumpRedisCounter(r.Context(), s.rdb, counterReceivedKey)
 
 	payload, err := json.Marshal(rec)
 	if err != nil {
@@ -68,6 +72,7 @@ func (s *Service) durablyEnqueue(ctx context.Context, payload []byte) error {
 	if s.rdb != nil {
 		if _, err := enqueueStream(cctx, s.rdb, payload); err == nil {
 			s.counters.enqueued.Add(1)
+			bumpRedisCounter(ctx, s.rdb, counterEnqueuedKey)
 			return nil
 		} else {
 			s.log.Warn("acct ingest: stream append failed, spilling to disk", "error", err)

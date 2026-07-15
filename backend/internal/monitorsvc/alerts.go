@@ -82,6 +82,7 @@ func newAlertEngine(db *pgxpool.Pool, rdb *redis.Client, settings platform.Setti
 		telegramSender{settings: settings, client: client},
 		emailSender{settings: settings},
 		whatsAppSender{settings: settings, client: client},
+		pushSender{},
 	)
 	return &alertEngine{
 		db:       db,

@@ -51,6 +51,15 @@ type renewParams struct {
 	// settings service — it takes the resolved values here.
 	anchorRule    string
 	receiptPrefix string
+
+	// durationOverrideDays, when set, replaces the target profile's
+	// duration_days for this renewal only (Phase 4 C8: the scratch-card 1-day
+	// trial). baseOverride, when set, anchors the new expiry at this exact
+	// instant instead of applying anchorRule to the subscriber's current
+	// expiry (Phase 4 C8: card approval anchors at the trial's start so the
+	// trial day is included in, not added to, the paid duration — FR-59.2).
+	durationOverrideDays *int
+	baseOverride         *time.Time
 }
 
 // fillSettings resolves the settings renewInTx needs, before any transaction is
@@ -94,6 +103,7 @@ func (m *Module) renew(ctx context.Context, p renewParams) (renewResult, error) 
 	_ = radius.InvalidatePolicy(p.subscriberID)
 	m.resetQuota(ctx, p.subscriberID)
 	res.CoAResult = m.restoreCoA(ctx, p.subscriberID, res.rate, res.poolName)
+	m.publishRenewed(ctx, p.subscriberID, res, p.source) // dup replays already returned above
 	return res, nil
 }
 
@@ -241,7 +251,16 @@ func (m *Module) renewInTx(ctx context.Context, tx pgx.Tx, dbNow time.Time, p re
 
 	// Expiry extension per the anchor rule (FR-19.1 / AC-19a). anchorRule was
 	// resolved before the transaction opened (pool-safety, see renewParams).
-	newExpiry := computeExpiry(dbNow, curExpires, p.anchorRule, duration)
+	effDuration := duration
+	if p.durationOverrideDays != nil {
+		effDuration = *p.durationOverrideDays
+	}
+	var newExpiry time.Time
+	if p.baseOverride != nil {
+		newExpiry = p.baseOverride.AddDate(0, 0, effDuration)
+	} else {
+		newExpiry = computeExpiry(dbNow, curExpires, p.anchorRule, effDuration)
+	}
 
 	// Persist: extend expiry, switch profile if requested, quota-cycle reset,
 	// status active, consume a pending profile switch if it matched.

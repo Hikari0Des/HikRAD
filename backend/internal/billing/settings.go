@@ -13,14 +13,16 @@ import (
 // Permission strings this module introduces (checked by string, never by role
 // name — frozen contract C2/C7). renew/topup/export live in the auth package.
 const (
-	permRefund         = "refund"
-	permVouchersView   = "vouchers.view"
-	permVouchersCreate = "vouchers.create"
+	permRefund             = "refund"
+	permVouchersView       = "vouchers.view"
+	permVouchersCreate     = "vouchers.create"
+	permGatewaysManage     = "payment_gateways.manage" // Phase 4 C3
+	permCardPaymentsVerify = "card_payments.verify"    // Phase 4 C8, FR-59.2
 )
 
 // Settings keys.
 const (
-	keyRenewalAnchor  = "billing.renewal_anchor"      // "from_expiry" (default) | "from_now"
+	keyRenewalAnchor  = "billing.renewal_anchor"       // "from_expiry" (default) | "from_now"
 	keyAdminBypass    = "billing.admin_balance_bypass" // bool, default true
 	keyReceiptPrefix  = "billing.receipt_prefix"       // string, default "HR-"
 	keyReceiptBrand   = "billing.receipt_branding"     // object, see brandingConfig

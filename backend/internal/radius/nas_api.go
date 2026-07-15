@@ -32,6 +32,13 @@ type nasRequest struct {
 	ROSVersion    *string `json:"ros_version" validate:"omitempty"`
 	Location      string  `json:"location" validate:"omitempty,max=256"`
 	Enabled       *bool   `json:"enabled"`
+	// APIPort/APIUser/APIPassword (FR-56.2): RouterOS API auto-setup
+	// credentials, encrypted at rest like Secret/SNMPCommunity. Optional —
+	// a NAS with none set simply can't preview/apply auto-setup and stays on
+	// the FR-14 copy-paste path.
+	APIPort     int    `json:"api_port" validate:"omitempty,min=1,max=65535"`
+	APIUser     string `json:"api_user" validate:"omitempty,max=128"`
+	APIPassword string `json:"api_password" audit:"secret"`
 }
 
 func (req nasRequest) toInput() nasInput {
@@ -39,6 +46,7 @@ func (req nasRequest) toInput() nasInput {
 		Name: req.Name, IP: req.IP, Secret: req.Secret, Type: req.Type,
 		Vendor: req.Vendor, CoAPort: req.CoAPort, SNMP: req.SNMPCommunity,
 		ROSVersion: req.ROSVersion, Location: req.Location, Enabled: true,
+		APIPort: req.APIPort, APIUser: req.APIUser, APIPassword: req.APIPassword,
 	}
 	if in.Type == "" {
 		in.Type = "pppoe"
@@ -121,7 +129,7 @@ func (m *module) updateNASHandler(w http.ResponseWriter, r *http.Request) {
 	if !httpapi.Bind(w, r, &req) {
 		return
 	}
-	n, err := updateNAS(r.Context(), m.db, id, req.toInput(), req.Secret != "", req.SNMPCommunity != "")
+	n, err := updateNAS(r.Context(), m.db, id, req.toInput(), req.Secret != "", req.SNMPCommunity != "", req.APIPassword != "")
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {

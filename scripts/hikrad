@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# hikrad — ops CLI wrapper (contract C1; installed to /usr/local/bin by
-# scripts/install.sh). Phase 1 covers stack lifecycle; backup/restore/update
-# subcommands (FR-51) ship in Phase 5.
+# hikrad — ops CLI wrapper (contract C5; installed to /usr/local/bin by
+# scripts/install.sh). Stack lifecycle (Phase 1) plus backup/restore/update
+# (FR-51, Phase 5) and the Cloudflare tunnel toggle (FR-57, Phase 5).
 
 set -euo pipefail
 
@@ -13,12 +13,366 @@ if [ -r "$META" ]; then
 else
     # Dev fallback: run from a checkout without a production install.
     SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    HIKRAD_CHECKOUT="$SCRIPT_DIR/.."
     HIKRAD_COMPOSE_FILE="$SCRIPT_DIR/../deploy/compose.yml"
     HIKRAD_ENV_FILE="$SCRIPT_DIR/../deploy/.env"
 fi
 
+log()  { printf '[hikrad] %s\n' "$*"; }
+die()  { printf '[hikrad] ERROR: %s\n' "$*" >&2; exit 1; }
+
 compose() {
     docker compose --env-file "$HIKRAD_ENV_FILE" -f "$HIKRAD_COMPOSE_FILE" "$@"
+}
+
+# compose_tunnel is compose(), scoped to also see the `tunnel` profile
+# (cloudflared is off-by-default per FR-57.1 — it never starts on a plain
+# `compose up`, only when explicitly targeted with --profile tunnel).
+compose_tunnel() {
+    docker compose --env-file "$HIKRAD_ENV_FILE" -f "$HIKRAD_COMPOSE_FILE" --profile tunnel "$@"
+}
+
+env_get() { # env_get KEY -> value from $HIKRAD_ENV_FILE (last match wins, matching gen-env.sh's own convention)
+    grep "^$1=" "$HIKRAD_ENV_FILE" 2>/dev/null | tail -n1 | cut -d= -f2-
+}
+
+pg_env() {
+    PG_USER="$(env_get POSTGRES_USER)"; [ -n "$PG_USER" ] || PG_USER=hikrad
+    PG_DB="$(env_get POSTGRES_DB)"; [ -n "$PG_DB" ] || PG_DB=hikrad
+}
+
+require_passphrase() {
+    PASSPHRASE="$(env_get HIKRAD_BACKUP_PASSPHRASE)"
+    [ -n "$PASSPHRASE" ] || die "HIKRAD_BACKUP_PASSPHRASE not set in $HIKRAD_ENV_FILE — cannot encrypt/decrypt backups (see docs/ops/backup-restore.md)."
+}
+
+require_tool() {
+    command -v "$1" >/dev/null 2>&1 || die "$1 is required but not found on PATH"
+}
+
+backup_dir() {
+    local d
+    d="$(env_get HIKRAD_BACKUP_DIR)"
+    [ -n "$d" ] || d="$(dirname "$HIKRAD_ENV_FILE")/backups"
+    mkdir -p "$d"
+    echo "$d"
+}
+
+data_dir() {
+    local d
+    d="$(env_get HIKRAD_DATA_DIR)"
+    [ -n "$d" ] || d="$(dirname "$HIKRAD_COMPOSE_FILE")/data"
+    echo "$d"
+}
+
+wait_for_postgres() {
+    local i
+    for i in $(seq 1 30); do
+        compose exec -T postgres pg_isready -U "$PG_USER" -d "$PG_DB" >/dev/null 2>&1 && return 0
+        sleep 2
+    done
+    return 1
+}
+
+# wait_for_api_health polls the hikrad-api container's Docker healthcheck
+# (deploy/docker/healthcheck.go — it only reports healthy once hikrad-api has
+# opened :8080 after migrations + DB/Redis pings succeed) so update/restore
+# never declare victory on a container that merely started.
+wait_for_api_health() {
+    local timeout="${1:-90}" waited=0 cid status
+    while [ "$waited" -lt "$timeout" ]; do
+        cid="$(compose ps -q hikrad-api 2>/dev/null || true)"
+        if [ -n "$cid" ]; then
+            status="$(docker inspect --format='{{.State.Health.Status}}' "$cid" 2>/dev/null || echo "")"
+            [ "$status" = "healthy" ] && return 0
+        fi
+        sleep 2
+        waited=$((waited + 2))
+    done
+    return 1
+}
+
+max_available_schema_version() {
+    # shellcheck disable=SC2012
+    ls "$HIKRAD_CHECKOUT"/backend/migrations/*.up.sql 2>/dev/null \
+        | sed -E 's#.*/([0-9]+)_.*#\1#' | sort -n | tail -1
+}
+
+record_backup_run() { # record_backup_run FILENAME SIZE_BYTES STATUS ERROR SCHEMA_VERSION TRIGGER
+    local filename="$1" size="$2" status="$3" error="$4" schema="$5" trig="$6"
+    local error_sql="NULL" schema_sql="NULL"
+    [ -n "$error" ] && error_sql="'$(printf '%s' "$error" | sed "s/'/''/g")'"
+    [ -n "$schema" ] && schema_sql="$schema"
+    compose exec -T postgres psql -U "$PG_USER" -d "$PG_DB" -v ON_ERROR_STOP=1 -q -c \
+        "INSERT INTO backup_runs (filename, started_at, finished_at, size_bytes, schema_version, encrypted, status, error, trigger)
+         VALUES ('$filename', now(), now(), $size, $schema_sql, true, '$status', $error_sql, '$trig');" \
+        >/dev/null 2>&1 || log "WARNING: could not record backup_runs row (panel history will be incomplete; the archive itself is fine)"
+}
+
+apply_retention() {
+    local dir="$1" retention
+    retention="$(env_get HIKRAD_BACKUP_RETENTION)"
+    [ -n "$retention" ] || retention=14
+    # shellcheck disable=SC2012
+    ls -1t "$dir"/hikrad-backup-*.tar.gz.gpg 2>/dev/null | tail -n "+$((retention + 1))" | while read -r old; do
+        log "retention: removing $old"
+        rm -f "$old"
+    done
+}
+
+# --- backup (FR-51.1/51.2) ---------------------------------------------------
+cmd_backup_now() {
+    local trig="${1:-manual}"
+    require_tool gpg
+    require_passphrase
+    pg_env
+    local dir; dir="$(backup_dir)"
+
+    local avail_kb
+    avail_kb="$(df -Pk "$dir" 2>/dev/null | tail -1 | awk '{print $4}')"
+    if [ -n "${avail_kb:-}" ] && [ "$avail_kb" -lt 524288 ]; then
+        log "WARNING: less than 512MB free at $dir — a failing backup here alerts, it does not corrupt existing archives or rotation."
+    fi
+
+    local ts name work
+    ts="$(date -u +%Y%m%dT%H%M%SZ)"
+    name="hikrad-backup-$ts"
+    work="$(mktemp -d)"
+    # shellcheck disable=SC2064
+    trap "rm -rf '$work'" RETURN
+
+    log "Dumping database ($PG_DB)…"
+    if ! compose exec -T postgres pg_dump -U "$PG_USER" -Fc -d "$PG_DB" > "$work/db.pgdump" 2>"$work/pg_dump.err"; then
+        local err; err="$(tail -c 500 "$work/pg_dump.err" 2>/dev/null || echo "pg_dump failed")"
+        record_backup_run "$name.tar.gz.gpg" 0 failed "$err" "" "$trig"
+        die "backup failed: $err"
+    fi
+
+    cp "$HIKRAD_ENV_FILE" "$work/.env"
+    local caddy_dir; caddy_dir="$(dirname "$HIKRAD_COMPOSE_FILE")/caddy"
+    [ -d "$caddy_dir" ] && cp -r "$caddy_dir" "$work/caddy"
+
+    local schema_version
+    schema_version="$(compose exec -T postgres psql -U "$PG_USER" -d "$PG_DB" -tA \
+        -c "SELECT COALESCE((SELECT version FROM schema_migrations LIMIT 1), 0);" 2>/dev/null | tr -d '[:space:]')"
+    [ -n "$schema_version" ] || schema_version=0
+    echo "$schema_version" > "$work/schema_version"
+
+    ( cd "$work" && tar -czf archive.tar.gz db.pgdump .env schema_version $( [ -d caddy ] && echo caddy ) )
+
+    local archive="$dir/$name.tar.gz.gpg"
+    if ! gpg --batch --yes --passphrase "$PASSPHRASE" --pinentry-mode loopback \
+            --symmetric --cipher-algo AES256 -o "$archive" "$work/archive.tar.gz" 2>"$work/gpg.err"; then
+        record_backup_run "$name.tar.gz.gpg" 0 failed "$(tail -c 500 "$work/gpg.err")" "$schema_version" "$trig"
+        die "backup encryption failed: $(tail -c 500 "$work/gpg.err")"
+    fi
+
+    local size
+    size="$(stat -c%s "$archive" 2>/dev/null || stat -f%z "$archive" 2>/dev/null || echo 0)"
+    record_backup_run "$(basename "$archive")" "$size" ok "" "$schema_version" "$trig"
+    log "Backup written: $archive ($size bytes, schema v$schema_version)"
+
+    apply_retention "$dir"
+}
+
+cmd_backup_list() {
+    local dir; dir="$(backup_dir)"
+    printf '%-34s %12s  %s\n' "FILE" "SIZE" "MODIFIED"
+    # shellcheck disable=SC2012
+    ls -1t "$dir"/hikrad-backup-*.tar.gz.gpg 2>/dev/null | while read -r f; do
+        printf '%-34s %12s  %s\n' "$(basename "$f")" \
+            "$(stat -c%s "$f" 2>/dev/null || stat -f%z "$f" 2>/dev/null)" \
+            "$(date -u -r "$f" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo unknown)"
+    done
+}
+
+# --- restore (FR-51.2/51.3) --------------------------------------------------
+cmd_restore() {
+    local input="${1:?usage: hikrad restore <archive>}"
+    local archive="$input"
+    [ -f "$archive" ] || archive="$(backup_dir)/$input"
+    [ -f "$archive" ] || die "archive not found: $input"
+    require_tool gpg
+    require_passphrase
+    pg_env
+
+    log "This STOPS the stack and REPLACES the database, .env, and Caddy config with the archive's contents."
+    if [ "${HIKRAD_RESTORE_YES:-0}" != "1" ]; then
+        read -r -p "Type 'yes' to continue: " confirm
+        [ "$confirm" = "yes" ] || die "restore cancelled"
+    fi
+
+    local work; work="$(mktemp -d)"
+    # shellcheck disable=SC2064
+    trap "rm -rf '$work'" RETURN
+
+    log "Decrypting archive…"
+    # -o before -d: gpg's decrypt-with-explicit-output parses more reliably
+    # with the output option ahead of the command flag (found by testing this
+    # exact invocation — the reverse order intermittently misparses -o's
+    # argument as a second input filename on some gpg builds).
+    gpg --batch --yes --passphrase "$PASSPHRASE" --pinentry-mode loopback \
+        -o "$work/archive.tar.gz" -d "$archive" 2>"$work/gpg.err" \
+        || die "decrypt failed (wrong passphrase or corrupt archive): $(tail -c 300 "$work/gpg.err")"
+    tar -C "$work" -xzf "$work/archive.tar.gz"
+    [ -f "$work/db.pgdump" ] || die "archive is missing db.pgdump — not a valid HikRAD backup"
+    [ -f "$work/.env" ] || die "archive is missing .env — not a valid HikRAD backup"
+
+    local archive_schema avail_schema
+    archive_schema="$(cat "$work/schema_version" 2>/dev/null || echo 0)"
+    avail_schema="$(max_available_schema_version)"
+    if [ -n "$avail_schema" ] && [ "$archive_schema" -gt "$avail_schema" ]; then
+        die "refusing to restore: archive schema v$archive_schema is newer than this install (max v$avail_schema) — run 'hikrad update' first, then retry."
+    fi
+    log "Archive schema v$archive_schema; this install supports up to v$avail_schema — forward migrations will run on boot."
+
+    log "Stopping the stack…"
+    compose down
+
+    log "Starting only the database…"
+    compose up -d postgres
+    wait_for_postgres || die "postgres did not become ready"
+
+    log "Dropping and recreating $PG_DB…"
+    compose exec -T postgres psql -U "$PG_USER" -d postgres -v ON_ERROR_STOP=1 -q \
+        -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '$PG_DB' AND pid <> pg_backend_pid();"
+    compose exec -T postgres psql -U "$PG_USER" -d postgres -v ON_ERROR_STOP=1 -q -c "DROP DATABASE IF EXISTS \"$PG_DB\";"
+    compose exec -T postgres psql -U "$PG_USER" -d postgres -v ON_ERROR_STOP=1 -q -c "CREATE DATABASE \"$PG_DB\";"
+    # TimescaleDB hypertables need the extension created and the catalog put
+    # into restore mode before pg_restore touches chunk tables, or COPY fails
+    # with "could not find hypertable" (found by testing a real restore, not
+    # documented anywhere obvious) — this is TimescaleDB's own documented
+    # pg_dump/pg_restore procedure, timescaledb_pre_restore()/_post_restore().
+    compose exec -T postgres psql -U "$PG_USER" -d "$PG_DB" -v ON_ERROR_STOP=1 -q -c "CREATE EXTENSION IF NOT EXISTS timescaledb;"
+    compose exec -T postgres psql -U "$PG_USER" -d "$PG_DB" -v ON_ERROR_STOP=1 -q -c "SELECT timescaledb_pre_restore();"
+
+    log "Restoring dump…"
+    if ! compose exec -T postgres pg_restore -U "$PG_USER" -d "$PG_DB" --no-owner --no-privileges < "$work/db.pgdump"; then
+        die "pg_restore reported errors — the pre-restore stack is stopped; investigate before retrying (the archive itself is untouched)"
+    fi
+    compose exec -T postgres psql -U "$PG_USER" -d "$PG_DB" -v ON_ERROR_STOP=1 -q -c "SELECT timescaledb_post_restore();"
+
+    cp "$HIKRAD_ENV_FILE" "$HIKRAD_ENV_FILE.pre-restore.bak"
+    cp "$work/.env" "$HIKRAD_ENV_FILE"
+    if [ -d "$work/caddy" ]; then
+        local caddy_dir; caddy_dir="$(dirname "$HIKRAD_COMPOSE_FILE")/caddy"
+        cp -r "$work/caddy/." "$caddy_dir/"
+    fi
+    log ".env restored (previous copy saved as $HIKRAD_ENV_FILE.pre-restore.bak) — this is required: it carries the AES-GCM key that decrypts subscriber/NAS secrets."
+
+    log "Starting the full stack (hikrad-api applies forward migrations on boot)…"
+    compose up -d
+    if ! wait_for_api_health 120; then
+        die "hikrad-api did not become healthy after restore — check: docker compose logs hikrad-api"
+    fi
+
+    local subs last_ledger last_acct
+    subs="$(compose exec -T postgres psql -U "$PG_USER" -d "$PG_DB" -tA -c "SELECT count(*) FROM subscribers;" 2>/dev/null | tr -d '[:space:]')"
+    last_ledger="$(compose exec -T postgres psql -U "$PG_USER" -d "$PG_DB" -tA -c "SELECT max(at) FROM ledger_transactions;" 2>/dev/null | tr -d '[:space:]')"
+    last_acct="$(compose exec -T postgres psql -U "$PG_USER" -d "$PG_DB" -tA -c "SELECT max(time) FROM usage_points;" 2>/dev/null | tr -d '[:space:]')"
+    log "Restore complete. Verification summary:"
+    log "  subscribers:            ${subs:-unknown}"
+    log "  last ledger entry:      ${last_ledger:-none}"
+    log "  last accounting record: ${last_acct:-none}"
+    log "Confirm these match what you expect, then test a RADIUS auth (see docs/ops/pilot-checklist.md)."
+}
+
+# --- update (FR-51.4/51.5) ---------------------------------------------------
+rollback_update_images() {
+    local rollback_file="$1"
+    [ -f "$rollback_file" ] || return 0
+    while IFS='=' read -r image_name id; do
+        [ -n "$id" ] && [ -n "$image_name" ] || continue
+        docker tag "$id" "$image_name" 2>/dev/null || true
+    done < "$rollback_file"
+}
+
+cmd_update() {
+    local bundle=""
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --bundle) bundle="${2:?--bundle requires a path}"; shift 2 ;;
+            *) die "unknown update argument: $1 (usage: hikrad update [--bundle <tar>])" ;;
+        esac
+    done
+
+    log "Pre-update backup…"
+    cmd_backup_now pre_update
+
+    local rollback_file; rollback_file="$(mktemp)"
+    for svc in hikrad-api hikrad-acct hikrad-monitor; do
+        local ref id
+        ref="$(compose config --images 2>/dev/null | grep "^${svc}" || true)"
+        id="$(compose images -q "$svc" 2>/dev/null | head -1)"
+        [ -n "$id" ] && echo "hikrad-$svc:latest=$id" >> "$rollback_file"
+    done
+
+    if [ -n "$bundle" ]; then
+        log "Loading offline image bundle $bundle…"
+        docker load -i "$bundle" || die "failed to load bundle $bundle"
+    else
+        if [ -d "$HIKRAD_CHECKOUT/.git" ]; then
+            log "Pulling latest source…"
+            git -C "$HIKRAD_CHECKOUT" pull --ff-only || die "git pull failed — resolve manually, then re-run 'hikrad update'"
+        fi
+        log "Building images…"
+        compose build || die "image build failed — nothing was restarted, previous version is still running"
+    fi
+
+    log "Applying update (hikrad-api runs forward-only migrations on boot)…"
+    compose up -d || {
+        log "compose up failed — rolling back images."
+        rollback_update_images "$rollback_file"
+        compose up -d || true
+        rm -f "$rollback_file"
+        die "update failed to start; rolled back to the previous images. The pre-update backup above is available if data needs restoring too."
+    }
+
+    if ! wait_for_api_health 120; then
+        log "hikrad-api did not become healthy after update — rolling back images."
+        rollback_update_images "$rollback_file"
+        compose up -d
+        rm -f "$rollback_file"
+        die "update rolled back to the previous version. If a migration partially applied, run: hikrad restore <the pre-update backup listed above>"
+    fi
+
+    rm -f "$rollback_file"
+    log "Update complete and healthy."
+}
+
+# --- tunnel (FR-57) ----------------------------------------------------------
+cmd_tunnel() {
+    case "${1:-}" in
+        enable)
+            local dir="$(data_dir)/cloudflared" tokenfile
+            tokenfile="$dir/tunnel-token"
+            # Create the directory (and an empty token file) ourselves, before
+            # Docker's bind-mount would otherwise auto-create it root-owned —
+            # the exact class of bug in the known acct-spill issue. 0644: the
+            # cloudflared image runs as its own non-root uid, and the parent
+            # /opt/hikrad tree (0750, root-owned by install.sh) is the actual
+            # access boundary.
+            mkdir -p "$dir"
+            : > "$tokenfile"
+            chmod 644 "$tokenfile"
+            if ! compose exec -T hikrad-api hikrad-api print-tunnel-token > "$tokenfile" 2>"$dir/print-tunnel-token.err"; then
+                die "no remote_access.token configured — set it in Settings > Remote Access first: $(cat "$dir/print-tunnel-token.err" 2>/dev/null)"
+            fi
+            if [ ! -s "$tokenfile" ]; then
+                die "remote_access.token is empty — set it in Settings > Remote Access first"
+            fi
+            compose_tunnel up -d cloudflared
+            compose exec -T redis redis-cli set health:tunnel:state connected >/dev/null 2>&1 || true
+            log "cloudflared started (profile 'tunnel')."
+            ;;
+        disable)
+            compose_tunnel stop cloudflared 2>/dev/null || true
+            compose_tunnel rm -f cloudflared 2>/dev/null || true
+            compose exec -T redis redis-cli set health:tunnel:state disabled >/dev/null 2>&1 || true
+            log "cloudflared stopped. No other service was touched (NFR-7)."
+            ;;
+        *) die "usage: hikrad tunnel enable|disable" ;;
+    esac
 }
 
 usage() {
@@ -31,9 +385,12 @@ Usage: hikrad <command>
   status      show service health
   logs [svc]  follow logs (all services or one)
 
-  backup      (Phase 5) scheduled/manual backups — not yet implemented
-  restore     (Phase 5) restore from archive — not yet implemented
-  update      (Phase 5) versioned update — not yet implemented
+  backup now          take a passphrase-encrypted backup immediately
+  backup list         list available backups
+  restore <archive>   stop, restore, migrate, verify (FR-51.2/51.3)
+  update [--bundle F] pre-backup, update images, migrate, rollback on failure
+
+  tunnel enable|disable   start/stop the optional Cloudflare tunnel (FR-57)
 EOF
 }
 
@@ -43,10 +400,16 @@ case "${1:-}" in
     restart)  compose restart ;;
     status)   compose ps ;;
     logs)     shift; compose logs -f --tail=200 "$@" ;;
-    backup|restore|update)
-        echo "hikrad $1: not implemented yet — ships with the Phase 5 backup/update work (FR-51)." >&2
-        exit 3
+    backup)
+        case "${2:-}" in
+            now) cmd_backup_now manual ;;
+            list|"") cmd_backup_list ;;
+            *) die "usage: hikrad backup now|list" ;;
+        esac
         ;;
+    restore)  shift; cmd_restore "${1:-}" ;;
+    update)   shift; cmd_update "$@" ;;
+    tunnel)   shift; cmd_tunnel "${1:-}" ;;
     -h|--help|help|"") usage ;;
     *)
         echo "hikrad: unknown command '$1'" >&2

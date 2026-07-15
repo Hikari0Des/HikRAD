@@ -11,9 +11,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"time"
 
 	"github.com/hikrad/hikrad/internal/platform"
+	"github.com/hikrad/hikrad/internal/push"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 )
@@ -162,6 +164,69 @@ func (c *conditions) digests(ctx context.Context) {
 			payload: map[string]any{"days": days},
 			match:   func(rr rule) bool { return rr.ID == r.ID },
 		})
+		// Per-subscriber targeting (contract C4/C7, task 4/4b): each subscriber
+		// crossing the threshold also gets their own portal push + WhatsApp
+		// expiry reminder, in their own language. Piggybacks the same once-daily
+		// claim above — no separate cooldown needed.
+		c.digestPerSubscriber(ctx, days)
+	}
+}
+
+// digestPerSubscriber extends expiring_digest with per-subscriber portal push
+// (FR-54.4) and WhatsApp (FR-55.2) targeting. Best-effort per subscriber: one
+// failure never stops the rest (delivery isolation, NFR-7).
+func (c *conditions) digestPerSubscriber(ctx context.Context, days int) {
+	if c.db == nil {
+		return
+	}
+	rows, err := c.db.Query(ctx,
+		`SELECT id::text, COALESCE(name,''), COALESCE(phone,''), whatsapp_opt_in,
+		        COALESCE(language,'en'),
+		        GREATEST(0, CEIL(EXTRACT(EPOCH FROM (expires_at - now())) / 86400))::int AS days_left
+		   FROM subscribers
+		  WHERE status = 'active' AND expires_at IS NOT NULL
+		    AND expires_at >= now() AND expires_at < now() + make_interval(days => $1::int)`,
+		days)
+	if err != nil {
+		if !isUndefinedTable(err) {
+			c.log.Warn("digest: per-subscriber query failed", "error", err)
+		}
+		return
+	}
+	type target struct {
+		id, name, phone, language string
+		optIn                     bool
+		daysLeft                  int
+	}
+	var targets []target
+	for rows.Next() {
+		var t target
+		if err := rows.Scan(&t.id, &t.name, &t.phone, &t.optIn, &t.language, &t.daysLeft); err != nil {
+			rows.Close()
+			return
+		}
+		targets = append(targets, t)
+	}
+	rows.Close()
+	if rows.Err() != nil {
+		return
+	}
+	for _, t := range targets {
+		if err := push.DeliverToSubscriber(ctx, t.id, push.Payload{
+			TitleKey: "push.expiry_reminder.title",
+			BodyKey:  "push.expiry_reminder.body",
+			Params:   map[string]any{"days_left": t.daysLeft},
+			URL:      "/",
+		}); err != nil {
+			c.log.Warn("digest: expiry reminder push failed", "subscriber_id", t.id, "error", err)
+		}
+		if !t.optIn || t.phone == "" {
+			continue
+		}
+		params := []string{t.name, strconv.Itoa(t.daysLeft)}
+		if err := deliverSubscriberWhatsApp(ctx, c.settings, httpClient(), t.phone, t.language, "expiry_reminder", params); err != nil {
+			c.log.Warn("digest: expiry reminder whatsapp failed", "subscriber_id", t.id, "error", err)
+		}
 	}
 }
 
@@ -169,12 +234,15 @@ func (c *conditions) digests(ctx context.Context) {
 // today's business figures (active count + revenue from D's revenue_daily).
 func (c *conditions) digestSummary(ctx context.Context, days int) string {
 	var expiring, active int64
-	_ = c.db.QueryRow(ctx,
+	err := c.db.QueryRow(ctx,
 		`SELECT
 		   count(*) FILTER (WHERE status='active' AND expires_at IS NOT NULL
-		                    AND expires_at >= now() AND expires_at < now() + ($1 || ' days')::interval),
+		                    AND expires_at >= now() AND expires_at < now() + make_interval(days => $1::int)),
 		   count(*) FILTER (WHERE status='active')
 		 FROM subscribers`, days).Scan(&expiring, &active)
+	if err != nil {
+		c.log.Warn("digest: summary query failed", "error", err)
+	}
 	revenue := revenueTodayDB(ctx, c.db)
 	return fmt.Sprintf("Daily digest — %d subscribers expiring in %d days · %d active · %d IQD collected today",
 		expiring, days, active, revenue)

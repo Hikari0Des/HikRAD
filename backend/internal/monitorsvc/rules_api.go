@@ -26,7 +26,7 @@ var validRuleTypes = map[string]bool{
 
 // Frozen channel enum (contract C5).
 var validChannels = map[string]bool{
-	chInApp: true, chTelegram: true, chEmail: true, chWhatsApp: true,
+	chInApp: true, chTelegram: true, chEmail: true, chWhatsApp: true, chPush: true,
 }
 
 type alertRuleView struct {

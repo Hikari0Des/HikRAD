@@ -28,8 +28,31 @@ func (m *module) configSnippetHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// ?ros overrides the stored version; otherwise use the NAS record, default 7.
-	ros := r.URL.Query().Get("ros")
+	in, ros, err := m.snippetInputFor(n, r.URL.Query().Get("ros"))
+	if err != nil {
+		m.internal(w, "build snippet input", err)
+		return
+	}
+	snippet, err := vendor.For(n.Vendor).Snippet(in)
+	if err != nil {
+		m.internal(w, "render snippet", err)
+		return
+	}
+	httpapi.JSON(w, http.StatusOK, map[string]any{
+		"nas_id":      n.ID,
+		"ros_version": ros,
+		"type":        n.Type,
+		"snippet":     snippet,
+	})
+}
+
+// snippetInputFor builds the FR-14.2 desired-state input shared by the
+// copy-paste snippet (this file) and the FR-56.2 auto-setup planner
+// (autosetup_api.go) — both must describe exactly the same target config, or
+// a router set up by one path would look "wrong" to the other. rosOverride,
+// when non-empty, wins over the NAS record's stored ros_version (default 7).
+func (m *module) snippetInputFor(n nasRow, rosOverride string) (vendor.SnippetInput, string, error) {
+	ros := rosOverride
 	if ros == "" && n.ROSVersion != nil {
 		ros = *n.ROSVersion
 	}
@@ -45,13 +68,13 @@ func (m *module) configSnippetHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// The NAS secret is shown here (FR-13.3: revealed to the operator setting up
-	// the router); this endpoint is nas.view-gated. Decrypt just for the render.
+	// the router); callers are nas.view/nas.edit-gated. Decrypt just for the render.
 	secret := "<secret>"
 	if plain, derr := decryptToString(n.SecretEnc); derr == nil {
 		secret = plain
 	}
 
-	snippet, err := vendor.For(n.Vendor).Snippet(vendor.SnippetInput{
+	return vendor.SnippetInput{
 		ROSVersion:   ros,
 		Type:         n.Type,
 		NASName:      n.Name,
@@ -60,17 +83,7 @@ func (m *module) configSnippetHandler(w http.ResponseWriter, r *http.Request) {
 		CoAPort:      n.CoAPort,
 		InterimSecs:  300,
 		WalledGarden: defaultWalledGarden(),
-	})
-	if err != nil {
-		m.internal(w, "render snippet", err)
-		return
-	}
-	httpapi.JSON(w, http.StatusOK, map[string]any{
-		"nas_id":      n.ID,
-		"ros_version": ros,
-		"type":        n.Type,
-		"snippet":     snippet,
-	})
+	}, ros, nil
 }
 
 // defaultWalledGarden returns the hosts a Hotspot NAS must allow so the portal,

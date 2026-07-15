@@ -25,11 +25,13 @@ func Run(ctx context.Context, db *pgxpool.Pool, rdb *redis.Client, settings plat
 	engine := NewEngine(db, rdb, alerts, log)
 	cond := newConditions(db, rdb, settings, alerts, log)
 	sc := newSelfCheck(db, rdb, log)
+	subEvents := newSubscriberEvents(db, rdb, settings, log)
 
 	go engine.Run(ctx)
 	go sc.runOnlineSampler(ctx)
 	go sc.runHealthProbes(ctx)
 	go runConditionLoop(ctx, cond, log)
+	go subEvents.run(ctx)
 
 	log.Info("hikrad-monitor loops started")
 	<-ctx.Done()

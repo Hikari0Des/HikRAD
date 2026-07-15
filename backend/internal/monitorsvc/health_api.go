@@ -30,6 +30,10 @@ const (
 	// avoid importing internal/radius).
 	keyEnforceFailures = "enforce:failures"
 	decisionStream     = "radius:decisions"
+	// keyTunnelState is written by `hikrad tunnel enable|disable` (C7, FR-57);
+	// absent until the operator has touched the tunnel at least once, which
+	// coincides with "disabled" (its off-by-default state).
+	keyTunnelState = "health:tunnel:state"
 )
 
 type componentHealth struct {
@@ -58,6 +62,10 @@ type diskUsage struct {
 	UsedPercent float64 `json:"used_percent"`
 }
 
+type tunnelHealth struct {
+	State string `json:"state"` // disabled|connected|disconnected
+}
+
 type healthResponse struct {
 	FreeRADIUS freeradiusHealth `json:"freeradius"`
 	API        componentHealth  `json:"api"`
@@ -66,6 +74,7 @@ type healthResponse struct {
 	Queue      queueHealth      `json:"queue"`
 	Disk       []diskUsage      `json:"disk"`
 	License    map[string]any   `json:"license"` // placeholder until Phase 5
+	Tunnel     tunnelHealth     `json:"tunnel"`
 }
 
 func handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -77,9 +86,26 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 		Queue:   queueHealthNow(ctx),
 		Disk:    diskUsageAll(),
 		License: map[string]any{"valid": true, "placeholder": true},
+		Tunnel:  tunnelHealthNow(ctx),
 	}
 	resp.FreeRADIUS = freeRADIUSHealth(ctx)
 	httpapi.JSON(w, http.StatusOK, resp)
+}
+
+// tunnelHealthNow reads the state `hikrad tunnel enable|disable` writes.
+// Off-by-default (FR-57): an unset key means the operator has never touched
+// the tunnel, which is indistinguishable from — and reported as — "disabled".
+func tunnelHealthNow(ctx context.Context) tunnelHealth {
+	th := tunnelHealth{State: "disabled"}
+	if pkgRDB == nil {
+		return th
+	}
+	c, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
+	if s, err := pkgRDB.Get(c, keyTunnelState).Result(); err == nil && s != "" {
+		th.State = s
+	}
+	return th
 }
 
 func pingDB(ctx context.Context) bool {

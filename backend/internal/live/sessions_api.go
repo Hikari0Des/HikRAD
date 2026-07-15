@@ -115,12 +115,6 @@ func (m *Module) listSessions(w http.ResponseWriter, r *http.Request) {
 	httpapi.JSON(w, http.StatusOK, httpapi.NewListResponse(items, next))
 }
 
-type usagePoint struct {
-	T    time.Time `json:"t"`
-	Down int64     `json:"down"`
-	Up   int64     `json:"up"`
-}
-
 func (m *Module) usageBySubscriber(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id := chi.URLParam(r, "id")
@@ -134,40 +128,16 @@ func (m *Module) usageBySubscriber(w http.ResponseWriter, r *http.Request) {
 	}
 
 	monthly := r.URL.Query().Get("granularity") == "monthly"
-	bucket := "1 day"
 	defWindow := 30 * 24 * time.Hour
 	if monthly {
-		bucket = "1 month"
 		defWindow = 365 * 24 * time.Hour
 	}
 	to := parseTimeParam(r.URL.Query().Get("to"), time.Now().UTC())
 	from := parseTimeParam(r.URL.Query().Get("from"), to.Add(-defWindow))
 
-	rows, err := pkgDB.Query(ctx,
-		`SELECT time_bucket($1::interval, day) AS b,
-		        COALESCE(sum(down_bytes),0), COALESCE(sum(up_bytes),0)
-		   FROM usage_daily
-		  WHERE subscriber_id = $2::uuid AND day >= $3 AND day < $4
-		  GROUP BY b ORDER BY b`,
-		bucket, id, from, to)
+	out, err := UsageForSubscriber(ctx, pkgDB, id, monthly, from, to)
 	if err != nil {
 		m.internal(w, "usage query", err)
-		return
-	}
-	defer rows.Close()
-
-	out := make([]usagePoint, 0, 64)
-	for rows.Next() {
-		var p usagePoint
-		if err := rows.Scan(&p.T, &p.Down, &p.Up); err != nil {
-			m.internal(w, "usage scan", err)
-			return
-		}
-		p.T = p.T.UTC()
-		out = append(out, p)
-	}
-	if rows.Err() != nil {
-		m.internal(w, "usage rows", rows.Err())
 		return
 	}
 	httpapi.JSON(w, http.StatusOK, out)

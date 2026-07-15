@@ -6,34 +6,152 @@
       "username": "Username",
       "password": "Password",
       "submit": "Sign in",
+      "submitting": "Signing in…",
       "note": "Use your internet (PPPoE) username and password.",
-      "language": "Language"
+      "language": "Language",
+      "errorInvalid": "Wrong username or password.",
+      "errorRateLimited": "Too many attempts. Please wait a moment and try again.",
+      "errorDisabled": "This account is disabled. Contact your ISP for help.",
+      "errorNetwork": "Can't reach the server. Check your connection and try again."
     },
     "nav": {
       "label": "Navigation",
       "home": "Home",
       "usage": "Usage",
-      "renew": "Renew"
+      "renew": "Renew",
+      "settings": "Settings",
+      "logout": "Sign out"
+    },
+    "common": {
+      "refreshing": "Refreshing…",
+      "pullToRefresh": "Pull to refresh"
     },
     "home": {
       "title": "My account",
       "status": "Subscription status",
       "expires": "Expires",
-      "quotaTitle": "Data this month",
-      "placeholder": "Your live account overview arrives with the full portal."
+      "onlineNow": "Online now",
+      "daysLeft": "Days remaining",
+      "profile": "Plan",
+      "consumedTitle": "Data used this cycle",
+      "consumedBreakdown": "{down} down · {up} up",
+      "speedTitle": "Speed",
+      "speedProfile": "{down} down / {up} up",
+      "speedLive": "Live now: {down} down / {up} up",
+      "renewAction": "Renew",
+      "loadError": "Couldn't load your account. Please try again.",
+      "cardPendingTitle": "Test internet active",
+      "cardPendingBody": "Your 1-day trial is active while your payment is verified. It expires at {time} if not approved sooner.",
+      "cardRejectedTitle": "Payment couldn't be verified",
+      "cardRejectedAction": "Renew another way"
     },
     "usage": {
       "title": "Usage",
-      "chartTitle": "Daily usage",
-      "chartPlaceholder": "Usage charts will appear here.",
-      "mixedSample": "Subscriber {username} used {gb} GB this week",
-      "daysLeft": "{count, plural, one {# day left} other {# days left}}"
+      "chartTitle": "Data usage",
+      "empty": "No usage data yet.",
+      "download": "Download",
+      "upload": "Upload",
+      "chartLabel": "Usage chart",
+      "granularity": {
+        "daily": "Daily",
+        "monthly": "Monthly"
+      },
+      "loadError": "Couldn't load this. Please try again.",
+      "paymentsTitle": "Payment history",
+      "paymentsEmpty": "No payments yet.",
+      "paymentType": {
+        "renewal": "Renewal",
+        "voucher": "Voucher",
+        "gateway": "Online payment",
+        "card": "Scratch card",
+        "refund": "Refund",
+        "other": "Payment"
+      }
     },
     "renew": {
       "title": "Renew",
-      "price": "Renewal price",
-      "action": "Renew now",
-      "placeholder": "Renewal and voucher redemption arrive with the full portal."
+      "resumePending": "You have a payment in progress — tap to continue",
+      "tab": {
+        "voucher": "Voucher",
+        "gateway": "Online payment",
+        "card": "Scratch card"
+      },
+      "reconnectNote": "Reconnecting may take a moment if you're online.",
+      "voucher": {
+        "label": "Voucher code",
+        "placeholder": "e.g. ABCD-1234",
+        "hint": "Enter the code exactly as printed.",
+        "submit": "Redeem",
+        "submitting": "Redeeming…",
+        "successTitle": "Renewed",
+        "successExpiry": "Your subscription now expires {date}.",
+        "redeemAnother": "Redeem another voucher",
+        "error": {
+          "used": "This voucher has already been used.",
+          "expired": "This voucher has expired.",
+          "invalid": "That code doesn't look right. Check it and try again.",
+          "network": "Couldn't reach the server. Please try again."
+        }
+      },
+      "gateway": {
+        "startError": "Couldn't start the payment. Please try again.",
+        "allDownTitle": "Online payment isn't available right now",
+        "allDownBody": "You can still renew instantly with a voucher.",
+        "useVoucher": "Use a voucher instead"
+      },
+      "card": {
+        "pendingTitle": "Test internet active",
+        "pendingBody": "Pending ISP verification — active until {time} if not approved sooner.",
+        "typeLabel": "Card type",
+        "typePlaceholder": "Select a card type",
+        "codeLabel": "Card code",
+        "submit": "Activate",
+        "submitting": "Activating…",
+        "error": {
+          "cooldown": "Please wait before submitting another card.",
+          "network": "Couldn't reach the server. Please try again.",
+          "invalid_code": "That code doesn't look right. Check it and try again.",
+          "already_pending": "You already have a card payment pending verification."
+        }
+      },
+      "return": {
+        "noIntent": "No payment in progress.",
+        "backToRenew": "Back to Renew",
+        "reconnecting": "Reconnecting…",
+        "pendingTitle": "Payment pending",
+        "pendingBody": "We're confirming your payment. This can take a moment — you don't need to do anything.",
+        "reference": "Reference: {ref}",
+        "successTitle": "Payment successful",
+        "backToHome": "Back to Home",
+        "expiredTitle": "Payment expired",
+        "failedTitle": "Payment failed",
+        "failedBody": "The payment didn't go through. You can try again or use a voucher instead.",
+        "retry": "Try again"
+      }
+    },
+    "settings": {
+      "title": "Account settings",
+      "phoneLabel": "Phone number",
+      "passwordWarning": "Changing your password also changes your internet (PPPoE) login password.",
+      "newPasswordLabel": "New password",
+      "confirmPasswordLabel": "Confirm new password",
+      "submit": "Save changes",
+      "submitting": "Saving…",
+      "saved": "Saved.",
+      "error": {
+        "passwordMismatch": "Passwords don't match.",
+        "generic": "Couldn't save your changes. Please try again."
+      }
+    },
+    "pwa": {
+      "offline": "No connection — showing the last data we have.",
+      "installTitle": "Install HikRAD",
+      "installAndroidBody": "Add this to your home screen for quick, full-screen access.",
+      "installIosBody": "Tap Share, then \"Add to Home Screen\", for quick, full-screen access.",
+      "installDismiss": "Not now",
+      "installAction": "Install",
+      "updateAvailable": "A new version is available.",
+      "updateAction": "Refresh"
     }
   }
 }

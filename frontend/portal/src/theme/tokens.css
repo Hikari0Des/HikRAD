@@ -19,4 +19,7 @@
 
   --hik-danger: 185 28 28;
   --hik-ok: 21 128 61;
+  /* Portal-only addition (Phase 4): scratch-card pending/expiring states need
+     a distinct amber, neither "danger" nor "ok" (task 3b/FR-59). */
+  --hik-warning: 180 116 8;
 }

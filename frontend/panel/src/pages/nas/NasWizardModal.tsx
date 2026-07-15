@@ -161,6 +161,47 @@ export function NasWizardModal({
             />
             {t('nas.enabled')}
           </label>
+
+          <div className="border-t border-surface-sunken pt-3">
+            <p className="mb-2 text-xs font-medium text-ink-muted">
+              {t('nas.autoSetup.credsTitle')}
+            </p>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label={t('nas.autoSetup.apiUser')} error={errors.api_user}>
+                <TextInput
+                  value={form.apiUser}
+                  dir="ltr"
+                  onChange={(e) => set('apiUser', e.target.value)}
+                />
+              </Field>
+              <Field label={t('nas.autoSetup.apiPort')} error={errors.api_port}>
+                <TextInput
+                  type="number"
+                  dir="ltr"
+                  value={form.apiPort}
+                  onChange={(e) => set('apiPort', e.target.value)}
+                />
+              </Field>
+            </div>
+            <Field
+              label={t('nas.autoSetup.apiPassword')}
+              hint={
+                editing && existing?.has_api_creds
+                  ? t('nas.autoSetup.apiPasswordSetHint')
+                  : undefined
+              }
+              error={errors.api_password}
+            >
+              <TextInput
+                type="password"
+                dir="ltr"
+                value={form.apiPassword}
+                placeholder={editing && existing?.has_api_creds ? '••••••••' : ''}
+                onChange={(e) => set('apiPassword', e.target.value)}
+              />
+            </Field>
+          </div>
+
           <div className="flex justify-between gap-2 pt-2">
             <Button variant="ghost" onClick={() => setStep(1)}>
               {t('ui.back')}
@@ -185,6 +226,9 @@ interface NasForm {
   location: string
   snmp: string
   enabled: boolean
+  apiUser: string
+  apiPort: string
+  apiPassword: string
 }
 
 function initial(n?: Nas, prefill?: NasPrefill): NasForm {
@@ -198,6 +242,9 @@ function initial(n?: Nas, prefill?: NasPrefill): NasForm {
     location: n?.location ?? '',
     snmp: '',
     enabled: n?.enabled ?? true,
+    apiUser: n?.api_user ?? '',
+    apiPort: n?.api_port ? String(n.api_port) : '8728',
+    apiPassword: '',
   }
 }
 
@@ -214,6 +261,9 @@ function toWrite(f: NasForm, editing: boolean): NasWrite {
   // On create the secret is required; on edit an empty secret leaves it as-is.
   if (f.secret || !editing) body.secret = f.secret
   if (f.snmp) body.snmp_community = f.snmp
+  if (f.apiUser) body.api_user = f.apiUser
+  if (f.apiPort) body.api_port = Number(f.apiPort)
+  if (f.apiPassword) body.api_password = f.apiPassword
   return body
 }
 

@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>HikRAD Panel — Offline</title>
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        display: flex;
+        min-height: 100vh;
+        align-items: center;
+        justify-content: center;
+        margin: 0;
+        background: #f4f6f8;
+        color: #17202a;
+        text-align: center;
+        padding: 24px;
+      }
+      .card {
+        max-width: 360px;
+      }
+      button {
+        margin-top: 16px;
+        padding: 10px 20px;
+        border-radius: 8px;
+        border: none;
+        background: #08748f;
+        color: #fff;
+        font-weight: 600;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Last-resort static fallback (contract C5/FR-54.2) for when even the
+         shell isn't cached yet; the running SPA shows its own localized
+         OfflineBanner once loaded. -->
+    <div class="card">
+      <p>No connection — showing the last available data isn't possible yet on this device.</p>
+      <p dir="rtl" lang="ar">لا يوجد اتصال بالإنترنت. يرجى المحاولة مرة أخرى.</p>
+      <button onclick="location.reload()">Retry</button>
+    </div>
+  </body>
+</html>

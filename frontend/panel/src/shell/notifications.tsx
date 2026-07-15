@@ -9,6 +9,7 @@ import {
   unreadCount,
   type NotificationState,
 } from '../lib/notificationReducer'
+import { PushOptIn } from '../pwa/PushOptIn'
 
 interface NotificationContextValue {
   state: NotificationState
@@ -113,6 +114,10 @@ export function NotificationBell() {
               ))}
             </ul>
           )}
+          {/* Push opt-in (contract C4, Phase-4 task 6 — Agent F, src/pwa/**
+              exception scope; this one-line mount is the only change to this
+              file). */}
+          <PushOptIn />
         </div>
       ) : null}
     </div>

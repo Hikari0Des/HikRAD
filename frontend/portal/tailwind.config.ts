@@ -27,6 +27,7 @@ export default {
         },
         danger: 'rgb(var(--hik-danger) / <alpha-value>)',
         ok: 'rgb(var(--hik-ok) / <alpha-value>)',
+        warning: 'rgb(var(--hik-warning) / <alpha-value>)',
       },
     },
   },

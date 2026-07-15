@@ -59,6 +59,12 @@ export interface Health {
   }
   disk: DiskUsage[]
   license: Record<string, unknown>
+  /**
+   * Cloudflare tunnel state (contract C7, FR-57) — optional because, as of
+   * this writing, the health handler does not yet publish it; the remote-
+   * access settings screen treats an absent field as "unknown", not an error.
+   */
+  tunnel?: { state: 'disabled' | 'connected' | 'disconnected' }
 }
 
 export function getHealth(): Promise<Health> {

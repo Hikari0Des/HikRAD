@@ -18,22 +18,25 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// nasRow is the full NAS record. Secret/SNMP are stored sealed; callers that
-// need cleartext decrypt explicitly.
+// nasRow is the full NAS record. Secret/SNMP/API-password are stored sealed;
+// callers that need cleartext decrypt explicitly.
 type nasRow struct {
-	ID         string
-	Name       string
-	IP         string
-	SecretEnc  []byte
-	Type       string
-	Vendor     string
-	CoAPort    int
-	SNMPEnc    []byte
-	ROSVersion *string
-	Location   string
-	Enabled    bool
-	CreatedAt  time.Time
-	UpdatedAt  time.Time
+	ID            string
+	Name          string
+	IP            string
+	SecretEnc     []byte
+	Type          string
+	Vendor        string
+	CoAPort       int
+	SNMPEnc       []byte
+	ROSVersion    *string
+	Location      string
+	Enabled       bool
+	APIPort       int
+	APIUser       string
+	APIPasswordEnc []byte
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
 }
 
 // nasView is the JSON read shape (C7-B). Secrets are never serialized.
@@ -48,8 +51,13 @@ type nasView struct {
 	ROSVersion *string   `json:"ros_version"`
 	Location   string    `json:"location"`
 	Enabled    bool      `json:"enabled"`
-	CreatedAt  time.Time `json:"created_at"`
-	UpdatedAt  time.Time `json:"updated_at"`
+	// API* is the FR-56.2 auto-setup credential slice: HasAPICreds reports
+	// whether a password is on file without ever serializing it.
+	APIPort     int       `json:"api_port"`
+	APIUser     string    `json:"api_user"`
+	HasAPICreds bool      `json:"has_api_creds"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 func (n nasRow) view() nasView {
@@ -57,17 +65,20 @@ func (n nasRow) view() nasView {
 		ID: n.ID, Name: n.Name, IP: n.IP, Type: n.Type, Vendor: n.Vendor,
 		CoAPort: n.CoAPort, HasSNMP: len(n.SNMPEnc) > 0, ROSVersion: n.ROSVersion,
 		Location: n.Location, Enabled: n.Enabled,
+		APIPort: n.APIPort, APIUser: n.APIUser, HasAPICreds: len(n.APIPasswordEnc) > 0,
 		CreatedAt: n.CreatedAt.UTC(), UpdatedAt: n.UpdatedAt.UTC(),
 	}
 }
 
 const nasColumns = `id::text, name, host(ip) AS ip, secret_enc, type, vendor,
-	coa_port, snmp_community_enc, ros_version, location, enabled, created_at, updated_at`
+	coa_port, snmp_community_enc, ros_version, location, enabled,
+	api_port, coalesce(api_user, ''), api_password_enc, created_at, updated_at`
 
 func scanNAS(row pgx.Row) (nasRow, error) {
 	var n nasRow
 	err := row.Scan(&n.ID, &n.Name, &n.IP, &n.SecretEnc, &n.Type, &n.Vendor,
-		&n.CoAPort, &n.SNMPEnc, &n.ROSVersion, &n.Location, &n.Enabled, &n.CreatedAt, &n.UpdatedAt)
+		&n.CoAPort, &n.SNMPEnc, &n.ROSVersion, &n.Location, &n.Enabled,
+		&n.APIPort, &n.APIUser, &n.APIPasswordEnc, &n.CreatedAt, &n.UpdatedAt)
 	return n, err
 }
 
@@ -103,6 +114,12 @@ type nasInput struct {
 	ROSVersion *string
 	Location   string
 	Enabled    bool
+	// APIPort/APIUser/APIPassword are the FR-56.2 auto-setup credentials.
+	// APIPassword empty means "leave untouched" on update (rotateAPIPassword
+	// gates whether it's written at all, matching Secret/SNMP's convention).
+	APIPort     int
+	APIUser     string
+	APIPassword string
 }
 
 func insertNAS(ctx context.Context, db *pgxpool.Pool, in nasInput) (nasRow, error) {
@@ -116,17 +133,24 @@ func insertNAS(ctx context.Context, db *pgxpool.Pool, in nasInput) (nasRow, erro
 			return nasRow{}, err
 		}
 	}
+	var apiPasswordEnc []byte
+	if in.APIPassword != "" {
+		if apiPasswordEnc, err = crypto.Encrypt([]byte(in.APIPassword)); err != nil {
+			return nasRow{}, err
+		}
+	}
 	row := db.QueryRow(ctx,
-		`INSERT INTO nas (name, ip, secret_enc, type, vendor, coa_port, snmp_community_enc, ros_version, location, enabled)
-		 VALUES ($1, $2::inet, $3, $4, $5, $6, $7, $8, $9, $10)
+		`INSERT INTO nas (name, ip, secret_enc, type, vendor, coa_port, snmp_community_enc, ros_version, location, enabled, api_port, api_user, api_password_enc)
+		 VALUES ($1, $2::inet, $3, $4, $5, $6, $7, $8, $9, $10, $11, NULLIF($12, ''), $13)
 		 RETURNING `+nasColumns,
-		in.Name, in.IP, secretEnc, in.Type, in.Vendor, in.CoAPort, snmpEnc, in.ROSVersion, in.Location, in.Enabled)
+		in.Name, in.IP, secretEnc, in.Type, in.Vendor, in.CoAPort, snmpEnc, in.ROSVersion, in.Location, in.Enabled,
+		apiPortOrDefault(in.APIPort), in.APIUser, apiPasswordEnc)
 	return scanNAS(row)
 }
 
-// updateNAS applies a full update. A nil secret/snmp leaves the sealed value
-// untouched (the reveal/rotate flow sets them explicitly).
-func updateNAS(ctx context.Context, db *pgxpool.Pool, id string, in nasInput, rotateSecret, rotateSNMP bool) (nasRow, error) {
+// updateNAS applies a full update. A nil secret/snmp/api-password leaves the
+// sealed value untouched (the reveal/rotate flow sets them explicitly).
+func updateNAS(ctx context.Context, db *pgxpool.Pool, id string, in nasInput, rotateSecret, rotateSNMP, rotateAPIPassword bool) (nasRow, error) {
 	var secretEnc []byte
 	if rotateSecret {
 		var err error
@@ -141,17 +165,34 @@ func updateNAS(ctx context.Context, db *pgxpool.Pool, id string, in nasInput, ro
 			return nasRow{}, err
 		}
 	}
+	var apiPasswordEnc []byte
+	if rotateAPIPassword && in.APIPassword != "" {
+		var err error
+		if apiPasswordEnc, err = crypto.Encrypt([]byte(in.APIPassword)); err != nil {
+			return nasRow{}, err
+		}
+	}
 	row := db.QueryRow(ctx,
 		`UPDATE nas SET
 		    name = $2, ip = $3::inet, type = $4, vendor = $5, coa_port = $6,
 		    ros_version = $7, location = $8, enabled = $9,
 		    secret_enc = COALESCE($10, secret_enc),
-		    snmp_community_enc = CASE WHEN $11 THEN $12 ELSE snmp_community_enc END
+		    snmp_community_enc = CASE WHEN $11 THEN $12 ELSE snmp_community_enc END,
+		    api_port = $13, api_user = NULLIF($14, ''),
+		    api_password_enc = CASE WHEN $15 THEN $16 ELSE api_password_enc END
 		 WHERE id = $1
 		 RETURNING `+nasColumns,
 		id, in.Name, in.IP, in.Type, in.Vendor, in.CoAPort, in.ROSVersion, in.Location, in.Enabled,
-		secretEnc, rotateSNMP, snmpEnc)
+		secretEnc, rotateSNMP, snmpEnc,
+		apiPortOrDefault(in.APIPort), in.APIUser, rotateAPIPassword, apiPasswordEnc)
 	return scanNAS(row)
+}
+
+func apiPortOrDefault(p int) int {
+	if p == 0 {
+		return 8728
+	}
+	return p
 }
 
 func deleteNAS(ctx context.Context, db *pgxpool.Pool, id string) error {

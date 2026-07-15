@@ -42,7 +42,12 @@
     },
     "comingSoon": "Coming soon",
     "menu": "Open menu",
-    "close": "Close menu"
+    "close": "Close menu",
+    "cardPayments": "Card payments",
+    "reports": "Reports",
+    "import": "Import subscribers",
+    "settings": "Settings",
+    "license": "License"
   },
   "search": {
     "label": "Global search",
@@ -128,7 +133,8 @@
     "yes": "Yes",
     "no": "No",
     "done": "Done",
-    "unknown": "Unknown"
+    "unknown": "Unknown",
+    "ok": "OK"
   },
   "users": {
     "create": "Add subscriber",
@@ -312,7 +318,33 @@
     "scanCidr": "IP range to probe (optional)",
     "scanCidrHint": "A small CIDR, e.g. 192.168.88.0/24.",
     "alreadyRegistered": "Already added",
-    "useThis": "Use this"
+    "useThis": "Use this",
+    "autoSetup": {
+      "button": "Auto-setup",
+      "title": "Auto-setup — {name}",
+      "hint": "Preview exactly what would change before anything is written to the router.",
+      "noCreds": "No RouterOS API credentials are saved for this NAS. Add them in Edit first.",
+      "preview": "Preview setup",
+      "conflictsTitle": "Conflicts found — nothing was written",
+      "conflictsBody": "The router already has configuration that would need to change. Resolve it there, or use the copy-paste tab instead.",
+      "itemsTitle": "{count} change(s) will be made",
+      "rosNotValidated": "Apply isn't validated yet for this RouterOS version. Use the copy-paste tab instead.",
+      "useSnippet": "Use copy-paste instead",
+      "apply": "Apply",
+      "applyOk": "Auto-setup applied successfully.",
+      "applyPartial": "Some steps failed — see the results below.",
+      "action": {
+        "add": "Add",
+        "set": "Set"
+      },
+      "errUnreachable": "Could not connect to the router.",
+      "errStale": "The router's state has changed. Re-run preview and try again.",
+      "credsTitle": "RouterOS API credentials (for auto-setup)",
+      "apiUser": "API username",
+      "apiPort": "API port",
+      "apiPassword": "API password",
+      "apiPasswordSetHint": "Leave blank to keep the current password."
+    }
   },
   "pools": {
     "add": "Add pool",
@@ -795,6 +827,363 @@
       "session_limit": "Session limit reached",
       "quota_exhausted": "Quota exhausted",
       "disabled": "Disabled"
+    }
+  },
+  "pwa": {
+    "offline": "No connection — showing the last data we have.",
+    "installTitle": "Install HikRAD",
+    "installAndroidBody": "Add this to your home screen for quick, full-screen access.",
+    "installIosBody": "Tap Share, then \"Add to Home Screen\", for quick, full-screen access.",
+    "installDismiss": "Not now",
+    "installAction": "Install",
+    "updateAvailable": "A new version is available.",
+    "updateAction": "Refresh",
+    "pushEnable": "Enable push notifications",
+    "pushDisable": "Disable push notifications"
+  },
+  "reports": {
+    "title": "Reports",
+    "subtitle": "Revenue, settlement, subscribers and usage.",
+    "export": "Export CSV",
+    "print": "Print",
+    "groupBy": "Group by",
+    "groupBy.day": "Day",
+    "groupBy.month": "Month",
+    "groupBy.manager": "Manager",
+    "groupBy.profile": "Profile",
+    "groupBy.method": "Method",
+    "generatedAt": "Generated {at}",
+    "unattributed": "(unattributed)",
+    "empty": {
+      "title": "No data",
+      "body": "There is nothing to show for this period."
+    },
+    "range": {
+      "today": "Today",
+      "week": "This week",
+      "month": "This month",
+      "from": "From",
+      "to": "To"
+    },
+    "col": {
+      "amount": "Amount",
+      "count": "Count",
+      "profile": "Profile",
+      "username": "Username",
+      "name": "Name",
+      "status": "Status",
+      "expiresAt": "Expires",
+      "nas": "NAS",
+      "down": "Down",
+      "up": "Up"
+    },
+    "index": {
+      "revenueThisMonth": "Revenue this month",
+      "expiringSoon": "Expiring soon (7 days)"
+    },
+    "revenue": {
+      "title": "Revenue report",
+      "total": "Total revenue",
+      "desc": "Revenue by day, manager, profile or method."
+    },
+    "settlement": {
+      "title": "Settlement report",
+      "subtitle": "The sign-off document for handing off collections.",
+      "desc": "Opening balance, top-ups, renewals and refunds for one manager.",
+      "manager": "Manager",
+      "opening": "Opening balance",
+      "topups": "Top-ups",
+      "renewals": "Renewals ({count})",
+      "refunds": "Refunds",
+      "closing": "Closing balance"
+    },
+    "subscribers": {
+      "title": "Subscriber report",
+      "desc": "New, expired, expiring or inactive subscribers.",
+      "view": "View",
+      "view.new": "New",
+      "view.expired": "Expired",
+      "view.expiring": "Expiring",
+      "view.by_profile": "By profile",
+      "view.inactive": "Inactive"
+    },
+    "usage": {
+      "title": "Usage report",
+      "desc": "Top consumers and totals per NAS.",
+      "view": "View",
+      "view.top_consumers": "Top consumers",
+      "view.per_nas": "Per NAS"
+    }
+  },
+  "settings": {
+    "title": "Settings",
+    "saved": "Settings saved.",
+    "tab": {
+      "locale": "Locale",
+      "branding": "Branding",
+      "notifications": "Notifications",
+      "billing": "Billing",
+      "gateways": "Payment gateways",
+      "backups": "Backups",
+      "dataRetention": "Data retention",
+      "remoteAccess": "Remote access"
+    },
+    "locale": {
+      "timezone": "Timezone",
+      "currency": "Currency",
+      "dateFormat": "Date format",
+      "language": "Default language"
+    },
+    "branding": {
+      "name": "Company name",
+      "logo": "Logo",
+      "logoHint": "Use a small image (512KB or less).",
+      "noLogo": "No logo",
+      "upload": "Upload logo",
+      "primaryColor": "Primary color",
+      "secondaryColor": "Secondary color"
+    },
+    "notifications": {
+      "email": "Email (SMTP)",
+      "telegram": "Telegram",
+      "whatsapp": "WhatsApp",
+      "smtpHost": "SMTP host",
+      "smtpPort": "SMTP port",
+      "smtpUsername": "SMTP username",
+      "smtpPassword": "SMTP password",
+      "smtpFrom": "From address",
+      "botToken": "Telegram bot token",
+      "accessToken": "Access token",
+      "phoneNumberId": "Phone number ID",
+      "sendTest": "Send test",
+      "testRecipient": "Recipient (email, chat ID or number)",
+      "testOk": "Test message sent successfully.",
+      "testFailed": "Sending the test message failed."
+    },
+    "billing": {
+      "renewalAnchor": "Renewal anchor",
+      "renewalAnchorHint": "Count the new period from the old expiry, or from now.",
+      "anchor": {
+        "fromExpiry": "From expiry",
+        "fromNow": "From now"
+      },
+      "adminBypass": "Admin balance bypass",
+      "adminBypassHint": "The admin role can renew with no balance limit.",
+      "receiptPrefix": "Receipt prefix",
+      "voucherPrefix": "Voucher prefix",
+      "receiptNumerals": "Receipt numerals",
+      "numerals": {
+        "auto": "Automatic",
+        "latn": "Latin (123)",
+        "arab": "Arabic-Indic (١٢٣)"
+      },
+      "receiptBranding": "Show branding on receipts",
+      "cardPayments": "Card payments",
+      "cardTypes": "Card types",
+      "cardTypesHint": "Comma-separated, e.g. zain, asiacell.",
+      "cooldownDays": "Cooldown after rejection (days)",
+      "cardPaymentsPending": "Not available yet",
+      "cardPaymentsPendingBody": "This section needs a backend settings group that hasn't shipped yet."
+    },
+    "gateways": {
+      "enabled": "Enabled",
+      "configured": "Configured",
+      "notConfigured": "Not configured",
+      "merchantId": "Merchant ID",
+      "secretKey": "Secret key",
+      "hint": "mock always ships; ZainCash needs a merchant account."
+    },
+    "backups": {
+      "scheduleHour": "Backup hour (daily)",
+      "scheduleHourHint": "Hour of day, Baghdad time (0-23).",
+      "retentionCount": "Backups to keep",
+      "path": "Storage path",
+      "ok": "Backup is current",
+      "stale": "Backup is stale",
+      "never": "No backup has run yet.",
+      "lastRun": "Last backup {at}"
+    },
+    "retention": {
+      "rawMonths": "Raw session months",
+      "rawMonthsFloor": "Minimum is 12 months.",
+      "rollupYears": "Rollup years",
+      "rollupYearsFloor": "Minimum is 3 years."
+    },
+    "remoteAccess": {
+      "status": "Connection status",
+      "state": {
+        "connected": "Connected",
+        "disconnected": "Not connected",
+        "unknown": "Unknown"
+      },
+      "enable": "Enable remote access",
+      "enableHint": "Cloudflare tunnel — off by default.",
+      "token": "Token",
+      "tokenHint": "Enter your Cloudflare tunnel token.",
+      "tokenSet": "A token is set. Enter a new one to replace it."
+    }
+  },
+  "cardPayments": {
+    "title": "Card payments",
+    "filter": "Filter",
+    "filter.all": "All",
+    "state": {
+      "pending": "Pending",
+      "approved": "Approved",
+      "rejected": "Rejected"
+    },
+    "empty": {
+      "title": "No card payments",
+      "body": "Card-payment submissions appear here for review."
+    },
+    "col": {
+      "subscriber": "Subscriber",
+      "profile": "Profile",
+      "cardType": "Card type",
+      "waiting": "Waiting",
+      "decided": "Decided"
+    },
+    "waitingMinutes": "{n}m",
+    "waitingHours": "{h}h {m}m",
+    "reveal": "Reveal code",
+    "approve": "Approve",
+    "reject": "Reject",
+    "revealTitle": "Reveal card code",
+    "revealConfirm": "Revealing the code is recorded in the audit log. Continue?",
+    "revealedNote": "This code is shown only this once.",
+    "approveTitle": "Approve payment",
+    "approveConfirm": "Approve this submission for the {profile} plan?",
+    "approveDone": "Payment approved.",
+    "approveResult": "New expiry: {at}",
+    "rejectTitle": "Reject payment",
+    "rejectConsequence": "Rejecting expires the subscriber's trial and notifies them.",
+    "rejectReason": "Reason",
+    "rejectDone": "Payment rejected."
+  },
+  "import": {
+    "title": "Import subscribers",
+    "subtitle": "Import a CSV export from SAS4 or another system.",
+    "upload": {
+      "body": "Choose a CSV file to get started."
+    },
+    "map": {
+      "detected": "Encoding: {encoding} — columns: {header}",
+      "sas4Preset": "Use SAS4 preset",
+      "notMapped": "Not mapped",
+      "dryRun": "Run dry-run"
+    },
+    "dryRun": {
+      "willCreate": "{n} will be created",
+      "willSkip": "{n} will be skipped",
+      "download": "Download report",
+      "row": "Row",
+      "action": "Action",
+      "action.create": "Create",
+      "action.skip": "Skip",
+      "issues": "Issues"
+    },
+    "execute": "Execute import",
+    "executing": "Import is running…",
+    "progress": "{done} / {total}",
+    "summary": {
+      "body": "{succeeded} created, {failed} failed."
+    },
+    "newImport": "New import",
+    "tryAgain": "Try a different file.",
+    "field": {
+      "username": "Username",
+      "password": "Password",
+      "name": "Name",
+      "phone": "Phone",
+      "address": "Address",
+      "profile": "Profile",
+      "expires_at": "Expiry"
+    },
+    "step": {
+      "upload": "Upload",
+      "map": "Map",
+      "dryrun": "Dry-run",
+      "execute": "Execute",
+      "summary": "Summary"
+    }
+  },
+  "license": {
+    "title": "License",
+    "state": "License state",
+    "state.valid": "Valid",
+    "state.grace": "Grace period",
+    "state.expired_grace": "Expired",
+    "licensee": "Licensee",
+    "tier": "Tier",
+    "maxSubscribers": "Max subscribers",
+    "graceExpires": "Grace expires",
+    "fingerprint": "Machine fingerprint",
+    "readOnlyNotice": "The license grace period has expired. The panel is read-only until a valid license is installed.",
+    "uploaded": "License installed.",
+    "invalidJson": "Invalid JSON. Check the license file or the payload/signature fields.",
+    "upload": {
+      "title": "Install a license",
+      "payload": "Payload",
+      "signature": "Signature",
+      "submit": "Install license"
+    },
+    "requestBlob": {
+      "title": "Request a new license",
+      "body": "Send this file to your license vendor to get a new license for this machine.",
+      "download": "Download request"
+    },
+    "banner": {
+      "readOnly": "License expired — changes are disabled.",
+      "grace": "License needs renewing — grace period ends {at}.",
+      "graceNoDate": "License needs renewing.",
+      "action": "Fix license"
+    }
+  },
+  "setup": {
+    "subtitle": "First-run setup — a few quick steps to get HikRAD ready.",
+    "step": {
+      "license": "License",
+      "admin": "Admin account",
+      "nas": "First NAS",
+      "profile": "First profile"
+    },
+    "license": {
+      "body": "Install a license now, or skip and add one later.",
+      "fingerprint": "Machine fingerprint",
+      "payload": "Payload",
+      "signature": "Signature",
+      "offlineNote": "License verification is entirely offline — no internet connection needed.",
+      "skip": "Skip for now",
+      "installed": "License installed.",
+      "invalidJson": "Invalid JSON."
+    },
+    "admin": {
+      "username": "Username",
+      "password": "Password",
+      "confirmPassword": "Confirm password",
+      "mismatch": "Passwords don't match."
+    },
+    "nas": {
+      "body": "Add your first router now, or do this later.",
+      "skip": "Skip for now"
+    },
+    "profile": {
+      "body": "Create your first service plan.",
+      "name": "Name",
+      "priceIqd": "Price (IQD)",
+      "durationDays": "Duration (days)",
+      "rateKbps": "Rate (Kbps)",
+      "skip": "Skip for now"
+    },
+    "done": {
+      "title": "You're all set!",
+      "body": "HikRAD is ready. You can start managing your network now.",
+      "whatNext": {
+        "subscribers": "Add your first subscriber",
+        "reports": "Check out the reports",
+        "settings": "Set up branding and notifications"
+      },
+      "goToDashboard": "Go to dashboard"
     }
   }
 }

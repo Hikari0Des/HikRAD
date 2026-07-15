@@ -40,6 +40,7 @@ func NewRouter(d Deps, dev bool) http.Handler {
 		}))
 	}
 	r.Use(enforceJSON)
+	r.Use(licenseGate)
 
 	r.NotFound(func(w http.ResponseWriter, _ *http.Request) {
 		Error(w, http.StatusNotFound, "not_found", "resource not found")

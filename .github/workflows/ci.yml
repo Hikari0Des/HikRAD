@@ -62,7 +62,10 @@ jobs:
       - name: go test (race)
         if: steps.detect.outputs.present == 'true'
         working-directory: backend
-        run: go test -race ./...
+        # -p 1: see the Makefile `test` target's comment — every package shares
+        # one real Postgres/Redis here, and whole-table aggregate reconciliation
+        # tests need packages serialized to stay deterministic.
+        run: go test -race -p 1 ./...
 
   frontend:
     name: Frontend lint / build / i18n

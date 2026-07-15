@@ -42,7 +42,8 @@ authorize path is broken somewhere between FreeRADIUS and hikrad-api; check
 | `-timeout` | `5s` | per-request timeout |
 | `-rate` | `0` | load mode: sustained requests/sec against `testuser`/`testpass` (PAP). `0` runs the five-case smoke suite once and exits |
 | `-duration` | `10s` | how long to sustain `-rate` load mode / `-mode mndp-announce` |
-| `-mode` | `smoke` | `smoke` \| `mndp-announce` \| `coa-listen` (see below) |
+| `-mode` | `smoke` | `smoke` \| `mndp-announce` \| `coa-listen` \| `enforce` \| `seed-session` \| `voucher-login` \| `ros-matrix` (see below) |
+| `-ros-label` | `""` | `ros-matrix`: label for the report (e.g. `"6.49"`, `"7.11"`) |
 
 Load mode (`-rate`/`-duration`) is the NFR-1 perf-verification hook Phase 5
 drives for the sub-100ms p99 budget; it isn't part of the Phase-1 gate.
@@ -80,6 +81,22 @@ panel (or Phase 3 renewal) to assert the packet.
 
 ```sh
 go run ./test/harness -mode coa-listen -addr 127.0.0.1:3799 -secret <nas-secret>
+```
+
+## Phase 4 modes
+
+### `-mode ros-matrix` (docs/ops/ros-matrix.md)
+
+Runs the same five-case smoke suite as the default mode but formats the
+result as a matrix row tagged with `-ros-label`, so a run against a ROS
+6.49-fronted stack and a separate run against a 7.x-fronted stack produce
+directly comparable, pasteable evidence for the ROS quirk matrix doc. Prints
+what it does *not* cover (CoA scenarios, voucher login, auto-setup, walled
+garden — see the doc's §5 manual checklist) so the report is never mistaken
+for a full sign-off.
+
+```sh
+go run ./test/harness -mode ros-matrix -addr 127.0.0.1:1812 -secret testing123 -ros-label 7.11
 ```
 
 ## As a Go test (CI)

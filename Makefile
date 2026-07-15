@@ -3,8 +3,9 @@
 
 COMPOSE      := docker compose --env-file deploy/.env -f deploy/compose.yml
 MIGRATE_IMG  := migrate/migrate:v4.17.1
+MODE         ?= smoke
 
-.PHONY: help up down seed test migrate lint env
+.PHONY: help up down seed test migrate lint env evidence
 
 help:
 	@echo "make up       - generate deploy/.env if missing, build and start the stack"
@@ -13,6 +14,8 @@ help:
 	@echo "make test     - backend unit tests + script self-tests"
 	@echo "make migrate  - apply pending DB migrations manually (they also run on api boot)"
 	@echo "make lint     - go vet + frontend lint"
+	@echo "make evidence - run the chaos/perf/sizing evidence pack (Phase 5, contract C6);"
+	@echo "                MODE=full for the 5k/2k reference scale (default: smoke)"
 
 deploy/.env:
 	./scripts/gen-env.sh deploy/.env
@@ -30,10 +33,18 @@ down:
 seed:
 	$(COMPOSE) exec hikrad-api hikrad-api seed
 
+# -p 1 (backend go test, below): HIKRAD_TEST_DB_URL/HIKRAD_TEST_REDIS_URL point
+# every package at ONE shared external Postgres/Redis; whole-table aggregate
+# reconciliation tests (e.g. internal/reports' revenue property test) sum
+# across the whole payments table and will intermittently pick up rows another
+# package's test committed in the same wall-clock window if packages run
+# concurrently (found live in the Phase-5 gate run — passes reliably under
+# -p 1, flakes without it). Per-test rows are already uniq()-prefixed for
+# row-level isolation; -p 1 only serializes package execution.
 test:
 	@if [ -f backend/go.mod ]; then \
 		echo "== backend: go test =="; \
-		cd backend && go test ./...; \
+		cd backend && go test -p 1 ./...; \
 	else \
 		echo "backend/go.mod not present yet (Agent D) — skipping Go tests"; \
 	fi
@@ -49,6 +60,12 @@ migrate: deploy/.env
 		-path=/migrations \
 		-database "$$(grep '^HIKRAD_DB_URL=' deploy/.env | cut -d= -f2-)" \
 		up
+
+# Phase 5 (Agent 2) — chaos/perf/sizing evidence pack (contract C6). Requires
+# Docker (self-provisions throwaway Postgres/Redis); MODE=full for the 5k/2k
+# reference scale. See docs/evidence/README.md.
+evidence:
+	MODE=$(MODE) sh docs/evidence/generate.sh
 
 lint:
 	@if [ -f backend/go.mod ]; then \

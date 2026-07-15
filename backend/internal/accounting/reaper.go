@@ -129,6 +129,7 @@ func (s *Service) reapSession(ctx context.Context, now time.Time, nasID, acctID,
 	}
 	if ct.RowsAffected() > 0 {
 		s.counters.reaped.Add(1)
+		bumpCounterDurable(ctx, s.db, "reaped")
 	}
 	if s.rdb != nil {
 		_ = livestate.Remove(ctx, s.rdb, nasID, acctID, sub, service)

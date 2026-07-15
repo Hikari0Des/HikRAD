@@ -37,11 +37,20 @@ func (Module) Name() string { return "billing" }
 // re-install the seam or spawn duplicate goroutines.
 var wireOnce sync.Once
 
+// singleton is the cross-package seam (Phase 4, contract C2/C3/C8): portalapi
+// imports this package directly (no cycle — billing never imports portalapi)
+// and calls the exported wrappers in portal_seam.go, which dispatch onto this
+// pointer. Same avoid-a-second-wiring-mechanism reasoning as radius's
+// SetPolicyProvider/SetVoucherAuthenticator seams, just without an interface
+// indirection since there's only ever one billing Module.
+var singleton *Module
+
 func (m *Module) Register(r chi.Router, d httpapi.Deps) {
 	m.db = d.DB
 	m.rdb = d.Redis
 	m.log = d.Log
 	m.settings = d.Settings
+	singleton = m
 
 	// Renewal — THE single money path (C2, FR-19.3). Every source (panel now;
 	// voucher redeem below; portal/e-wallet Phase 4) converges on m.renew.
@@ -72,7 +81,26 @@ func (m *Module) Register(r chi.Router, d httpapi.Deps) {
 	// and digests (frozen GET /internal/stats/subscribers).
 	r.Get("/internal/stats/subscribers", m.subscriberStatsHandler)
 
+	// Payment gateway layer (Phase 4, C3, FR-23): the public webhook every
+	// gateway posts to, admin config, and the mock adapter's dev-only
+	// simulator. Portal-facing create/poll/list-gateways routes live in
+	// portalapi (subscriber-token auth) via the portal_seam.go wrappers.
+	r.Post("/api/v1/payments/{gateway}/callback", m.paymentCallbackHandler)
+	r.With(auth.Require(permGatewaysManage)).Get("/api/v1/payment-gateways", m.listGatewayConfigsHandler)
+	r.With(auth.Require(permGatewaysManage)).Put("/api/v1/payment-gateways/{gateway}", m.putGatewayConfigHandler)
+	r.Post("/api/v1/dev/mock-gateway/simulate", m.mockSimulateHandler)
+
+	// Scratch-card payments (Phase 4, C8, FR-59): admin verification queue.
+	// The portal-facing submit endpoint lives in portalapi.
+	r.With(auth.Require(permCardPaymentsVerify)).Get("/api/v1/card-payments", m.listCardPaymentsHandler)
+	r.With(auth.Require(permCardPaymentsVerify)).Post("/api/v1/card-payments/{id}/reveal", m.revealCardPaymentHandler)
+	r.With(auth.Require(permCardPaymentsVerify)).Post("/api/v1/card-payments/{id}/approve", m.approveCardPaymentHandler)
+	r.With(auth.Require(permCardPaymentsVerify)).Post("/api/v1/card-payments/{id}/reject", m.rejectCardPaymentHandler)
+
 	wireOnce.Do(func() {
+		// Reconciliation worker (C3): polls gateway QueryStatus for intents
+		// stuck pending/confirmed. Runs for the process lifetime.
+		go m.runReconciliation(context.Background())
 		// B's hotspot-voucher login redeems through this seam (C3 internal redeem
 		// API); B never imports billing.
 		radius.SetVoucherAuthenticator(&voucherAuthenticator{m: m})

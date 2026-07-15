@@ -24,6 +24,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/hikrad/hikrad/internal/auth"
@@ -326,9 +327,19 @@ func planSteps(kind enforceKind, b behaviorView) (steps []coaStep, label string)
 
 // --- production wiring ------------------------------------------------------
 
-// startEnforcementWorker subscribes to both channels and dispatches events. It
-// runs for the process lifetime (like regenerateClients); a nil Redis client
-// (unit context) is a no-op.
+// enforceMaxConcurrent bounds how many subscribers' enforcement plans run at
+// once (storm safety, CoA hardening task 4): a burst far exceeding steady
+// state (e.g. a midnight expiry sweep crossing hundreds of subscribers within
+// one Redis publish burst) fans out across a small worker pool instead of
+// serializing one full CoA round trip (up to ~10s worst case with retry)
+// behind the next — without this a burst can starve the ≤5min enforcement SLA
+// (contract C4) — while coaService's own inflight cap (coaMaxInflight) still
+// bounds the NAS-facing packet rate underneath it.
+const enforceMaxConcurrent = 16
+
+// startEnforcementWorker subscribes to both channels and dispatches events
+// across a bounded worker pool. It runs for the process lifetime (like
+// regenerateClients); a nil Redis client (unit context) is a no-op.
 func (m *module) startEnforcementWorker(ctx context.Context) {
 	if m.rdb == nil {
 		return
@@ -338,6 +349,11 @@ func (m *module) startEnforcementWorker(ctx context.Context) {
 	defer func() { _ = sub.Close() }()
 	ch := sub.Channel()
 	m.log.Info("enforcement worker started", "channels", []string{chanQuotaExceeded, chanExpired})
+
+	sem := make(chan struct{}, enforceMaxConcurrent)
+	var wg sync.WaitGroup
+	defer wg.Wait()
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -355,11 +371,21 @@ func (m *module) startEnforcementWorker(ctx context.Context) {
 				m.log.Warn("enforce: bad event payload", "channel", msg.Channel, "payload", msg.Payload)
 				continue
 			}
-			// Detach from the subscription context so a slow enforcement can't
-			// stall the reader; bound each with its own timeout.
-			hctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
-			w.handle(hctx, kind, ev.SubscriberID)
-			cancel()
+			select {
+			case sem <- struct{}{}:
+			case <-ctx.Done():
+				return
+			}
+			wg.Add(1)
+			go func(kind enforceKind, subID string) {
+				defer wg.Done()
+				defer func() { <-sem }()
+				// Detach from the subscription context so a slow enforcement
+				// can't stall the reader; bound each with its own timeout.
+				hctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+				defer cancel()
+				w.handle(hctx, kind, subID)
+			}(kind, ev.SubscriberID)
 		}
 	}
 }

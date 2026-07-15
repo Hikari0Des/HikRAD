@@ -12,6 +12,7 @@ import { PageHeader } from '../../components/PageHeader'
 import { useToast } from '../../components/Toast'
 import { useAsync } from '../../hooks/useAsync'
 import { DiscoverModal } from './DiscoverModal'
+import { NasAutoSetupModal } from './NasAutoSetupModal'
 import { NasWizardModal, type NasPrefill } from './NasWizardModal'
 import { SnippetModal } from './SnippetModal'
 
@@ -27,6 +28,7 @@ export function NasListPage() {
   const [prefill, setPrefill] = useState<NasPrefill | undefined>(undefined)
   const [discoverOpen, setDiscoverOpen] = useState(false)
   const [snippetFor, setSnippetFor] = useState<Nas | null>(null)
+  const [autoSetupFor, setAutoSetupFor] = useState<Nas | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Nas | null>(null)
   const [deleteNeedsConfirm, setDeleteNeedsConfirm] = useState(false)
   const [deleteBusy, setDeleteBusy] = useState(false)
@@ -159,6 +161,11 @@ export function NasListPage() {
                   {t('nas.snippet')}
                 </Button>
                 {canEdit && (
+                  <Button size="sm" variant="secondary" onClick={() => setAutoSetupFor(n)}>
+                    {t('nas.autoSetup.button')}
+                  </Button>
+                )}
+                {canEdit && (
                   <Button size="sm" variant="ghost" onClick={() => openEdit(n)}>
                     {t('ui.edit')}
                   </Button>
@@ -199,6 +206,19 @@ export function NasListPage() {
           nas={snippetFor}
           open={snippetFor !== null}
           onOpenChange={(o) => !o && setSnippetFor(null)}
+        />
+      )}
+
+      {autoSetupFor && (
+        <NasAutoSetupModal
+          nas={autoSetupFor}
+          open={autoSetupFor !== null}
+          onOpenChange={(o) => !o && setAutoSetupFor(null)}
+          onUseSnippet={() => {
+            const n = autoSetupFor
+            setAutoSetupFor(null)
+            setSnippetFor(n)
+          }}
         />
       )}
 

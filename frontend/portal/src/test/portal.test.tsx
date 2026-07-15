@@ -6,6 +6,8 @@ import { describe, expect, it } from 'vitest'
 import { I18nProvider } from '@hikrad/shared'
 
 import { App } from '../App'
+import { AuthProvider } from '../auth/AuthContext'
+import { BrandingProvider } from '../branding'
 
 import ar from '../../../shared/locales/ar/portal.json'
 import en from '../../../shared/locales/en/portal.json'
@@ -14,15 +16,19 @@ import ku from '../../../shared/locales/ku/portal.json'
 function renderPortal(route = '/') {
   return render(
     <I18nProvider>
-      <MemoryRouter initialEntries={[route]}>
-        <App />
-      </MemoryRouter>
+      <BrandingProvider>
+        <MemoryRouter initialEntries={[route]}>
+          <AuthProvider>
+            <App />
+          </AuthProvider>
+        </MemoryRouter>
+      </BrandingProvider>
     </I18nProvider>,
   )
 }
 
-describe('portal skeleton (gate item 4)', () => {
-  it('renders the login shell in all three locales with correct dir', async () => {
+describe('portal shell (gate item 4: trilingual + RTL)', () => {
+  it('renders the login screen in all three locales with correct dir', async () => {
     const user = userEvent.setup()
     renderPortal()
 
@@ -54,27 +60,9 @@ describe('portal skeleton (gate item 4)', () => {
     expect(screen.getByLabelText(ar.portal.login.username)).toHaveValue('noor01')
   })
 
-  it('stubs the three routes with localized content and bottom navigation', async () => {
-    const user = userEvent.setup()
+  it('redirects an unauthenticated subscriber away from protected routes (IDOR/session gate)', () => {
     renderPortal('/home')
-
-    expect(screen.getByText(en.portal.home.title)).toBeInTheDocument()
-
-    await user.click(screen.getByRole('link', { name: en.portal.nav.usage }))
-    expect(screen.getByText(en.portal.usage.chartTitle)).toBeInTheDocument()
-
-    await user.click(screen.getByRole('link', { name: en.portal.nav.renew }))
-    expect(screen.getByText(en.portal.renew.price)).toBeInTheDocument()
-  })
-
-  it('keeps mixed RTL sentences bidi-safe (numbers/usernames isolated)', async () => {
-    const user = userEvent.setup()
-    renderPortal('/usage')
-
-    await user.click(screen.getByRole('button', { name: 'العربية' }))
-    const sample = ar.portal.usage.mixedSample
-      .replace('{username}', '⁨noor01⁩')
-      .replace('{gb}', '⁨4.2⁩')
-    expect(screen.getByText(sample)).toBeInTheDocument()
+    // <RequireAuth> sends anyone without a session back to the login screen.
+    expect(screen.getByText(en.portal.login.title)).toBeInTheDocument()
   })
 })

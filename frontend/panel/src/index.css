@@ -26,3 +26,29 @@ body {
     'Noto Kufi Arabic',
     sans-serif;
 }
+
+/*
+ * Report print view (task 1: A4, ISP header, generated-at). Page numbers come
+ * from the browser's own print "headers and footers" (on by default in
+ * Chrome/Firefox/Edge) — no script can force those into the page content
+ * reliably across engines, so we don't try to reimplement them here.
+ */
+@media print {
+  @page {
+    size: A4;
+    margin: 14mm 12mm;
+  }
+  body * {
+    visibility: hidden;
+  }
+  .print-report,
+  .print-report * {
+    visibility: visible;
+  }
+  .print-report {
+    position: absolute;
+    inset-block-start: 0;
+    inset-inline-start: 0;
+    width: 100%;
+  }
+}

@@ -11,8 +11,6 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
-	"os"
-	"strconv"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -66,9 +64,10 @@ func New(ctx context.Context, cfg Config, db *pgxpool.Pool, rdb *redis.Client, l
 		return nil, nil, err
 	}
 	c := &counters{}
-	if err := c.load(ctx, db); err != nil {
-		// A fresh DB (no row yet) or a transient error must not stop boot; the
-		// counters simply start from zero and the first flush creates the row.
+	if err := loadCountersWithRetry(ctx, c, db, rdb); err != nil {
+		// A fresh DB (no row yet) or Postgres still genuinely unreachable
+		// after the retry window must not stop boot; the counters simply
+		// start from zero and the first flush creates the row.
 		log.Warn("acct: load counters failed (starting from zero)", "error", err)
 	}
 	s := &Service{
@@ -88,13 +87,19 @@ func New(ctx context.Context, cfg Config, db *pgxpool.Pool, rdb *redis.Client, l
 	return s, cleanup, nil
 }
 
-func consumerName() string {
-	host, _ := os.Hostname()
-	if host == "" {
-		host = "acct"
-	}
-	return host + "-" + strconv.Itoa(os.Getpid())
-}
+// consumerName is deliberately a fixed identity, not hostname+PID. hikrad-acct
+// runs as a single instance (no horizontal scaling — one container per
+// deploy, compose.yml has no replicas); a per-process name meant a crash
+// restart (same container, a fresh PID, or a fresh container with a new
+// hostname) got a brand-new Redis consumer identity, and Redis consumer
+// groups scope the pending-entries list to the consumer name. XREADGROUP
+// id="0" only ever returns the CALLING consumer's own PEL, so a restarted
+// process under a new name could never see messages the dead process had
+// been delivered but not yet acked — they were silently stranded forever
+// (the FR-40 invariant never recovered). Found by the Phase-5 chaos suite's
+// kill-acct scenario. A fixed name makes every restart re-attach to the same
+// PEL and recover it via the existing id="0" replay in runConsumer.
+func consumerName() string { return "hikrad-acct" }
 
 // Handler is the ingest + counters HTTP surface.
 func (s *Service) Handler() http.Handler {
@@ -191,7 +196,19 @@ func (s *Service) runCounterFlusher(ctx context.Context) {
 	if s.db == nil {
 		return
 	}
-	t := time.NewTicker(5 * time.Second)
+	// 1s, not 5s: received/enqueued/spilled/drained are only ever made durable
+	// here (unlike persisted/deduplicated/reaped, which now commit atomically
+	// with the row they count — see counters.go's bumpPersistedInTx). Ingest
+	// deliberately never touches Postgres synchronously (NFR-1: the ack path
+	// must not depend on DB availability/latency), so a periodic flush is the
+	// only way these survive an ungraceful crash; shrinking the tick bounds
+	// how much a SIGKILL right before the next tick can permanently
+	// under-report by, without adding any synchronous DB dependency to
+	// ingest. Found by the Phase-5 chaos suite's kill-acct/unclean-reboot
+	// scenarios: the counter invariant can go permanently (not just
+	// transiently) inconsistent after a hard crash, even though the
+	// underlying accounting data is never lost.
+	t := time.NewTicker(1 * time.Second)
 	defer t.Stop()
 	for {
 		select {

@@ -1,16 +1,21 @@
+import { useEffect, useState } from 'react'
 import { NavLink } from 'react-router-dom'
 
 import { useT } from '@hikrad/shared'
 
+import { listCardPayments } from '../api/cardpayments'
 import { useAuth } from '../auth/AuthContext'
 import {
   PERM_AUDIT_VIEW,
+  PERM_CARD_PAYMENTS_VERIFY,
   PERM_MANAGERS_VIEW,
   PERM_MONITORING_VIEW,
   PERM_NAS_VIEW,
   PERM_POOLS_VIEW,
   PERM_PROFILES_VIEW,
   PERM_REPORTS_VIEW,
+  PERM_SETTINGS_VIEW,
+  PERM_SUBSCRIBERS_CREATE,
   PERM_SUBSCRIBERS_VIEW,
   PERM_VOUCHERS_VIEW,
 } from '../auth/permissions'
@@ -35,6 +40,7 @@ const NAV_GROUPS: readonly NavGroup[] = [
       { key: 'nav.subscribers', to: '/subscribers', perm: PERM_SUBSCRIBERS_VIEW },
       { key: 'nav.profiles', to: '/profiles', perm: PERM_PROFILES_VIEW },
       { key: 'nav.sessions', to: '/sessions' },
+      { key: 'nav.import', to: '/import', perm: PERM_SUBSCRIBERS_CREATE },
     ],
   },
   {
@@ -42,6 +48,8 @@ const NAV_GROUPS: readonly NavGroup[] = [
     items: [
       { key: 'nav.ledger', to: '/ledger', perm: PERM_REPORTS_VIEW },
       { key: 'nav.vouchers', to: '/vouchers', perm: PERM_VOUCHERS_VIEW },
+      { key: 'nav.cardPayments', to: '/card-payments', perm: PERM_CARD_PAYMENTS_VERIFY },
+      { key: 'nav.reports', to: '/reports', perm: PERM_REPORTS_VIEW },
     ],
   },
   {
@@ -61,14 +69,42 @@ const NAV_GROUPS: readonly NavGroup[] = [
       { key: 'nav.managers', to: '/managers', perm: PERM_MANAGERS_VIEW },
       { key: 'nav.roles', to: '/roles', perm: PERM_MANAGERS_VIEW },
       { key: 'nav.auditLog', to: '/audit-log', perm: PERM_AUDIT_VIEW },
+      { key: 'nav.settings', to: '/settings', perm: PERM_SETTINGS_VIEW },
+      { key: 'nav.license', to: '/license' },
       { key: 'nav.account', to: '/account' },
     ],
   },
 ]
 
+/** Polls the pending card-payment count for the nav badge (task 2c). */
+function usePendingCardPaymentCount(enabled: boolean): number {
+  const [count, setCount] = useState(0)
+  useEffect(() => {
+    if (!enabled) return
+    let cancelled = false
+    function load() {
+      listCardPayments('pending')
+        .then((res) => {
+          if (!cancelled) setCount(res.items.length)
+        })
+        .catch(() => {
+          /* badge is best-effort */
+        })
+    }
+    load()
+    const id = setInterval(load, 30_000)
+    return () => {
+      cancelled = true
+      clearInterval(id)
+    }
+  }, [enabled])
+  return count
+}
+
 export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const t = useT()
   const { can } = useAuth()
+  const pendingCardPayments = usePendingCardPaymentCount(can(PERM_CARD_PAYMENTS_VERIFY))
 
   return (
     <div className="flex h-full flex-col">
@@ -94,14 +130,19 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
                       end={item.to === '/'}
                       onClick={onNavigate}
                       className={({ isActive }) =>
-                        `block rounded-md px-3 py-2 text-sm ${
+                        `flex items-center justify-between gap-2 rounded-md px-3 py-2 text-sm ${
                           isActive
                             ? 'bg-brand-soft font-medium text-brand-strong'
                             : 'text-ink hover:bg-surface-sunken'
                         }`
                       }
                     >
-                      {t(item.key)}
+                      <span>{t(item.key)}</span>
+                      {item.to === '/card-payments' && pendingCardPayments > 0 ? (
+                        <span className="rounded-full bg-danger px-1.5 py-0.5 text-xs font-medium text-ink-inverse">
+                          {pendingCardPayments}
+                        </span>
+                      ) : null}
                     </NavLink>
                   </li>
                 ))}

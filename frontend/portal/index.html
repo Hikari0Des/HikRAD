@@ -7,6 +7,19 @@
          the title is the product name placeholder until branding settings
          arrive (Phase 4/5). -->
     <title>HikRAD Portal</title>
+
+    <!-- PWA packaging (contract C5/FR-54). The static manifest below is the
+         generic-branding fallback; BrandedManifestLink swaps the href to a
+         per-ISP manifest at runtime once branding settings load. -->
+    <link rel="manifest" href="/portal/manifest.webmanifest" />
+    <meta name="theme-color" content="#08748f" />
+    <link rel="icon" href="/portal/icons/icon.svg" type="image/svg+xml" />
+    <!-- iOS has no beforeinstallprompt/manifest install path — these tags are
+         its home-screen equivalent (FR-54.5's iOS education component
+         complements, not replaces, them). -->
+    <link rel="apple-touch-icon" href="/portal/icons/icon.svg" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   </head>
   <body>
     <div id="root"></div>

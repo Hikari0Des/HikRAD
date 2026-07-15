@@ -12,6 +12,9 @@
 # (data/caddy/pki/authorities/local/root.crt) is trusted.
 #
 # --- Let's Encrypt instead (needs a public domain + internet) ---
+# `sudo ./scripts/install.sh --domain hikrad.example.isp` does steps 1-2 below
+# for you (and saves this file as Caddyfile.orig first). To do it by hand
+# instead:
 # 1. Replace the `localhost:443` site address below with your domain, e.g.
 #      hikrad.example.isp {
 # 2. Delete the `tls internal` line (Caddy then provisions Let's Encrypt
@@ -31,6 +34,17 @@ localhost:443 {
 	# on a real domain still follows the Let's Encrypt note below.
 	tls internal
 	encode gzip
+
+	# ASVS V9.1/V14 baseline hardening. HSTS is safe even with the self-signed
+	# dev default: it only ever tells a browser "use HTTPS for this host", it
+	# has nothing to do with certificate trust, so it doesn't change the
+	# self-signed warning behavior. No `preload`: that's a one-way submission
+	# to browser vendors, inappropriate for a variable per-install hostname.
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "same-origin"
+	}
 
 	handle /api/* {
 		reverse_proxy hikrad-api:8080

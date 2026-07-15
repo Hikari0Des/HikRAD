@@ -66,12 +66,27 @@ func (s *Service) runConsumer(ctx context.Context) {
 			}
 			continue
 		}
+		failed := false
 		for _, m := range msgs {
 			ack, perr := s.processMessage(ctx, m)
 			if perr != nil {
 				// Treat as DB unavailable: leave the entry unacked so it is
 				// retried, and back off. The stream grows; ingest spills.
+				//
+				// Force the next read back to id="0" (our own pending-entries
+				// list) regardless of what phase we were in: once an entry has
+				// been delivered via ">" it will NEVER be redelivered by a
+				// later ">" read (that only returns entries no consumer has
+				// ever seen) — only "0" redelivers a consumer's own unacked
+				// entries. Without this, a DB outage that hits mid-batch during
+				// steady-state (not the initial backlog replay) permanently
+				// strands every message from the failure point on: the FR-40
+				// invariant never recovers (in_queue never drains) even after
+				// the DB comes back. Found by the Phase-5 chaos suite's
+				// kill-postgres scenario.
 				s.log.Warn("acct consumer: process failed, will retry", "error", perr, "id", m.ID)
+				backlog = "0"
+				failed = true
 				if sleep(ctx, dbBackoff) {
 					return
 				}
@@ -80,6 +95,9 @@ func (s *Service) runConsumer(ctx context.Context) {
 			if ack {
 				s.ackDelete(ctx, m.ID)
 			}
+		}
+		if failed {
+			continue
 		}
 		if backlog == "0" && len(msgs) < readCount {
 			backlog = ">"
@@ -151,6 +169,7 @@ func (s *Service) processMessage(ctx context.Context, m redis.XMessage) (ack boo
 	if dct.RowsAffected() == 0 {
 		_ = tx.Rollback(ctx)
 		s.counters.deduplicated.Add(1)
+		bumpCounterDurable(ctx, s.db, "deduplicated")
 		// A duplicate Stop still clears any live ghost left by a crash between
 		// commit and live-remove (idempotent).
 		if rec.RecordType == RecordStop {
@@ -162,6 +181,12 @@ func (s *Service) processMessage(ctx context.Context, m redis.XMessage) (ack boo
 	// (b/c) Session upsert + usage point.
 	res, err := upsertSession(ctx, tx, rec, nas.ID, service, sub)
 	if err != nil {
+		return false, err
+	}
+	// Bump the durable counter mirror INSIDE this same transaction so it
+	// commits atomically with the data it counts — see bumpPersistedInTx's
+	// doc comment for why the periodic 5s flush alone isn't enough.
+	if err := bumpPersistedInTx(ctx, tx, res.OrphanStop); err != nil {
 		return false, err
 	}
 	if err := tx.Commit(ctx); err != nil {

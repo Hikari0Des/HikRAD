@@ -20,6 +20,7 @@ import (
 	"github.com/hikrad/hikrad/internal/monitorsvc"
 	"github.com/hikrad/hikrad/internal/platform"
 	"github.com/hikrad/hikrad/internal/platform/crypto"
+	"github.com/hikrad/hikrad/internal/push"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 )
@@ -65,5 +66,10 @@ func run(cfg config, log *slog.Logger) error {
 	defer func() { _ = rdb.Close() }()
 
 	settings := platform.NewSettings(db)
+	// push.Module.Register never runs in this process (it's an httpapi hook,
+	// and hikrad-monitor doesn't mount HTTP modules) — the alert engine's push
+	// channel needs its own explicit wiring here (contract C4, see the
+	// package doc comment on why this is required in both binaries).
+	push.Init(db, rdb, settings, log)
 	return monitorsvc.Run(ctx, db, rdb, settings, log)
 }

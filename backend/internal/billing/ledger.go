@@ -32,7 +32,7 @@ func insertLedger(ctx context.Context, tx pgx.Tx, e ledgerEntry) (string, error)
 	err := tx.QueryRow(ctx,
 		`INSERT INTO ledger_transactions
 		   (type, amount_iqd, actor_manager_id, subscriber_id, source, reference, reverses_id, note)
-		 VALUES ($1, $2, $3::uuid, NULLIF($4,'')::uuid, $5, $6, NULLIF($7,'')::uuid, $8)
+		 VALUES ($1, $2, NULLIF($3,'')::uuid, NULLIF($4,'')::uuid, $5, $6, NULLIF($7,'')::uuid, $8)
 		 RETURNING id::text`,
 		e.Type, e.AmountIQD, e.ActorManagerID, e.SubscriberID, e.Source, e.Reference, e.ReversesID, e.Note,
 	).Scan(&id)

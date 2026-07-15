@@ -16,7 +16,8 @@ func main() {
 	timeout := flag.Duration("timeout", 5*time.Second, "per-request timeout")
 	rate := flag.Float64("rate", 0, "load mode: requests/sec to sustain (0 = run the smoke suite once and exit)")
 	duration := flag.Duration("duration", 10*time.Second, "duration for -rate load mode and for -mode mndp-announce")
-	mode := flag.String("mode", "smoke", "smoke | mndp-announce | coa-listen | enforce | seed-session | voucher-login")
+	mode := flag.String("mode", "smoke", "smoke | mndp-announce | coa-listen | enforce | seed-session | voucher-login | ros-matrix")
+	rosLabel := flag.String("ros-label", "", "ros-matrix: label for the report (e.g. \"6.49\", \"7.11\") — see docs/ops/ros-matrix.md")
 	mndpTarget := flag.String("mndp-target", "255.255.255.255:5678", "mndp-announce: broadcast target host:port")
 	mndpIdentity := flag.String("mndp-identity", "HarnessRouter", "mndp-announce: announced identity")
 	mndpVersion := flag.String("mndp-version", "7.11", "mndp-announce: announced RouterOS version")
@@ -60,6 +61,8 @@ func main() {
 		}))
 	case "voucher-login":
 		os.Exit(runVoucherLogin(*addr, []byte(*secret), *username, *nasIP, *timeout))
+	case "ros-matrix":
+		os.Exit(runROSMatrix(*addr, []byte(*secret), *nasIP, *rosLabel, *timeout))
 	case "smoke":
 		// fall through
 	default:

@@ -55,6 +55,12 @@ PG_PASSWORD="$(openssl rand -hex 24)"
 # 32 bytes base64 — AES-256-GCM key for subscriber password encryption (NFR-4.2).
 ENCRYPTION_KEY="$(openssl rand -base64 32)"
 JWT_SECRET="$(openssl rand -base64 48 | tr -d '\n')"
+# Backup archive passphrase (FR-51.1, sub-PRD 06 open question — decided:
+# archives are passphrase-encrypted). install.sh prints this once to the
+# install summary so the operator has an out-of-band copy; losing both that
+# and this file's copy makes existing backups permanently unrecoverable by
+# design (no vendor escrow) — see docs/ops/backup-restore.md.
+BACKUP_PASSPHRASE="$(openssl rand -base64 24 | tr -d '\n')"
 
 umask 077
 mkdir -p "$(dirname "$OUT")"
@@ -72,6 +78,12 @@ HIKRAD_REDIS_URL=redis://redis:6379/0
 HIKRAD_ENCRYPTION_KEY=${ENCRYPTION_KEY}
 HIKRAD_JWT_SECRET=${JWT_SECRET}
 HIKRAD_ENV=${HIKRAD_ENV_VALUE}
+
+# Backup (FR-51): schedule/retention are Settings > Backups-configurable in
+# the panel too; these are the values the hikrad CLI's backup command and the
+# nightly cron entry fall back to when unset there.
+HIKRAD_BACKUP_PASSPHRASE=${BACKUP_PASSPHRASE}
+HIKRAD_BACKUP_RETENTION=14
 EOF
 
 echo "wrote $OUT (HIKRAD_ENV=${HIKRAD_ENV_VALUE})"

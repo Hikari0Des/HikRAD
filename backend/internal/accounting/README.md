@@ -35,22 +35,30 @@ Disconnect action) lives in `internal/live`, sharing the Redis wire format via
 
 ## Storage sizing (NFR-3: 200 GB tier)
 
-Mirrors sub-PRD 03's math. At the reference load — **2,000 concurrent sessions,
-5-minute interims (12/hr)**:
+At the reference load — **2,000 concurrent sessions, 5-minute interims
+(12/hr)** — `usage_points`/year is ~210 M rows pre-compression (2,000 × 12/hr
+× 24 × 365). `sessions` adds one row per session lifecycle (order
+100 K–1 M/yr, tens of MB); `usage_daily` rollups are negligible next to that.
 
-| Quantity | Value |
+**Measured** (Phase 5, `backend/test/perf/sizing`, real TimescaleDB —
+generates synthetic data via `generate_series` and reads back actual
+`hypertable_size`/`hypertable_compression_stats`, not an estimate):
+
+| Quantity | Measured value |
 |---|---|
-| usage_points / hour | 2,000 × 12 = 24,000 |
-| usage_points / day | ~576,000 |
-| usage_points / year | **~210 M** (pre-compression) |
-| bytes / row (uncompressed, incl. overhead) | ~90 B |
-| raw / year, uncompressed | ~19 GB |
-| after TimescaleDB compression (chunks > 30 days, typ. 10–20×) | ~1–2 GB for the compressed tail |
+| bytes / row (uncompressed, incl. all TimescaleDB/index overhead) | **~225 B** (higher than a naive column-width estimate — index + hypertable chunk overhead dominates at this row width) |
+| compression ratio (chunks compressed, `compress_segmentby=subscriber_id`) | **~8.5×** |
+| projected 12-month raw | **~47 GB** |
+| projected 12-month compressed | **~5.6 GB** |
 
-`sessions` adds one row per session lifecycle (order 100 K–1 M/yr, tens of MB);
-`usage_daily` rollups are negligible. Total sits **comfortably under the 200 GB
-NFR-3 budget** with years of retention (raw ≥ 12 mo, rollups ≥ 3 yr — the
-retention floors enforced in migrations 0131/0133).
+Total sits **comfortably under the 200 GB NFR-3 budget** with years of
+headroom, even though the real bytes/row came in ~2.5× the original
+back-of-envelope guess — the compression ratio more than compensates. Raw
+retention ≥ 12 mo, rollup retention ≥ 3 yr enforced by migrations 0131/0133
+and verified against the live `timescaledb_information.jobs` config (not
+just the migration source) by the sizing tool. Re-run
+`go run ./test/perf/sizing -months 12 -sessions 2000` for the full-scale
+evidence-pack number; `docs/evidence/` ships the dated result.
 
 ## Contract deviations (flagged for the integration gate)
 

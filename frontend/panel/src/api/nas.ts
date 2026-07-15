@@ -1,6 +1,14 @@
 /** NAS registry + discovery + config-snippet REST client (contract C7-B). */
 import { request } from './client'
-import type { DiscoveredNas, Nas, NasSnippet, NasStatus, NasWrite } from './types'
+import type {
+  AutoSetupApplyResult,
+  AutoSetupPreview,
+  DiscoveredNas,
+  Nas,
+  NasSnippet,
+  NasStatus,
+  NasWrite,
+} from './types'
 
 export function listNas(): Promise<{ items: Nas[] }> {
   return request<{ items: Nas[] }>('/nas')
@@ -48,4 +56,21 @@ export function discoverNas(body?: {
   scan_cidr?: string
 }): Promise<{ items: DiscoveredNas[] }> {
   return request<{ items: DiscoveredNas[] }>('/nas/discover', { method: 'POST', body: body ?? {} })
+}
+
+/**
+ * NAS API auto-setup (FR-56.2-56.4, contract C6). Preview connects read-only;
+ * apply refuses unless the router's state hashes to the same preview_hash
+ * (recomputed server-side) and unless the NAS's ROS version has a green
+ * matrix leg — see docs/ops/ros-matrix.md.
+ */
+export function previewAutoSetup(id: string): Promise<AutoSetupPreview> {
+  return request<AutoSetupPreview>(`/nas/${id}/auto-setup/preview`, { method: 'POST' })
+}
+
+export function applyAutoSetup(id: string, previewHash: string): Promise<AutoSetupApplyResult> {
+  return request<AutoSetupApplyResult>(`/nas/${id}/auto-setup/apply`, {
+    method: 'POST',
+    body: { preview_hash: previewHash },
+  })
 }

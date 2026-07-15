@@ -38,6 +38,7 @@ var permissionCatalog = []struct {
 	{"monitoring", []string{"monitoring.view", "monitoring.create", "monitoring.edit", "monitoring.delete"}},
 	{"reports", []string{"reports.view"}},
 	{"settings", []string{"settings.view", "settings.edit"}},
+	{"system", []string{"license.manage", "backups.view", "backups.manage", "tunnel.manage"}},
 	{"managers", []string{"managers.view", "managers.create", "managers.edit", "managers.delete"}},
 	{"live", []string{"live.view", "sessions.view"}},
 	{"audit", []string{"audit.view"}},

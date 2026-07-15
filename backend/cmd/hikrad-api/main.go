@@ -2,6 +2,8 @@
 // Caddy) and /internal (service-to-service, unproxied), per Phase-1
 // contracts C2–C5. `hikrad-api seed` applies migrations and loads the dev
 // fixtures, then exits (the repo-root `make seed` target wraps it).
+// `hikrad-api print-tunnel-token` decrypts and prints the configured
+// Cloudflare tunnel token for scripts/hikrad's `hikrad tunnel enable` (FR-57).
 package main
 
 import (
@@ -16,6 +18,7 @@ import (
 
 	"github.com/hikrad/hikrad/internal/httpapi"
 	"github.com/hikrad/hikrad/internal/platform"
+	"github.com/hikrad/hikrad/internal/platform/crypto"
 	"github.com/hikrad/hikrad/internal/seed"
 )
 
@@ -35,6 +38,20 @@ func main() {
 			os.Exit(1)
 		}
 		log.Info("seed complete")
+		return
+	}
+
+	// print-tunnel-token (FR-57, contract C7): decrypts settings'
+	// remote_access.token and writes it to stdout, so scripts/hikrad's
+	// `hikrad tunnel enable` can materialize the token file cloudflared reads
+	// without reimplementing AES-GCM in bash or ever printing the token to a
+	// log. `docker compose exec hikrad-api hikrad-api print-tunnel-token` is
+	// the only caller; nothing else needs this on a running install.
+	if len(os.Args) > 1 && os.Args[1] == "print-tunnel-token" {
+		if err := runPrintTunnelToken(cfg, log); err != nil {
+			log.Error("print-tunnel-token failed", "error", err)
+			os.Exit(1)
+		}
 		return
 	}
 
@@ -128,4 +145,33 @@ func runSeed(cfg platform.Config, log *slog.Logger) error {
 	}
 	defer db.Close()
 	return seed.Run(ctx, db, cfg.EncryptionKey)
+}
+
+func runPrintTunnelToken(cfg platform.Config, log *slog.Logger) error {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	if err := crypto.Configure(cfg.EncryptionKey); err != nil {
+		return err
+	}
+	db, err := platform.NewDB(ctx, cfg)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	settings := platform.NewSettings(db)
+	enc, err := platform.Get[[]byte](ctx, settings, "remote_access.token_enc")
+	if err != nil {
+		return errors.New("no remote_access.token configured (Settings > Remote Access)")
+	}
+	if len(enc) == 0 {
+		return errors.New("remote_access.token is empty")
+	}
+	token, err := crypto.Decrypt(enc)
+	if err != nil {
+		return err
+	}
+	_, err = os.Stdout.Write(token)
+	return err
 }

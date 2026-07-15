@@ -5,6 +5,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <!-- lang/dir are updated at runtime by the i18n provider (contract C8) -->
     <title>HikRAD</title>
+
+    <!-- PWA packaging (contract C5/FR-54), Phase-4 cross-boundary exception
+         (Agent F, Agent E unstaffed — frontend/panel/src/pwa/README.md).
+         BrandedManifestLink swaps the manifest href once branding loads. -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#08748f" />
+    <link rel="icon" href="/icons/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/icons/icon.svg" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   </head>
   <body>
     <div id="root"></div>

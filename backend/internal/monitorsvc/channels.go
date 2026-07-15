@@ -30,6 +30,7 @@ const (
 	chTelegram = "telegram"
 	chEmail    = "email"
 	chWhatsApp = "whatsapp"
+	chPush     = "push" // Phase 4, contract C4/FR-54.4
 )
 
 // NotificationsChannel is the Redis pub/sub the in-app SSE feed forwards.
@@ -276,7 +277,7 @@ func (s whatsAppSender) send(ctx context.Context, m alertMessage) error {
 	if lang == "" {
 		lang = "en"
 	}
-	url := "https://graph.facebook.com/v20.0/" + cfg.PhoneID + "/messages"
+	url := graphAPIBase + "/" + cfg.PhoneID + "/messages"
 	var firstErr error
 	for _, number := range to {
 		// Generic approved alert template with one text body param (the summary).

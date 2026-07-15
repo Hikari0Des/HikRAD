@@ -212,7 +212,7 @@ func (m *Module) redeemVoucher(ctx context.Context, code, subscriberID, redeemer
 		actorManagerID: redeemerID,
 		source:         "voucher",
 		ledgerType:     "voucher_redeem",
-		method:         "voucher",
+		method:         "voucher_redeem",
 		note:           "voucher redemption",
 		chargeBalance:  false,
 		enforceBalance: false,
@@ -232,12 +232,12 @@ func (m *Module) redeemVoucher(ctx context.Context, code, subscriberID, redeemer
 	dbNow = dbNow.UTC()
 
 	var (
-		voucherID   string
-		vState      string
-		batchID     string
-		profileID   string
-		batchState  string
-		expiresAt   *time.Time
+		voucherID  string
+		vState     string
+		batchID    string
+		profileID  string
+		batchState string
+		expiresAt  *time.Time
 	)
 	err = tx.QueryRow(ctx,
 		`SELECT v.id::text, v.state, b.id::text, b.profile_id::text, b.state, b.expires_at
@@ -288,5 +288,6 @@ func (m *Module) redeemVoucher(ctx context.Context, code, subscriberID, redeemer
 	_ = radius.InvalidatePolicy(subscriberID)
 	m.resetQuota(ctx, subscriberID)
 	res.CoAResult = m.restoreCoA(ctx, subscriberID, res.rate, res.poolName)
+	m.publishRenewed(ctx, subscriberID, res, "voucher")
 	return res, redeemOK, nil
 }

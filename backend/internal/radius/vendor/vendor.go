@@ -72,6 +72,80 @@ type Adapter interface {
 	// the concrete vendor rate string used as the rate_limit intent value
 	// (FR-11 burst syntax). An empty base rate yields "".
 	ComposeRate(spec RateSpec) string
+	// SupportsInPlace reports whether an in-place CoA-Request change for
+	// intent is known to take effect on an already-active session for a NAS
+	// of type nasType ("pppoe"|"hotspot") running rosVersion — the Phase 4
+	// ROS quirk matrix (docs/ops/ros-matrix.md) encoded as code instead of
+	// left to a NAK/timeout round trip (FR-15.4, "version-aware instead of
+	// NAK-reactive where knowable"). false means the caller should go
+	// straight to Disconnect; the CoA layer consults this before ever
+	// sending a packet.
+	SupportsInPlace(rosVersion, nasType, intent string) bool
+	// PlanAutoSetup computes the FR-56.2 preview: it connects read-only
+	// (print/query sentences only, never add/set) and diffs the router's
+	// current state against the config in against desired the FR-14.2
+	// bootstrap needs, returning additive-only items plus any conflicts that
+	// must abort the whole apply. RouterOS API traffic for auto-setup lives
+	// only here and in the conn implementation (FR-56.4/FR-17.1).
+	PlanAutoSetup(conn ROSConn, in SnippetInput) (AutoSetupPlan, error)
+	// ApplyAutoSetup executes plan's items in order against conn (already
+	// re-validated conflict-free by the caller) and reports a per-item
+	// result. Callers stop issuing further items after the first failure.
+	ApplyAutoSetup(conn ROSConn, plan AutoSetupPlan) []ApplyResult
+}
+
+// ROSConn is a minimal connected RouterOS API session. Every RouterOS API
+// client call for auto-setup goes through this seam (FR-56.4) — production
+// code dials a real router (see DialROS); tests fake a router's state without
+// any network or hardware dependency.
+type ROSConn interface {
+	// Read runs a read-only (print) sentence and returns each reply row
+	// (RouterOS's "!re" sentences) as its word->value map.
+	Read(sentence ...string) ([]map[string]string, error)
+	// Write runs a mutating (add/set) sentence and returns the router's
+	// "!done" reply map (often empty) or an error — e.g. RouterOS's own
+	// "failure: already have such entry" for a genuine race.
+	Write(sentence ...string) (map[string]string, error)
+	Close() error
+}
+
+// PlanItem is one additive-only change auto-setup would make (C6 preview
+// shape). Command is the exact, human-readable RouterOS command so an
+// operator can sanity-check it before approving; Sentence is the actual API
+// words used at apply time and is never serialized to the client — the apply
+// endpoint always recomputes it server-side rather than trusting anything
+// echoed back by a caller (tamper safety, and it's how a stale preview is
+// detected: see AutoSetupPlan.Hash).
+type PlanItem struct {
+	Action       string   `json:"action"` // "add" | "set"
+	Path         string   `json:"path"`
+	Command      string   `json:"command"`
+	CurrentState string   `json:"current_state"`
+	Sentence     []string `json:"-"`
+}
+
+// PlanConflict is one reason auto-setup refuses to touch the router at all
+// (FR-56.2 safety contract: any conflict aborts the whole apply, nothing is
+// written).
+type PlanConflict struct {
+	Path     string `json:"path"`
+	Existing string `json:"existing"`
+	Reason   string `json:"reason"`
+}
+
+// AutoSetupPlan is PlanAutoSetup's result. Items is empty-safe (nil marshals
+// to `[]`); Conflicts non-empty means apply must refuse.
+type AutoSetupPlan struct {
+	Items     []PlanItem
+	Conflicts []PlanConflict
+}
+
+// ApplyResult is one executed item's outcome (C6 "per-item results").
+type ApplyResult struct {
+	Path    string `json:"path"`
+	Command string `json:"command"`
+	OK      bool   `json:"ok"`
+	Error   string `json:"error,omitempty"`
 }
 
 var registry = map[string]Adapter{}

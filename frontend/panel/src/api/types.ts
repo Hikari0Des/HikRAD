@@ -234,6 +234,10 @@ export interface Nas {
   ros_version: string | null
   location: string
   enabled: boolean
+  /** FR-56.2 RouterOS API auto-setup credential slice; password never round-trips. */
+  api_port: number
+  api_user: string
+  has_api_creds: boolean
   created_at: string
   updated_at: string
 }
@@ -249,6 +253,44 @@ export interface NasWrite {
   ros_version?: string | null
   location?: string
   enabled?: boolean
+  api_port?: number
+  api_user?: string
+  api_password?: string
+}
+
+// --- NAS auto-setup (C6, FR-56.2-56.4) -------------------------------------
+
+export interface AutoSetupPlanItem {
+  action: 'add' | 'set'
+  path: string
+  command: string
+  current_state: string
+}
+
+export interface AutoSetupConflict {
+  path: string
+  existing: string
+  reason: string
+}
+
+export interface AutoSetupPreview {
+  items: AutoSetupPlanItem[]
+  conflicts: AutoSetupConflict[]
+  preview_hash: string
+  ros_version: string
+}
+
+export interface AutoSetupApplyResultItem {
+  path: string
+  command: string
+  ok: boolean
+  error?: string
+}
+
+export interface AutoSetupApplyResult {
+  results: AutoSetupApplyResultItem[]
+  all_ok: boolean
+  seen: { last_auth_at: string | null; last_acct_at: string | null; seen: boolean }
 }
 
 export interface NasStatus {
