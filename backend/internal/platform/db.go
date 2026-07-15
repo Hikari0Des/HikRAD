@@ -10,9 +10,11 @@ import (
 )
 
 // NewDB opens the pgx pool used for the C3 Deps.DB and verifies connectivity.
-// Compose gates hikrad-api on postgres health, so a short ping window is
-// enough; a failure here should crash the process (restart: unless-stopped
-// retries).
+// A failed ping returns an error rather than retrying internally — the
+// server-boot caller (cmd/hikrad-api's startWithRetry) is the one that
+// retries with backoff; Compose's own restart policy alone isn't enough,
+// since a crashed container fails `depends_on: condition: service_healthy`
+// outright instead of waiting for a later restart to succeed.
 func NewDB(ctx context.Context, cfg Config) (*pgxpool.Pool, error) {
 	pool, err := pgxpool.New(ctx, cfg.DBURL)
 	if err != nil {

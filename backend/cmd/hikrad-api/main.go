@@ -65,11 +65,7 @@ func run(cfg platform.Config, log *slog.Logger) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	if err := platform.Migrate(cfg.DBURL, cfg.MigrationsDir, log); err != nil {
-		return err
-	}
-
-	deps, cleanup, err := buildDeps(ctx, cfg, log)
+	deps, cleanup, err := startWithRetry(ctx, cfg, log)
 	if err != nil {
 		return err
 	}
@@ -101,6 +97,51 @@ func run(cfg platform.Config, log *slog.Logger) error {
 			return err
 		}
 		return nil
+	}
+}
+
+// startupRetryBudget bounds how long hikrad-api retries its initial
+// migration + DB/Redis connection before giving up. Compose's own
+// depends_on: condition: service_healthy only watches the container's HTTP
+// healthcheck — if the process exits before ever opening :8080, Compose
+// treats that as a hard failure and aborts the whole `compose up` rather
+// than waiting for `restart: unless-stopped` to try again on a later
+// container instance. A cold multi-container start where Postgres/Redis
+// report healthy a hair before they actually accept new sessions (found live
+// in the Phase-5 M4 install rehearsal: hikrad-api crashed on its very first
+// boot, and only a manual `hikrad up` retry succeeded) used to crash
+// hikrad-api outright on the first attempt. Retrying inside the process
+// instead just makes the container take a little longer to open its port —
+// no Compose-level failure, no manual retry needed.
+const startupRetryBudget = 90 * time.Second
+
+// startWithRetry runs the migration + dependency-connection sequence,
+// retrying with backoff until it succeeds or startupRetryBudget elapses.
+func startWithRetry(ctx context.Context, cfg platform.Config, log *slog.Logger) (httpapi.Deps, func(), error) {
+	deadline := time.Now().Add(startupRetryBudget)
+	backoff := 1 * time.Second
+	for {
+		deps, cleanup, err := func() (httpapi.Deps, func(), error) {
+			if err := platform.Migrate(cfg.DBURL, cfg.MigrationsDir, log); err != nil {
+				return httpapi.Deps{}, nil, err
+			}
+			return buildDeps(ctx, cfg, log)
+		}()
+		if err == nil {
+			return deps, cleanup, nil
+		}
+		if time.Now().After(deadline) {
+			return httpapi.Deps{}, nil, err
+		}
+		log.Warn("hikrad-api: dependencies not ready yet, retrying startup", "error", err, "retry_in", backoff)
+		select {
+		case <-ctx.Done():
+			return httpapi.Deps{}, nil, ctx.Err()
+		case <-time.After(backoff):
+		}
+		if backoff < 10*time.Second {
+			backoff *= 2
+		}
 	}
 }
 
