@@ -18,13 +18,13 @@ vi.mock('../api/setup', () => ({
   createSetupAdmin: vi.fn(),
 }))
 
-function renderWizard() {
+function renderWizard(onSetupComplete: () => void = vi.fn()) {
   return render(
     <I18nProvider>
       <AuthProvider>
         <ToastProvider>
           <MemoryRouter>
-            <SetupWizardPage />
+            <SetupWizardPage onSetupComplete={onSetupComplete} />
           </MemoryRouter>
         </ToastProvider>
       </AuthProvider>
@@ -50,11 +50,18 @@ describe('SetupWizardPage (task 4, FR-49.3): resumable stepper', () => {
     expect(screen.queryByText(en.setup.license.body)).not.toBeInTheDocument()
   })
 
-  it('clears the persisted step once the wizard finishes', async () => {
+  it('clears the persisted step and invalidates the setup gate once the wizard finishes', async () => {
     window.localStorage.setItem('hikrad:setup:step', 'done')
+    const onSetupComplete = vi.fn()
     const user = userEvent.setup()
-    renderWizard()
+    renderWizard(onSetupComplete)
     await user.click(await screen.findByRole('button', { name: en.setup.done.goToDashboard }))
     expect(window.localStorage.getItem('hikrad:setup:step')).toBeNull()
+    // SetupGate only checks admin_exists once on mount and sits above the
+    // router, so a plain client-side navigate never got it to re-render the
+    // real app after finishing — this must be called to actually leave the
+    // wizard (found live in the Phase-5 M4 gate rehearsal: "Go to dashboard"
+    // did nothing until a manual page refresh).
+    expect(onSetupComplete).toHaveBeenCalledTimes(1)
   })
 })

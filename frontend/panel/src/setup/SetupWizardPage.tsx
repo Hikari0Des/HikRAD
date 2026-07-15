@@ -32,7 +32,7 @@ const STEP_ORDER: Step[] = ['license', 'admin', 'branding', 'nas', 'profile', 'd
  * moment an admin exists — see setupapi/wizard_api.go). Resumable: the step
  * is persisted so a reload continues where it left off.
  */
-export function SetupWizardPage() {
+export function SetupWizardPage({ onSetupComplete }: { onSetupComplete: () => void }) {
   const t = useT()
   const { login } = useAuth()
   const navigate = useNavigate()
@@ -47,6 +47,12 @@ export function SetupWizardPage() {
 
   function finish() {
     localStorage.removeItem('hikrad:setup:step')
+    // SetupGate sits above the router and only checks admin_exists once on
+    // mount — a plain navigate('/') doesn't touch that cached state, so the
+    // gate kept rendering this same wizard instance after "Go to dashboard"
+    // (only a full page reload happened to force a re-check). Explicitly
+    // invalidating the gate's check is the real fix, not the reload.
+    onSetupComplete()
     navigate('/')
   }
 

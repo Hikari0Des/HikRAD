@@ -60,13 +60,7 @@ listen {
 	#  directory just to house the socket file, and set
 	#  appropriate permissions on that.
 	#
-	# HikRAD: peercred's SO_PEERCRED credential lookup doesn't cross the
-	# hikrad-api/freeradius container boundary here ("Cannot talk to socket:
-	# Function not implemented", found live in the Phase-5 M4 gate rehearsal)
-	# even though the socket itself connects fine over the shared bind mount.
-	# Filesystem permissions (this socket's own 0660 + hikrad-api's group_add
-	# in deploy/compose.yml) are the actual access control instead.
-	peercred = no
+#	peercred = no
 #	socket = ${run_dir}/control/${name}.sock
 
 	#

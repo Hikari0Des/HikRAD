@@ -69,20 +69,44 @@ services:
       HIKRAD_ENCRYPTION_KEY: ${HIKRAD_ENCRYPTION_KEY:?generate with scripts/gen-env.sh}
       HIKRAD_JWT_SECRET: ${HIKRAD_JWT_SECRET:?generate with scripts/gen-env.sh}
       HIKRAD_ENV: ${HIKRAD_ENV:-prod}
+      # FR-13.2/AC-13a: hikrad-api regenerates FreeRADIUS's per-NAS client
+      # list on every NAS create/update/delete and asks it to reload over the
+      # control socket below — otherwise a real NAS (anything other than the
+      # harness/CI's wildcard docker_bridge_dev client) silently times out
+      # forever, since FreeRADIUS's transport layer never learns its secret
+      # (found live in the Phase-5 M4 gate rehearsal against a real MikroTik).
+      HIKRAD_RADIUS_CLIENTS_PATH: /etc/hikrad/clients-generated.conf
+      HIKRAD_RADIUS_CONTROL_SOCKET: /var/run/freeradius/freeradius.sock
+    # gid 101 is freeradius/freeradius-server:3.2.3's own internal "freerad"
+    # service account (stable since the image tag is pinned, not :latest) —
+    # it creates the control socket 0660 owned by that uid:gid, which
+    # hikrad-api's own unrelated uid (10001) can't otherwise reach. Joining
+    # the group is simpler and less fragile than forcing uid alignment
+    # across two independently-built images.
+    group_add:
+      - "101"
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
-    # Bind-mounted read-only from the host so the license fingerprint (FR-50.2,
-    # internal/platform/license) identifies this SERVER, not the container —
-    # a container recreated by `docker compose up` (image update, `hikrad
-    # restart`, host reboot) gets a fresh /etc/machine-id of its own otherwise,
-    # which would look like a hardware change and trip grace mode on every
-    # routine restart. Missing on some minimal hosts; license.Current()
-    # tolerates that (falls back to the MAC-only half of the fingerprint).
     volumes:
+      # Bind-mounted read-only from the host so the license fingerprint
+      # (FR-50.2, internal/platform/license) identifies this SERVER, not the
+      # container — a container recreated by `docker compose up` (image
+      # update, `hikrad restart`, host reboot) gets a fresh /etc/machine-id of
+      # its own otherwise, which would look like a hardware change and trip
+      # grace mode on every routine restart. Missing on some minimal hosts;
+      # license.Current() tolerates that (falls back to the MAC-only half of
+      # the fingerprint).
       - /etc/machine-id:/etc/machine-id:ro
+      # Same host file FreeRADIUS $INCLUDEs (freeradius's own ./freeradius
+      # bind mount below) — a single-file mount, not the whole config tree,
+      # so hikrad-api can only ever touch this one generated file.
+      - ./freeradius/clients-generated.conf:/etc/hikrad/clients-generated.conf
+      # Shared with freeradius so hikrad-api can reach its control socket
+      # (deploy/freeradius/sites-enabled/control-socket) to trigger a reload.
+      - ${HIKRAD_DATA_DIR:-./data}/radius-control:/var/run/freeradius
     # Port 8080 stays internal to the compose network: Caddy proxies /api/*,
     # and FreeRADIUS calls POST /internal/radius/authorize directly (C4 — the
     # /internal/* routes are deliberately NOT reachable through Caddy).
@@ -107,11 +131,22 @@ services:
     # (config content, mods-enabled, clients.conf, rlm_rest wiring).
     image: freeradius/freeradius-server:3.2.3
     restart: unless-stopped
+    # Run under HikRAD's supervisor instead of the image's default `freeradius`
+    # command. FreeRADIUS loads its client list only at startup, so the
+    # supervisor watches clients-generated.conf (rewritten by hikrad-api on
+    # every NAS change) and restarts FreeRADIUS when it changes — that is what
+    # makes a panel-added NAS become a recognized RADIUS client automatically,
+    # with no manual restart on each install. See freeradius/hikrad-run.sh.
+    command: ["sh", "/etc/raddb/hikrad-run.sh"]
     depends_on:
       hikrad-api:
         condition: service_healthy
     volumes:
       - ./freeradius:/etc/raddb
+      # Shared with hikrad-api (FR-13.2/AC-13a): the control socket
+      # (sites-enabled/control-socket) lives here so hikrad-api can reach it
+      # to trigger a reload after regenerating clients-generated.conf.
+      - ${HIKRAD_DATA_DIR:-./data}/radius-control:/var/run/freeradius
     ports:
       - "1812:1812/udp"
       - "1813:1813/udp"
@@ -143,6 +178,7 @@ services:
       - "443:443"
     volumes:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ${HIKRAD_DATA_DIR:-./data}/caddy-selfsigned:/etc/caddy/selfsigned:ro
       - ${HIKRAD_DATA_DIR:-./data}/caddy:/data
       - ${HIKRAD_DATA_DIR:-./data}/caddy-config:/config
     healthcheck:

@@ -109,19 +109,40 @@ in a column FreeRADIUS can read — that would defeat the encryption. Instead:
 - `hikrad-api` owns the source of truth (the encrypted `nas` table) and, on
   every NAS create/update/delete, regenerates a plain `client { … }` file
   (decrypting each secret only in-process) to `HIKRAD_RADIUS_CLIENTS_PATH`,
-  which points at `clients-generated.conf` (this tree `$INCLUDE`s it; it ships
-  empty so the server starts before the first regeneration).
-- **Instant effect with no restart (AC-13a)** comes from the *authorize-time
-  known-NAS check*: `hikrad-api`'s policy engine rejects `unknown_nas` for any
-  source IP not in the `nas` table (a hot, cached DB read), so a NAS created in
-  the panel authenticates immediately. `clients-generated.conf` is the
-  transport-layer hardening FreeRADIUS applies on its next reload.
-- **Reload transport** is deployment-specific and left as a logged hook
-  (`reloadFreeRADIUS`): production should wire a FreeRADIUS control socket
-  (`radmin`) or a container reload signal. The DB and the generated file stay
-  correct regardless; only FreeRADIUS's in-memory client list waits for the
-  reload. The broad `docker_bridge_dev` client keeps the harness/CI path
+  which points at `clients-generated.conf` (this tree `$INCLUDE`s it from
+  `clients.conf`; it ships empty so the server starts before the first
+  regeneration).
+- **A NAS must be in FreeRADIUS's *transport-layer* client list to work at
+  all.** FreeRADIUS validates the shared-secret / Message-Authenticator against
+  the matching `client {}` before it runs any module; a packet from an IP it has
+  no client for is silently dropped ("Ignoring request … from unknown client")
+  and `authorize.pl` — and therefore `hikrad-api`'s authorize-time known-NAS
+  check — never runs. So the generated client list is not just "hardening"; it
+  is the gate. (The authorize-time check only *further* screens IPs FreeRADIUS
+  already accepted.)
+- **Applying a new NAS with no manual step (AC-13a)** is done by
+  `hikrad-run.sh`, the FreeRADIUS container's supervisor (`deploy/compose.yml`
+  runs it via `command`). FreeRADIUS 3.x reads its client list only at startup —
+  neither SIGHUP nor a `radmin` "reload" re-reads clients or listen sections
+  (confirmed live against 3.2.3) — so the supervisor watches
+  `clients-generated.conf` and restarts FreeRADIUS whenever it changes. NAS
+  changes are rare, admin-initiated events; the sub-second restart window is
+  covered by normal RADIUS retransmission, so steady-state accounting (M2) is
+  unaffected. The broad `docker_bridge_dev` client keeps the harness/CI path
   working without per-NAS clients.
+- `hikrad-api` still calls `reloadFreeRADIUS` (a control-socket "reload") after
+  writing the file, but that is now best-effort/legacy — the supervisor's file
+  watch is what actually makes a new NAS take effect. The control socket is no
+  longer required for correctness.
+
+> Testing note: the `freeradius/freeradius-server` image ships `/etc/raddb` as a
+> symlink to `/etc/freeradius` (the real confdir). A bind mount to `/etc/raddb`
+> works because Docker resolves the symlink and mounts at `/etc/freeradius`. But
+> copying config into `/etc/raddb` *inside* the container after `rm -rf
+> /etc/raddb` replaces the symlink with a real dir while FreeRADIUS keeps reading
+> the untouched `/etc/freeradius` — so it silently runs the stock config. Write
+> to `/etc/freeradius` (or pass `-d`) when validating config in a throwaway
+> container.
 
 CoA/Disconnect is sent by `hikrad-api` *directly* to each NAS's `coa_port`
 (layeh radius over UDP), not through FreeRADIUS — so no `originate-coa` / CoA

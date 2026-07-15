@@ -12,7 +12,7 @@ import { SetupWizardPage } from './SetupWizardPage'
  * Once an admin exists this renders the normal app unconditionally.
  */
 export function SetupGate({ children }: { children: ReactNode }) {
-  const { data, loading } = useAsync(() => getSetupStatus(), [])
+  const { data, loading, reload } = useAsync(() => getSetupStatus(), [])
 
   if (loading) {
     return (
@@ -22,7 +22,7 @@ export function SetupGate({ children }: { children: ReactNode }) {
     )
   }
   if (data && !data.admin_exists) {
-    return <SetupWizardPage />
+    return <SetupWizardPage onSetupComplete={reload} />
   }
   return <>{children}</>
 }

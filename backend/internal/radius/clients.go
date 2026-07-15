@@ -11,14 +11,22 @@ package radius
 // on its next reload.
 
 import (
+	"bufio"
 	"context"
 	"fmt"
+	"net"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/hikrad/hikrad/internal/platform/crypto"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+// controlSocketPathEnv names the FreeRADIUS control socket (sites-enabled/
+// control-socket) reloadFreeRADIUS connects to; empty disables the reload
+// call entirely (unit tests, environments wiring reload another way).
+const controlSocketPathEnv = "HIKRAD_RADIUS_CONTROL_SOCKET"
 
 // clientsPathEnv names the file FreeRADIUS $INCLUDEs; empty disables the
 // file-generation side effect (unit tests, environments wiring clients another
@@ -83,10 +91,38 @@ func (m *module) regenerateClients(ctx context.Context) {
 	m.reloadFreeRADIUS()
 }
 
-// reloadFreeRADIUS asks FreeRADIUS to re-read its config. The wiring is
-// environment-specific (a control socket / radmin, or a container signal); see
-// deploy/freeradius/README.md. Left as a logged no-op by default so the DB and
-// generated file stay correct even where no reload transport is configured.
+// reloadFreeRADIUS asks FreeRADIUS to re-read its config over the control
+// socket (deploy/freeradius/sites-enabled/control-socket, FR-13.2/AC-13a) —
+// the same "reload" command `radmin` sends, piped directly since the wire
+// protocol is a plain text command/response exchange once connected (peercred
+// auth passes implicitly; no separate handshake). A missing/unreachable
+// socket (path unset, FreeRADIUS mid-restart, socket not created yet) is
+// logged and swallowed, never surfaced to the API caller — the regenerated
+// file on disk is already correct and the authorize-time known-NAS check
+// (AC-13a) already made the NAS usable; this only refreshes FreeRADIUS's own
+// transport-layer client list, best-effort, same as the file write above.
 func (m *module) reloadFreeRADIUS() {
-	m.log.Info("radius: clients file regenerated; FreeRADIUS reload signalled (see deploy/freeradius/README.md)")
+	path := os.Getenv(controlSocketPathEnv)
+	if path == "" {
+		return
+	}
+	conn, err := net.DialTimeout("unix", path, 2*time.Second)
+	if err != nil {
+		m.log.Warn("radius: control socket dial failed (clients file is still correct on disk)", "path", path, "error", err)
+		return
+	}
+	defer conn.Close()
+
+	_ = conn.SetDeadline(time.Now().Add(3 * time.Second))
+	r := bufio.NewReader(conn)
+	// FreeRADIUS's control socket sends nothing until spoken to — it's the
+	// client's turn first, unlike a banner-first protocol (found live: an
+	// initial read here just ate the whole deadline waiting for bytes that
+	// never came, so the write always timed out).
+	if _, err := conn.Write([]byte("reload\n")); err != nil {
+		m.log.Warn("radius: control socket reload command failed", "path", path, "error", err)
+		return
+	}
+	resp, _ := r.ReadString('\n')
+	m.log.Info("radius: clients file regenerated; FreeRADIUS reload sent", "response", strings.TrimSpace(resp))
 }

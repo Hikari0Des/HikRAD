@@ -126,7 +126,12 @@ if [ "$REPAIR_ONLY" -eq 0 ]; then
     chmod 750 "$HIKRAD_ROOT"
 
     log "Generating secrets into $HIKRAD_ROOT/.env…"
-    "$SCRIPT_DIR/gen-env.sh" --env prod "$HIKRAD_ROOT/.env"
+    # Invoked via bash explicitly, not relying on gen-env.sh's own executable
+    # bit: a checkout obtained via GitHub's "Download ZIP" (vs. `git clone`,
+    # which preserves git's tracked file mode) strips execute bits from every
+    # file, and gen-env.sh silently failing with "Permission denied" was found
+    # live in the Phase-5 M4 gate rehearsal on a genuinely fresh Ubuntu box.
+    bash "$SCRIPT_DIR/gen-env.sh" --env prod "$HIKRAD_ROOT/.env"
     {
         echo "HIKRAD_DATA_DIR=$HIKRAD_ROOT/data"
         echo "HIKRAD_BACKUP_DIR=$HIKRAD_ROOT/backups"
@@ -138,12 +143,12 @@ if [ "$REPAIR_ONLY" -eq 0 ]; then
         CADDYFILE="$REPO_DIR/deploy/caddy/Caddyfile"
         cp "$CADDYFILE" "$CADDYFILE.orig"
         sed -i \
-            -e "s/^localhost:443 {/${DOMAIN}:443 {/" \
-            -e '/^\ttls internal$/d' \
+            -e "s/^:443 {/${DOMAIN}:443 {/" \
+            -e '/^\ttls \/etc\/caddy\/selfsigned\//d' \
             "$CADDYFILE"
         log "Caddyfile updated (original saved as Caddyfile.orig). Point $DOMAIN's DNS at this server before starting, or Let's Encrypt issuance will retry until it can."
     else
-        log "No --domain given: using Caddy's self-signed cert (browsers will warn until you trust its local CA, or re-run with --domain later)."
+        log "No --domain given: using a self-signed cert (browsers will warn until you trust it, or re-run with --domain later)."
     fi
 
     # Record where the compose sources live so the `hikrad` wrapper finds them.
@@ -166,6 +171,55 @@ fi
 # self-heals on the next repair without a full reinstall.
 mkdir -p "$HIKRAD_ROOT/data/acct-spill"
 chown 10002:10002 "$HIKRAD_ROOT/data/acct-spill"
+
+# --- 3d1. clients-generated.conf ownership (idempotent; also runs on repair) -
+# hikrad-api runs as a fixed non-root uid (10001, deploy/docker/api.Dockerfile)
+# and regenerates this file on every NAS create/update/delete (FR-13.2). A
+# plain checkout (git clone as root, or any other method) leaves it
+# root-owned 644 — hikrad-api's own uid can't write that either, so NAS
+# secrets never actually reach FreeRADIUS's transport layer (found live in
+# the Phase-5 M4 gate rehearsal against a real MikroTik: silent timeout,
+# nothing in FreeRADIUS's clients-generated.conf despite the NAS existing in
+# HikRAD). Same fix shape as acct-spill just below.
+chown 10001:10001 "$REPO_DIR/deploy/freeradius/clients-generated.conf"
+
+# --- 3d2. FreeRADIUS control-socket dir (idempotent; also runs on repair) ---
+# Shared between hikrad-api and freeradius (FR-13.2/AC-13a) so hikrad-api can
+# trigger a config reload after regenerating the per-NAS client list. Neither
+# container's runtime uid is ours to assume (third-party freeradius image;
+# hikrad-api's own uid varies by build) — 0777 on this one ephemeral
+# IPC-socket directory (no secrets live here) is the pragmatic choice, same
+# reasoning as the acct-spill fix just above.
+mkdir -p "$HIKRAD_ROOT/data/radius-control"
+chmod 777 "$HIKRAD_ROOT/data/radius-control"
+
+# --- 3e. Self-signed TLS cert (idempotent; also runs on repair) -------------
+# Covers this server's actual detected IP address(es) plus localhost, not
+# just "localhost" — a browser reaching the panel via the server's real LAN
+# IP sends no SNI at all (RFC 6066 only applies SNI to hostnames), so a cert
+# scoped to a single hostname can never be selected for that connection and
+# the handshake fails outright (see deploy/caddy/Caddyfile's own comment;
+# found live in the Phase-5 M4 gate rehearsal: curl https://localhost worked,
+# a browser hitting the LAN IP got ERR_SSL_PROTOCOL_ERROR). Unused when
+# --domain is given (Let's Encrypt takes over) but harmless to have on disk
+# either way. Runs on repair too, so an install broken by this bug before the
+# fix landed self-heals without a full reinstall — to pick up a changed IP
+# later, delete data/caddy-selfsigned/ and re-run.
+CERT_DIR="$HIKRAD_ROOT/data/caddy-selfsigned"
+if [ ! -f "$CERT_DIR/cert.pem" ]; then
+    log "Generating a self-signed TLS certificate covering this server's detected address(es)…"
+    mkdir -p "$CERT_DIR"
+    SAN="DNS:localhost,IP:127.0.0.1"
+    for ip in $(hostname -I 2>/dev/null); do
+        SAN="$SAN,IP:$ip"
+    done
+    openssl req -x509 -nodes -newkey rsa:2048 -days 3650 \
+        -keyout "$CERT_DIR/key.pem" -out "$CERT_DIR/cert.pem" \
+        -subj "/CN=hikrad" -addext "subjectAltName=$SAN" >/dev/null 2>&1
+    chmod 644 "$CERT_DIR/cert.pem"
+    chmod 600 "$CERT_DIR/key.pem"
+    log "Self-signed cert covers: $SAN"
+fi
 
 # --- 4. CLI wrapper + nightly backup cron (idempotent; also runs on repair) --
 if install -m 0755 "$SCRIPT_DIR/hikrad" /usr/local/bin/hikrad 2>/dev/null; then
