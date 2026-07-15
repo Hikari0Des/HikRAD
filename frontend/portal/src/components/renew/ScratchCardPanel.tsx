@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react'
 
 import { useFormatters, useT } from '@hikrad/shared'
 
+import { NetworkError } from '../../api/client'
 import { listCardTypes, submitCardPayment, type MyCardPayment } from '../../api/cardPayments'
 import { useAsync } from '../../hooks/useAsync'
 
@@ -72,8 +73,14 @@ export function ScratchCardPanel({
       } else {
         setError(t(`portal.renew.card.error.${outcome.kind}`))
       }
-    } catch {
-      setError(t('portal.renew.card.error.network'))
+    } catch (err) {
+      setError(
+        t(
+          err instanceof NetworkError
+            ? 'portal.renew.card.error.network'
+            : 'portal.renew.card.error.generic',
+        ),
+      )
     } finally {
       setSubmitting(false)
     }

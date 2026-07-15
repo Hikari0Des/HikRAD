@@ -23,6 +23,10 @@ type batchInput struct {
 	Count     int        `json:"count"`
 	Prefix    string     `json:"prefix"`
 	ExpiresAt *time.Time `json:"expires_at"`
+	// CodeLength is the total printed length including the prefix; 0 means the
+	// FR-22.1 minimum (10). The random part never drops below 8 characters, so
+	// a long prefix can push the actual length past this value.
+	CodeLength int `json:"code_length"`
 }
 
 func (in *batchInput) validate() []httpapi.FieldError {
@@ -35,6 +39,10 @@ func (in *batchInput) validate() []httpapi.FieldError {
 	}
 	if len(in.Prefix) > 12 {
 		fe = append(fe, httpapi.FieldError{Field: "prefix", Message: "must be at most 12 characters"})
+	}
+	if in.CodeLength != 0 && (in.CodeLength < minCodeLen || in.CodeLength > maxCodeLen) {
+		fe = append(fe, httpapi.FieldError{Field: "code_length",
+			Message: fmt.Sprintf("must be between %d and %d", minCodeLen, maxCodeLen)})
 	}
 	return fe
 }

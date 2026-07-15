@@ -38,6 +38,7 @@ export function getMyCardPayment(): Promise<MyCardPayment | null> {
 export type CardPaymentOutcome =
   | { kind: 'ok'; trial_expires_at: string }
   | { kind: 'invalid_code' }
+  | { kind: 'no_profile' }
   | { kind: 'already_pending' }
   | { kind: 'cooldown'; retryAt?: string }
 
@@ -59,7 +60,8 @@ export async function submitCardPayment(
       if (err.code === 'card_payment_cooldown') {
         return { kind: 'cooldown', retryAt: err.message.match(/\d{4}-\d{2}-\d{2}T[\d:.Z]+/)?.[0] }
       }
-      if (err.code === 'card_code_invalid' || err.status === 422) return { kind: 'invalid_code' }
+      if (err.code === 'card_code_invalid') return { kind: 'invalid_code' }
+      if (err.code === 'no_profile') return { kind: 'no_profile' }
     }
     throw err
   }

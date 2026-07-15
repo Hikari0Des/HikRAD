@@ -12,7 +12,11 @@ export interface RenewResult {
 }
 
 export type VoucherRedeemOutcome =
-  { kind: 'ok'; result: RenewResult } | { kind: 'used' } | { kind: 'expired' } | { kind: 'invalid' }
+  | { kind: 'ok'; result: RenewResult }
+  | { kind: 'used' }
+  | { kind: 'expired' }
+  | { kind: 'void' }
+  | { kind: 'invalid' }
 
 export async function redeemVoucher(code: string): Promise<VoucherRedeemOutcome> {
   try {
@@ -22,9 +26,8 @@ export async function redeemVoucher(code: string): Promise<VoucherRedeemOutcome>
     if (err instanceof ApiError) {
       if (err.code === 'voucher_used') return { kind: 'used' }
       if (err.code === 'voucher_expired') return { kind: 'expired' }
-      if (err.code === 'voucher_invalid' || err.status === 404 || err.status === 422) {
-        return { kind: 'invalid' }
-      }
+      if (err.code === 'voucher_void') return { kind: 'void' }
+      if (err.code === 'voucher_invalid' || err.status === 404) return { kind: 'invalid' }
     }
     throw err
   }

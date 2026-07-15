@@ -137,6 +137,7 @@ function CreateBatchModal({
   const [profileId, setProfileId] = useState('')
   const [count, setCount] = useState(10)
   const [prefix, setPrefix] = useState('')
+  const [codeLength, setCodeLength] = useState(10)
   const [expiresAt, setExpiresAt] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -150,6 +151,7 @@ function CreateBatchModal({
         count,
         prefix: prefix.trim() || undefined,
         expires_at: expiresAt || null,
+        code_length: codeLength,
       })
       toast(t('vouchers.created', { id: batchId }), 'ok')
       onOpenChange(false)
@@ -212,6 +214,21 @@ function CreateBatchModal({
             />
           </Field>
         </div>
+        <Field
+          label={t('vouchers.codeLength')}
+          hint={t('vouchers.codeLengthHint')}
+          htmlFor="vb-length"
+        >
+          <TextInput
+            id="vb-length"
+            type="number"
+            min={10}
+            max={24}
+            value={codeLength}
+            onChange={(e) => setCodeLength(Number(e.target.value))}
+            dir="ltr"
+          />
+        </Field>
         <Field label={t('vouchers.expiry')} hint={t('vouchers.expiryHint')} htmlFor="vb-exp">
           <TextInput
             id="vb-exp"
@@ -226,7 +243,10 @@ function CreateBatchModal({
           <Button variant="ghost" disabled={busy} onClick={() => onOpenChange(false)}>
             {t('ui.cancel')}
           </Button>
-          <Button type="submit" disabled={busy || !profileId || count < 1}>
+          <Button
+            type="submit"
+            disabled={busy || !profileId || count < 1 || codeLength < 10 || codeLength > 24}
+          >
             {busy ? t('ui.working') : t('vouchers.createDownload')}
           </Button>
         </div>

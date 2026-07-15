@@ -89,8 +89,10 @@
         "error": {
           "used": "This voucher has already been used.",
           "expired": "This voucher has expired.",
+          "void": "This voucher was cancelled by your provider.",
           "invalid": "That code doesn't look right. Check it and try again.",
-          "network": "Couldn't reach the server. Please try again."
+          "network": "Couldn't reach the server. Please try again.",
+          "generic": "Something went wrong on our side. Please try again."
         }
       },
       "gateway": {
@@ -110,8 +112,10 @@
         "error": {
           "cooldown": "Please wait before submitting another card.",
           "network": "Couldn't reach the server. Please try again.",
-          "invalid_code": "That code doesn't look right. Check it and try again.",
-          "already_pending": "You already have a card payment pending verification."
+          "invalid_code": "That card type isn't accepted. Pick a card type from the list and try again.",
+          "no_profile": "Your account has no plan to renew — please contact your provider.",
+          "already_pending": "You already have a card payment pending verification.",
+          "generic": "Something went wrong on our side. Please try again."
         }
       },
       "return": {
@@ -131,6 +135,7 @@
     },
     "settings": {
       "title": "Account settings",
+      "nameLabel": "Your name",
       "phoneLabel": "Phone number",
       "passwordWarning": "Changing your password also changes your internet (PPPoE) login password.",
       "newPasswordLabel": "New password",

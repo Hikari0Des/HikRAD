@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react'
 
 import { useFormatters, useT } from '@hikrad/shared'
 
+import { NetworkError } from '../../api/client'
 import { redeemVoucher, type RenewResult } from '../../api/vouchers'
 
 /** Voucher redeem (FR-42): format hints, clear used/expired/invalid errors,
@@ -27,8 +28,14 @@ export function VoucherPanel({ onRedeemed }: { onRedeemed?: () => void }) {
       } else {
         setError(t(`portal.renew.voucher.error.${outcome.kind}`))
       }
-    } catch {
-      setError(t('portal.renew.voucher.error.network'))
+    } catch (err) {
+      setError(
+        t(
+          err instanceof NetworkError
+            ? 'portal.renew.voucher.error.network'
+            : 'portal.renew.voucher.error.generic',
+        ),
+      )
     } finally {
       setSubmitting(false)
     }

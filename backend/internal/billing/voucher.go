@@ -25,13 +25,21 @@ import (
 // voucherAlphabet excludes visually ambiguous characters (FR-22.1).
 const voucherAlphabet = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"
 
-// minCodeLen is the minimum total code length including prefix (FR-22.1).
-const minCodeLen = 10
+// minCodeLen is the minimum total code length including prefix (FR-22.1);
+// maxCodeLen caps what a batch may request (item 20: per-batch code length).
+const (
+	minCodeLen = 10
+	maxCodeLen = 24
+)
 
 // randomPartLen is the number of random characters after the (upper-cased)
-// prefix; kept ≥ 8 for entropy even with a long prefix.
-func randomPartLen(prefix string) int {
-	n := minCodeLen - len(prefix)
+// prefix; kept ≥ 8 for entropy even with a long prefix. total ≤ 0 means the
+// FR-22.1 minimum.
+func randomPartLen(prefix string, total int) int {
+	if total <= 0 {
+		total = minCodeLen
+	}
+	n := total - len(prefix)
 	if n < 8 {
 		n = 8
 	}
@@ -39,9 +47,9 @@ func randomPartLen(prefix string) int {
 }
 
 // genCode produces one plaintext voucher code with the (upper-cased) prefix.
-func genCode(prefix string) string {
+func genCode(prefix string, total int) string {
 	prefix = strings.ToUpper(prefix)
-	n := randomPartLen(prefix)
+	n := randomPartLen(prefix, total)
 	var b strings.Builder
 	b.WriteString(prefix)
 	max := big.NewInt(int64(len(voucherAlphabet)))
@@ -52,9 +60,31 @@ func genCode(prefix string) string {
 	return b.String()
 }
 
-// hashCode is the at-rest representation of a code (sha256 hex of the upper-cased
-// code). Redemption hashes the submitted code and looks it up.
+// normalizeCode canonicalizes a voucher code for hashing: upper-case, then
+// drop every character outside [A-Z0-9]. Printed cards are often grouped
+// ("ABCD-1234", "ABCD 1234") and subscribers type them exactly as printed —
+// separators must never make a valid code read as invalid.
+func normalizeCode(code string) string {
+	var b strings.Builder
+	for _, r := range strings.ToUpper(code) {
+		if (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+// hashCode is the at-rest representation of a code (sha256 hex of the
+// normalized code). Redemption hashes the submitted code and looks it up.
 func hashCode(code string) string {
+	sum := sha256.Sum256([]byte(normalizeCode(code)))
+	return hex.EncodeToString(sum[:])
+}
+
+// legacyHashCode is the pre-normalization at-rest form (upper-case + outer
+// trim only). Vouchers issued before code normalization landed are stored
+// under this hash; redemption falls back to it so printed stock stays valid.
+func legacyHashCode(code string) string {
 	sum := sha256.Sum256([]byte(strings.ToUpper(strings.TrimSpace(code))))
 	return hex.EncodeToString(sum[:])
 }
@@ -127,7 +157,7 @@ func (m *Module) generateBatch(ctx context.Context, in batchInput, creatorID str
 
 	// Generate unique codes; the code_hash unique index is the backstop against a
 	// (astronomically rare) cross-batch collision — top up any shortfall.
-	plain, err := m.insertCodes(ctx, tx, batchID, in.Prefix, in.Count)
+	plain, err := m.insertCodes(ctx, tx, batchID, in.Prefix, in.Count, in.CodeLength)
 	if err != nil {
 		return "", nil, err
 	}
@@ -139,7 +169,7 @@ func (m *Module) generateBatch(ctx context.Context, in batchInput, creatorID str
 }
 
 // insertCodes inserts want unique codes for a batch and returns their plaintext.
-func (m *Module) insertCodes(ctx context.Context, tx pgx.Tx, batchID, prefix string, want int) ([]string, error) {
+func (m *Module) insertCodes(ctx context.Context, tx pgx.Tx, batchID, prefix string, want, codeLen int) ([]string, error) {
 	plain := make([]string, 0, want)
 	for attempt := 0; len(plain) < want && attempt < 5; attempt++ {
 		need := want - len(plain)
@@ -147,7 +177,7 @@ func (m *Module) insertCodes(ctx context.Context, tx pgx.Tx, batchID, prefix str
 		hashes := make([]string, 0, need)
 		seen := make(map[string]int, need)
 		for len(codes) < need {
-			c := genCode(prefix)
+			c := genCode(prefix, codeLen)
 			h := hashCode(c)
 			if _, dup := seen[h]; dup {
 				continue
@@ -242,8 +272,8 @@ func (m *Module) redeemVoucher(ctx context.Context, code, subscriberID, redeemer
 	err = tx.QueryRow(ctx,
 		`SELECT v.id::text, v.state, b.id::text, b.profile_id::text, b.state, b.expires_at
 		   FROM vouchers v JOIN voucher_batches b ON b.id = v.batch_id
-		  WHERE v.code_hash = $1
-		  FOR UPDATE OF v`, hashCode(code)).
+		  WHERE v.code_hash = ANY($1::text[])
+		  FOR UPDATE OF v`, []string{hashCode(code), legacyHashCode(code)}).
 		Scan(&voucherID, &vState, &batchID, &profileID, &batchState, &expiresAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return renewResult{}, redeemInvalid, nil

@@ -95,7 +95,7 @@ func TestRateString(t *testing.T) {
 func TestVoucherCodeFormat(t *testing.T) {
 	seen := map[string]struct{}{}
 	for i := 0; i < 5000; i++ {
-		c := genCode("NET")
+		c := genCode("NET", 0)
 		if !strings.HasPrefix(c, "NET") {
 			t.Fatalf("code %q missing prefix", c)
 		}
@@ -119,8 +119,20 @@ func TestVoucherCodeFormat(t *testing.T) {
 		}
 	}
 	// A long prefix still yields >= 8 random chars.
-	if got := randomPartLen("VERYLONGPREFIX"); got != 8 {
+	if got := randomPartLen("VERYLONGPREFIX", 0); got != 8 {
 		t.Fatalf("randomPartLen long = %d, want 8", got)
+	}
+	// A requested total length (item 20) is honored exactly when the prefix
+	// leaves >= 8 random chars.
+	if c := genCode("NET", 16); len(c) != 16 {
+		t.Fatalf("genCode(NET, 16) length = %d, want 16", len(c))
+	}
+	if c := genCode("", 12); len(c) != 12 {
+		t.Fatalf("genCode(\"\", 12) length = %d, want 12", len(c))
+	}
+	// The 8-char entropy floor still wins over a too-tight request.
+	if c := genCode("VERYLONGPREFIX", 10); len(c) != len("VERYLONGPREFIX")+8 {
+		t.Fatalf("genCode(VERYLONGPREFIX, 10) length = %d, want %d", len(c), len("VERYLONGPREFIX")+8)
 	}
 }
 
@@ -133,6 +145,28 @@ func TestHashCodeStableAndCaseInsensitive(t *testing.T) {
 	}
 	if hashCode("a") == hashCode("b") {
 		t.Fatal("distinct codes must hash differently")
+	}
+}
+
+// Printed vouchers are grouped ("ABCD-1234", "ABCD 1234") and subscribers type
+// them exactly as printed — separators must never change the hash.
+func TestHashCodeIgnoresSeparators(t *testing.T) {
+	want := hashCode("NETABCD1234")
+	for _, in := range []string{"NET-ABCD-1234", "net abcd 1234", " NET.ABCD.1234 ", "NET_ABCD_1234"} {
+		if hashCode(in) != want {
+			t.Fatalf("hashCode(%q) should equal hashCode(NETABCD1234)", in)
+		}
+	}
+	if normalizeCode(" ab-cd 12.34_ef ") != "ABCD1234EF" {
+		t.Fatalf("normalizeCode = %q, want ABCD1234EF", normalizeCode(" ab-cd 12.34_ef "))
+	}
+	// Legacy at-rest hashes (pre-normalization) keep separators; the redeem
+	// path must therefore probe both forms.
+	if legacyHashCode("NET-ABC") == hashCode("NET-ABC") {
+		t.Fatal("legacy hash of a separator-bearing code must differ from the normalized hash")
+	}
+	if legacyHashCode("NETABC") != hashCode("NETABC") {
+		t.Fatal("legacy and normalized hashes must agree on separator-free codes")
 	}
 }
 

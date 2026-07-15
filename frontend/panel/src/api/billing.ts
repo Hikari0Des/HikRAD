@@ -5,6 +5,14 @@
  */
 import { API_BASE, listPage, request, type Page, type PageParams } from './client'
 import { tokenStore } from '../auth/tokenStore'
+import { notifyBalanceChanged } from '../lib/balanceEvents'
+
+/** Resolve-through wrapper: fire the balance-changed signal on success. */
+async function touchingBalance<T>(p: Promise<T>): Promise<T> {
+  const res = await p
+  notifyBalanceChanged()
+  return res
+}
 
 export type CoAResult = 'restored' | 'disconnect_fallback' | 'failed' | 'not_online'
 
@@ -22,18 +30,22 @@ export function renewSubscriber(
   body: { profile_id?: string; note?: string },
   idempotencyKey: string,
 ): Promise<RenewResult> {
-  return request<RenewResult>(`/subscribers/${id}/renew`, {
-    method: 'POST',
-    body,
-    headers: { 'Idempotency-Key': idempotencyKey },
-  })
+  return touchingBalance(
+    request<RenewResult>(`/subscribers/${id}/renew`, {
+      method: 'POST',
+      body,
+      headers: { 'Idempotency-Key': idempotencyKey },
+    }),
+  )
 }
 
 export function refundRenewal(
   id: string,
   body: { ledger_tx_id: string; reason: string },
 ): Promise<RenewResult> {
-  return request<RenewResult>(`/subscribers/${id}/refund`, { method: 'POST', body })
+  return touchingBalance(
+    request<RenewResult>(`/subscribers/${id}/refund`, { method: 'POST', body }),
+  )
 }
 
 // --- balances (FR-20) -------------------------------------------------------
@@ -46,7 +58,7 @@ export function topupManager(
   id: string,
   body: { amount_iqd: number; note?: string },
 ): Promise<{ ledger_tx_id: string; balance_iqd: number }> {
-  return request(`/managers/${id}/topup`, { method: 'POST', body })
+  return touchingBalance(request(`/managers/${id}/topup`, { method: 'POST', body }))
 }
 
 // --- ledger (FR-24) ---------------------------------------------------------
@@ -122,11 +134,11 @@ export function getVoucherBatch(id: string): Promise<{ items: VoucherCode[] }> {
 export function voidVoucherBatch(
   id: string,
 ): Promise<{ voided_unused: number; credit_iqd: number }> {
-  return request(`/vouchers/batches/${id}/void`, { method: 'POST' })
+  return touchingBalance(request(`/vouchers/batches/${id}/void`, { method: 'POST' }))
 }
 
 export function redeemVoucher(body: { code: string; subscriber_id: string }): Promise<RenewResult> {
-  return request<RenewResult>('/vouchers/redeem', { method: 'POST', body })
+  return touchingBalance(request<RenewResult>('/vouchers/redeem', { method: 'POST', body }))
 }
 
 /**
@@ -138,6 +150,7 @@ export async function createVoucherBatch(body: {
   count: number
   prefix?: string
   expires_at?: string | null
+  code_length?: number
 }): Promise<{ batchId: string }> {
   const token = tokenStore.getAccessToken()
   const res = await fetch(`${API_BASE}/vouchers/batches`, {
@@ -166,6 +179,7 @@ export async function createVoucherBatch(body: {
   const batchId = res.headers.get('X-Batch-Id') ?? ''
   const csv = await res.text()
   triggerDownload(csv, `vouchers-${batchId}.csv`, 'text/csv')
+  notifyBalanceChanged()
   return { batchId }
 }
 
