@@ -18,6 +18,11 @@
       "generic": "Something went wrong. Please try again."
     }
   },
+  "noAccess": {
+    "title": "You don't have access to this page",
+    "body": "Your account's role doesn't include this area. If you think you should have access, ask your administrator to update your role.",
+    "backHome": "Back to dashboard"
+  },
   "nav": {
     "dashboard": "Dashboard",
     "subscribers": "Subscribers",
@@ -166,6 +171,8 @@
     "password": "Password",
     "resetPassword": "Reset password",
     "passwordHint": "Leave blank to keep the current password.",
+    "noPassword": "No password (hotspot)",
+    "noPasswordHint": "The subscriber signs in with only a username; the hotspot sends an empty password. Portal password login is disabled for this account.",
     "createTitle": "Add subscriber",
     "editTitle": "Edit subscriber",
     "created": "Subscriber created.",
@@ -312,6 +319,11 @@
     "discoverHint": "Listens for MikroTik announcements on the LAN. Read-only — nothing is sent to any router.",
     "discoverIdle": "Run a scan to find routers.",
     "discoverNone": "No routers found. Make sure discovery is allowed on the router.",
+    "discoverNoneHint": "Broadcast discovery only works when the HikRAD server is on the same LAN as your routers (and UDP port 5678 reaches it). If your routers are on another network, scan an IP range instead — that works everywhere.",
+    "probe": "Detect",
+    "probeDone": "RouterOS {version} detected and saved.",
+    "probeNoCreds": "Save RouterOS API credentials for this NAS first (edit the NAS and fill the API user/password).",
+    "probeUnreachable": "Couldn't reach the router's API. Check the IP, API port (8728) and that the API service is enabled.",
     "scan": "Scan",
     "scanning": "Scanning…",
     "scanningBody": "Listening for announcements…",
@@ -540,6 +552,8 @@
     "pickProfile": "Choose a plan…",
     "count": "Count",
     "prefix": "Prefix",
+    "codeLength": "Code length",
+    "codeLengthHint": "Total printed length including the prefix (10–24). At least 8 random characters are always kept.",
     "expiry": "Expiry",
     "expiryHint": "Leave blank for no expiry.",
     "csvNote": "The codes download as a CSV — this is the only time they are shown in the clear.",
@@ -926,7 +940,22 @@
       "gateways": "Payment gateways",
       "backups": "Backups",
       "dataRetention": "Data retention",
-      "remoteAccess": "Remote access"
+      "remoteAccess": "Remote access",
+      "system": "System & updates"
+    },
+    "system": {
+      "versionTitle": "Installed version",
+      "appVersion": "HikRAD version",
+      "schemaVersion": "Database schema",
+      "channel": "Update channel",
+      "schemaDirty": "The last migration did not finish cleanly — take a backup and contact support before updating.",
+      "updateTitle": "How to update",
+      "updateIntro": "Updates run on the server itself so the whole stack (panel, RADIUS, database) moves together. The updater takes a backup first and rolls back automatically if the new version fails to start.",
+      "updateStep1": "Connect to the HikRAD server over SSH (or open its console).",
+      "updateStep2": "Run the update command:",
+      "updateStep3": "Wait for “Update complete and healthy.” — then reload this page and check the version above.",
+      "updateSafety": "Safe by design: a pre-update backup is taken automatically, and a failed update rolls back to the previous version on its own.",
+      "updateOffline": "No internet on the server? Copy the release bundle over and run:"
     },
     "locale": {
       "timezone": "Timezone",

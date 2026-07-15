@@ -1,16 +1,24 @@
+import { useEffect } from 'react'
+
 import { IQDAmount, useT } from '@hikrad/shared'
 
 import { getManagerBalance } from '../api/billing'
 import { useAuth } from '../auth/AuthContext'
 import { useAsync } from '../hooks/useAsync'
+import { BALANCE_CHANGED_EVENT } from '../lib/balanceEvents'
 
 const LOW_BALANCE_IQD = 10000
+const REFRESH_INTERVAL_MS = 60_000
 
 /**
  * The signed-in manager's own balance in the header (Hassan, phone-first). Any
  * authenticated manager may read their own balance; admins with no wallet just
  * see nothing (the endpoint returns 0/absent → hidden). A low balance shows a
  * warning badge so a field agent notices before a renewal fails.
+ *
+ * Stays live without a reload (item 7): refetches when any billing mutation
+ * fires BALANCE_CHANGED_EVENT, when the tab regains focus (covers a top-up
+ * done from another device/session), and on a slow interval as backstop.
  */
 export function BalanceWidget() {
   const t = useT()
@@ -19,6 +27,23 @@ export function BalanceWidget() {
     () => (manager ? getManagerBalance(manager.id).catch(() => null) : Promise.resolve(null)),
     [manager?.id],
   )
+
+  const { reload } = q
+  useEffect(() => {
+    function onFocus() {
+      if (document.visibilityState === 'visible') reload()
+    }
+    window.addEventListener(BALANCE_CHANGED_EVENT, reload)
+    window.addEventListener('focus', onFocus)
+    document.addEventListener('visibilitychange', onFocus)
+    const id = setInterval(reload, REFRESH_INTERVAL_MS)
+    return () => {
+      window.removeEventListener(BALANCE_CHANGED_EVENT, reload)
+      window.removeEventListener('focus', onFocus)
+      document.removeEventListener('visibilitychange', onFocus)
+      clearInterval(id)
+    }
+  }, [reload])
 
   if (!q.data) return null
   const low = q.data.balance_iqd < LOW_BALANCE_IQD

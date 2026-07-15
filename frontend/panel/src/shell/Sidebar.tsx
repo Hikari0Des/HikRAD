@@ -8,6 +8,7 @@ import { useAuth } from '../auth/AuthContext'
 import {
   PERM_AUDIT_VIEW,
   PERM_CARD_PAYMENTS_VERIFY,
+  PERM_LIVE_VIEW,
   PERM_MANAGERS_VIEW,
   PERM_MONITORING_VIEW,
   PERM_NAS_VIEW,
@@ -39,7 +40,7 @@ const NAV_GROUPS: readonly NavGroup[] = [
       { key: 'nav.dashboard', to: '/' },
       { key: 'nav.subscribers', to: '/subscribers', perm: PERM_SUBSCRIBERS_VIEW },
       { key: 'nav.profiles', to: '/profiles', perm: PERM_PROFILES_VIEW },
-      { key: 'nav.sessions', to: '/sessions' },
+      { key: 'nav.sessions', to: '/sessions', perm: PERM_LIVE_VIEW },
       { key: 'nav.import', to: '/import', perm: PERM_SUBSCRIBERS_CREATE },
     ],
   },

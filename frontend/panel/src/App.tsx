@@ -1,6 +1,23 @@
+import type { ReactNode } from 'react'
 import { Route, Routes } from 'react-router-dom'
 
 import { RequireAuth } from './auth/AuthContext'
+import { RequirePerm } from './auth/RequirePerm'
+import {
+  PERM_AUDIT_VIEW,
+  PERM_CARD_PAYMENTS_VERIFY,
+  PERM_LIVE_VIEW,
+  PERM_MANAGERS_VIEW,
+  PERM_MONITORING_VIEW,
+  PERM_NAS_VIEW,
+  PERM_POOLS_VIEW,
+  PERM_PROFILES_VIEW,
+  PERM_REPORTS_VIEW,
+  PERM_SETTINGS_VIEW,
+  PERM_SUBSCRIBERS_CREATE,
+  PERM_SUBSCRIBERS_VIEW,
+  PERM_VOUCHERS_VIEW,
+} from './auth/permissions'
 import { AppShell } from './shell/AppShell'
 import { DashboardPage } from './pages/DashboardPage'
 import { LoginPage } from './pages/LoginPage'
@@ -35,6 +52,12 @@ import { UserDetailPage } from './pages/subscribers/UserDetailPage'
 import { UserListPage } from './pages/subscribers/UserListPage'
 import { SetupGate } from './setup/SetupGate'
 
+/** Shorthand: mount a screen only when the manager holds the permission the
+ * sidebar gates it on; otherwise render the friendly no-access state. */
+function guard(perm: string, page: ReactNode): ReactNode {
+  return <RequirePerm perm={perm}>{page}</RequirePerm>
+}
+
 export function App() {
   return (
     <SetupGate>
@@ -48,31 +71,52 @@ export function App() {
           }
         >
           <Route index element={<DashboardPage />} />
-          <Route path="subscribers" element={<UserListPage />} />
-          <Route path="subscribers/:id" element={<UserDetailPage />} />
-          <Route path="profiles" element={<ProfilesPage />} />
-          <Route path="nas" element={<NasListPage />} />
-          <Route path="nas/:id/status" element={<NasStatusPage />} />
-          <Route path="pools" element={<PoolsPage />} />
-          <Route path="sessions" element={<LiveSessionsPage />} />
-          <Route path="ledger" element={<LedgerPage />} />
-          <Route path="vouchers" element={<VouchersPage />} />
-          <Route path="card-payments" element={<CardPaymentsPage />} />
-          <Route path="reports" element={<ReportsIndexPage />} />
-          <Route path="reports/revenue" element={<RevenueReportPage />} />
-          <Route path="reports/settlement" element={<SettlementReportPage />} />
-          <Route path="reports/subscribers" element={<SubscribersReportPage />} />
-          <Route path="reports/usage" element={<UsageReportPage />} />
-          <Route path="import" element={<ImportWizardPage />} />
-          <Route path="devices" element={<DevicesPage />} />
-          <Route path="devices/:id/status" element={<DeviceStatusPage />} />
-          <Route path="health" element={<HealthPage />} />
-          <Route path="alerts" element={<AlertsPage />} />
-          <Route path="debug" element={<DebugPage />} />
-          <Route path="managers" element={<ManagersPage />} />
-          <Route path="roles" element={<RolesPage />} />
-          <Route path="audit-log" element={<AuditLogPage />} />
-          <Route path="settings/*" element={<SettingsPage />} />
+          <Route
+            path="subscribers"
+            element={guard(PERM_SUBSCRIBERS_VIEW, <UserListPage />)}
+          />
+          <Route
+            path="subscribers/:id"
+            element={guard(PERM_SUBSCRIBERS_VIEW, <UserDetailPage />)}
+          />
+          <Route path="profiles" element={guard(PERM_PROFILES_VIEW, <ProfilesPage />)} />
+          <Route path="nas" element={guard(PERM_NAS_VIEW, <NasListPage />)} />
+          <Route path="nas/:id/status" element={guard(PERM_NAS_VIEW, <NasStatusPage />)} />
+          <Route path="pools" element={guard(PERM_POOLS_VIEW, <PoolsPage />)} />
+          <Route path="sessions" element={guard(PERM_LIVE_VIEW, <LiveSessionsPage />)} />
+          <Route path="ledger" element={guard(PERM_REPORTS_VIEW, <LedgerPage />)} />
+          <Route path="vouchers" element={guard(PERM_VOUCHERS_VIEW, <VouchersPage />)} />
+          <Route
+            path="card-payments"
+            element={guard(PERM_CARD_PAYMENTS_VERIFY, <CardPaymentsPage />)}
+          />
+          <Route path="reports" element={guard(PERM_REPORTS_VIEW, <ReportsIndexPage />)} />
+          <Route
+            path="reports/revenue"
+            element={guard(PERM_REPORTS_VIEW, <RevenueReportPage />)}
+          />
+          <Route
+            path="reports/settlement"
+            element={guard(PERM_REPORTS_VIEW, <SettlementReportPage />)}
+          />
+          <Route
+            path="reports/subscribers"
+            element={guard(PERM_REPORTS_VIEW, <SubscribersReportPage />)}
+          />
+          <Route path="reports/usage" element={guard(PERM_REPORTS_VIEW, <UsageReportPage />)} />
+          <Route path="import" element={guard(PERM_SUBSCRIBERS_CREATE, <ImportWizardPage />)} />
+          <Route path="devices" element={guard(PERM_MONITORING_VIEW, <DevicesPage />)} />
+          <Route
+            path="devices/:id/status"
+            element={guard(PERM_MONITORING_VIEW, <DeviceStatusPage />)}
+          />
+          <Route path="health" element={guard(PERM_MONITORING_VIEW, <HealthPage />)} />
+          <Route path="alerts" element={guard(PERM_MONITORING_VIEW, <AlertsPage />)} />
+          <Route path="debug" element={guard(PERM_NAS_VIEW, <DebugPage />)} />
+          <Route path="managers" element={guard(PERM_MANAGERS_VIEW, <ManagersPage />)} />
+          <Route path="roles" element={guard(PERM_MANAGERS_VIEW, <RolesPage />)} />
+          <Route path="audit-log" element={guard(PERM_AUDIT_VIEW, <AuditLogPage />)} />
+          <Route path="settings/*" element={guard(PERM_SETTINGS_VIEW, <SettingsPage />)} />
           <Route path="license" element={<LicensePage />} />
           <Route path="account" element={<AccountSecurityPage />} />
           <Route path="dev/rtl-smoke" element={<RtlSmokePage />} />
