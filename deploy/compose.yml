@@ -62,6 +62,10 @@ services:
     build:
       context: ..
       dockerfile: deploy/docker/api.Dockerfile
+      args:
+        # Surfaced at GET /api/v1/system/version; the hikrad CLI exports this
+        # from the repo-root VERSION file before any compose build.
+        HIKRAD_VERSION: ${HIKRAD_VERSION:-dev}
     restart: unless-stopped
     environment:
       HIKRAD_DB_URL: ${HIKRAD_DB_URL:?generate with scripts/gen-env.sh}
@@ -112,6 +116,14 @@ services:
     # /internal/* routes are deliberately NOT reachable through Caddy).
     expose:
       - "8080"
+    # MNDP neighbor discovery (FR-56.1): MikroTik routers announce themselves
+    # by LAN broadcast to UDP 5678. Broadcasts never reach a bridge-network
+    # container on their own; publishing the port makes the host's netfilter
+    # DNAT the datagrams through to the in-app listener. Requires the HikRAD
+    # host to sit on the same L2 segment as the routers; does not work under
+    # Docker Desktop (dev) — use the panel's IP-range scan there instead.
+    ports:
+      - "5678:5678/udp"
     healthcheck:
       # TCP readiness probe baked into the image (deploy/docker/healthcheck.go):
       # hikrad-api opens :8080 only after config, migrations, and DB/Redis

@@ -67,6 +67,10 @@ func (Module) Register(r chi.Router, d httpapi.Deps) {
 	r.With(auth.Require("nas.view")).Get("/api/v1/nas/{id}/hotspot-package", m.hotspotPackageHandler)
 	r.With(auth.Require("nas.view")).Get("/api/v1/nas/{id}/status", m.nasStatusHandler)
 	r.With(auth.Require("nas.create")).Post("/api/v1/nas/discover", m.discoverHandler)
+	// Version probe (item 8): reads version/board/identity over the RouterOS
+	// API (read-only) and refreshes nas.ros_version. nas.edit because it
+	// mutates the stored version.
+	r.With(auth.Require("nas.edit")).Post("/api/v1/nas/{id}/probe", m.probeNASHandler)
 
 	// RouterOS API auto-setup (FR-56.2-56.4 / contract C6). Preview connects
 	// read-only; apply is the scariest write path in the product (additive-

@@ -12,6 +12,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/hikrad/hikrad/internal/auth"
 	"github.com/hikrad/hikrad/internal/httpapi"
+	"github.com/hikrad/hikrad/internal/radius/vendor"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 )
@@ -175,6 +176,60 @@ func (m *module) deleteNASHandler(w http.ResponseWriter, r *http.Request) {
 	m.afterNASChange(r.Context())
 	_ = auth.Audit(r.Context(), "nas.delete", "nas", id, before.view(), nil)
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// probeNASHandler (item 8 / FR-13): connects to the router over the RouterOS
+// API with the NAS's saved credentials, reads version/board/identity
+// (read-only print sentences), stores the fresh ros_version on the NAS row,
+// and returns what it saw so the panel can fill the form. 422 without saved
+// API credentials; 502 when the router doesn't answer.
+func (m *module) probeNASHandler(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	n, err := getNAS(ctx, m.db, chi.URLParam(r, "id"))
+	if errors.Is(err, pgx.ErrNoRows) {
+		httpapi.Error(w, http.StatusNotFound, "not_found", "nas not found")
+		return
+	}
+	if err != nil {
+		m.internal(w, "get nas", err)
+		return
+	}
+	if n.APIUser == "" || len(n.APIPasswordEnc) == 0 {
+		httpapi.Error(w, http.StatusUnprocessableEntity, "no_api_credentials",
+			"no RouterOS API credentials saved for this NAS")
+		return
+	}
+	apiPassword, err := decryptToString(n.APIPasswordEnc)
+	if err != nil {
+		m.internal(w, "decrypt nas api password", err)
+		return
+	}
+	conn, err := m.dialROS(ctx, n.IP, apiPortOrDefault(n.APIPort), n.APIUser, apiPassword)
+	if err != nil {
+		httpapi.Error(w, http.StatusBadGateway, "router_unreachable",
+			"could not connect to the router: "+err.Error())
+		return
+	}
+	defer conn.Close()
+	info, err := vendor.ReadDeviceInfo(conn)
+	if err != nil {
+		httpapi.Error(w, http.StatusBadGateway, "router_unreachable",
+			"connected but could not read the router's version: "+err.Error())
+		return
+	}
+	if _, err := m.db.Exec(ctx,
+		`UPDATE nas SET ros_version = $2, updated_at = now() WHERE id = $1::uuid`,
+		n.ID, info.Version); err != nil {
+		m.internal(w, "store probed ros version", err)
+		return
+	}
+	m.nas.invalidate()
+	_ = auth.Audit(ctx, "nas.probe", "nas", n.ID, nil, map[string]any{
+		"ros_version": info.Version, "board_name": info.BoardName, "identity": info.Identity,
+	})
+	httpapi.JSON(w, http.StatusOK, map[string]any{
+		"ros_version": info.Version, "board_name": info.BoardName, "identity": info.Identity,
+	})
 }
 
 // nasStatusHandler reports the FR-14.4 "seen since created" check: the last

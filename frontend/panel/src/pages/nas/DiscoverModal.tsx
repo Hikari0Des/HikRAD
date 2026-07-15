@@ -77,7 +77,14 @@ export function DiscoverModal({
         ) : results === null ? (
           <p className="py-6 text-center text-sm text-ink-muted">{t('nas.discoverIdle')}</p>
         ) : results.length === 0 ? (
-          <p className="py-6 text-center text-sm text-ink-muted">{t('nas.discoverNone')}</p>
+          <div className="space-y-2 py-6 text-center text-sm text-ink-muted">
+            <p>{t('nas.discoverNone')}</p>
+            {/* MNDP is a LAN broadcast: it only reaches HikRAD when the server
+                shares the routers' L2 segment (and, under Docker, when UDP
+                5678 is published — see deploy/compose.yml). The range scan
+                works regardless. */}
+            <p className="mx-auto max-w-md text-xs">{t('nas.discoverNoneHint')}</p>
+          </div>
         ) : (
           <ul className="space-y-2">
             {results.map((d) => (

@@ -2,7 +2,7 @@ import { useState } from 'react'
 
 import { Ltr, ErrorState, LoadingState, useT } from '@hikrad/shared'
 
-import { deleteNas, listNas } from '../../api/nas'
+import { deleteNas, listNas, probeNas } from '../../api/nas'
 import { ApiError } from '../../api/client'
 import type { Nas } from '../../api/types'
 import { useAuth } from '../../auth/AuthContext'
@@ -32,6 +32,7 @@ export function NasListPage() {
   const [deleteTarget, setDeleteTarget] = useState<Nas | null>(null)
   const [deleteNeedsConfirm, setDeleteNeedsConfirm] = useState(false)
   const [deleteBusy, setDeleteBusy] = useState(false)
+  const [probing, setProbing] = useState<string | null>(null)
 
   const canEdit = can('nas.edit')
   const canCreate = can('nas.create')
@@ -51,6 +52,26 @@ export function NasListPage() {
   function closeDelete() {
     setDeleteTarget(null)
     setDeleteNeedsConfirm(false)
+  }
+
+  /** Item 8: read the live RouterOS version over the router's API. */
+  async function runProbe(n: Nas) {
+    setProbing(n.id)
+    try {
+      const res = await probeNas(n.id)
+      toast(t('nas.probeDone', { version: res.ros_version }), 'ok')
+      reload()
+    } catch (err) {
+      if (err instanceof ApiError && err.code === 'no_api_credentials') {
+        toast(t('nas.probeNoCreds'), 'danger')
+      } else if (err instanceof ApiError && err.code === 'router_unreachable') {
+        toast(t('nas.probeUnreachable'), 'danger')
+      } else {
+        toast(err instanceof Error ? err.message : t('common.error.body'), 'danger')
+      }
+    } finally {
+      setProbing(null)
+    }
   }
 
   async function runDelete() {
@@ -147,7 +168,19 @@ export function NasListPage() {
                 ) : null}
                 <div className="flex justify-between gap-2">
                   <dt>{t('nas.rosVersion')}</dt>
-                  <dd className="text-ink">{n.ros_version ?? t('ui.unknown')}</dd>
+                  <dd className="flex items-center gap-2 text-ink">
+                    {n.ros_version ?? t('ui.unknown')}
+                    {canEdit && (
+                      <button
+                        type="button"
+                        disabled={probing === n.id}
+                        onClick={() => runProbe(n)}
+                        className="text-xs text-brand-strong hover:underline disabled:opacity-60"
+                      >
+                        {probing === n.id ? t('ui.working') : t('nas.probe')}
+                      </button>
+                    )}
+                  </dd>
                 </div>
                 <div className="flex justify-between gap-2">
                   <dt>{t('nas.lastSeen')}</dt>

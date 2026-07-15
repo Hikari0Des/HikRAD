@@ -48,6 +48,16 @@ export function nasStatus(id: string): Promise<NasStatus> {
 }
 
 /**
+ * Read version/board/identity from the router over its API (read-only; needs
+ * saved API credentials) and refresh the stored ros_version (item 8).
+ */
+export function probeNas(
+  id: string,
+): Promise<{ ros_version: string; board_name: string; identity: string }> {
+  return request(`/nas/${id}/probe`, { method: 'POST' })
+}
+
+/**
  * NAS auto-discovery (FR-56.1): passive MNDP listen (+ optional range scan).
  * Read-only — it never touches a router. `mndp_wait_ms` bounds the listen.
  */
