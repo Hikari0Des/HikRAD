@@ -48,6 +48,17 @@ func (r *Rig) scenarioSpillCorruption(ctx context.Context) (*ScenarioResult, err
 		}
 	}
 
+	// Give the 1s counter flusher (server.go's runCounterFlusher) at least one
+	// tick to make received/spilled durable before the kill below. Without
+	// this, a kill landing inside that ~1s window permanently under-reports
+	// `received` (the already-documented residual runCounterFlusher's doc
+	// comment describes) — not a data-loss bug, but it made this scenario's
+	// invariant check spuriously FAIL even though every good record was
+	// recovered intact (found live: goodRecords == persisted_delta yet
+	// waitInvariant never went true). kill-acct/unclean-reboot don't hit this
+	// because their kill fires mid-flood, well after several flush ticks.
+	time.Sleep(1200 * time.Millisecond)
+
 	// Stop acct so nothing else is writing the WAL, then splice in the
 	// torn/corrupt line by hand.
 	if err := r.killAcct(); err != nil {

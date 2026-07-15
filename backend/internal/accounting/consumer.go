@@ -122,12 +122,42 @@ func (s *Service) read(ctx context.Context, id string) ([]redis.XMessage, error)
 	return res[0].Messages, nil
 }
 
+// ackDelete's underlying data is already durably safe by the time it's
+// called (the DB commit that makes it terminal happens first) — but if the
+// XAck/XDel pipeline itself fails (e.g. Redis restarting right at this
+// instant, as the Phase-5 chaos suite's kill-redis scenario found live), a
+// single-shot fire-and-forget leaves that entry permanently in the stream
+// for the rest of this process's life: it is not in this consumer's own
+// pending-entries list either (XAck never happened), so the startup-only
+// "reclaim id=0" recovery never picks it back up, and the FR-40 in_queue
+// invariant wedges at N>0 forever even though nothing was lost.
+//
+// A short bounded retry (5 attempts, ~1s total) turned out not to be enough:
+// a Redis container takes a few seconds past "docker start" before it accepts
+// connections again (AOF replay), so a kill landing right as this call fires
+// still exhausted a 1s budget in testing. Instead retry until it succeeds or
+// the process is shutting down — exactly the same trade-off already made for
+// a DB-down processMessage failure (s.read's own backoff loop blocks the
+// consumer the same way). This entry is the only thing waiting on this call;
+// blocking it costs nothing else, and the data is never at risk either way.
 func (s *Service) ackDelete(ctx context.Context, id string) {
-	pipe := s.rdb.Pipeline()
-	pipe.XAck(ctx, streamKey, consumerGroup, id)
-	pipe.XDel(ctx, streamKey, id)
-	if _, err := pipe.Exec(ctx); err != nil {
-		s.log.Warn("acct consumer: ack/del failed", "error", err, "id", id)
+	backoff := 300 * time.Millisecond
+	for {
+		pipe := s.rdb.Pipeline()
+		pipe.XAck(ctx, streamKey, consumerGroup, id)
+		pipe.XDel(ctx, streamKey, id)
+		_, err := pipe.Exec(ctx)
+		if err == nil {
+			return
+		}
+		if ctx.Err() != nil {
+			s.log.Warn("acct consumer: ack/del abandoned (shutting down)", "error", err, "id", id)
+			return
+		}
+		s.log.Warn("acct consumer: ack/del failed, retrying", "error", err, "id", id)
+		if sleep(ctx, backoff) {
+			return
+		}
 	}
 }
 

@@ -259,7 +259,17 @@ func TestPortalMeComposition(t *testing.T) {
 		} `json:"speed"`
 	}
 	r.into(t, &me)
-	if me.Status != "active" || me.DaysLeft < 29 || me.DaysLeft > 30 || me.ProfileName == "" {
+	// DaysLeft is ceil((expiry - now)/24h): expiry is stamped from Postgres's
+	// own clock (SELECT now() at renewal) while this assertion's "now" is the
+	// test process's host clock — on a real deployment these are the same
+	// container-host kernel clock (zero drift), but under Docker
+	// Desktop/WSL2 the DB container's clock can run a fraction of a second
+	// ahead of the host process's, which is enough to tip the ceil() at the
+	// exact 30-day boundary to 31 (found live: reproduced in ~4/5 runs on
+	// this dev machine, expires_at always exactly correct at +30 calendar
+	// days). Tolerating 31 here absorbs that dev-only clock-skew jitter
+	// without masking a real regression — 28 or 32 would still fail loudly.
+	if me.Status != "active" || me.DaysLeft < 29 || me.DaysLeft > 31 || me.ProfileName == "" {
 		t.Fatalf("unexpected /me: %+v (body=%s)", me, r.body)
 	}
 	if me.Speed.ProfileDown != 10240 || me.Speed.ProfileUp != 2048 {
