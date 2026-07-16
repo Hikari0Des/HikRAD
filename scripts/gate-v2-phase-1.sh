@@ -48,20 +48,27 @@ echo "== v2 phase 1 gate (hotspot management + NAS scoping) =="
 # --- Schema & migrations (0500-0519 range; gate item 1) --------------------
 echo "-- Schema & migrations --"
 check "migration 0500_subscriber_service_type present" test -f backend/migrations/0500_subscriber_service_type.up.sql
-check "migration 0500 down present"                     test -f backend/migrations/0500_subscriber_service_type.down.sql
 check "migration 0501_nas_services present"             test -f backend/migrations/0501_nas_services.up.sql
-check "migration 0501 down present"                     test -f backend/migrations/0501_nas_services.down.sql
 check "migration 0502_nas_scoping present"              test -f backend/migrations/0502_nas_scoping.up.sql
-check "migration 0502 down present"                     test -f backend/migrations/0502_nas_scoping.down.sql
 check "0500 backfills allow_hotspot losslessly"         grep -Eq "allow_hotspot" backend/migrations/0500_subscriber_service_type.up.sql
 check "0500 retires allow_hotspot"                      grep -Eiq "DROP COLUMN( IF EXISTS)? allow_hotspot" backend/migrations/0500_subscriber_service_type.up.sql
 check "0501 backfills from nas.type + retires it"       grep -Eiq "DROP COLUMN( IF EXISTS)? type" backend/migrations/0501_nas_services.up.sql
 check "no migration outside the 0500-0519 range added"  sh -c '! ls backend/migrations/ | grep -Eq "^05[2-9][0-9]_"'
+# Forward-only per FR-51.4 (docs/ops/update.md: "there is no down-migration path
+# in production"), which supersedes this phase doc's original paired-.down.sql
+# requirement — see the migration-range note in 00-phase.md. A .down.sql here
+# would be the only one in the repo AND would be lossy: service_type has three
+# values and allow_hotspot two, so hotspot+dual collapse and a down-then-up
+# round trip would silently grant hotspot-only accounts PPPoE.
+check "no .down.sql added (FR-51.4 forward-only)"       sh -c '! ls backend/migrations/ | grep -q "\.down\.sql$"'
 
 # --- Backend model (C2/C3/C4) ----------------------------------------------
 echo "-- Backend model --"
-check "AuthView carries ServiceType (replaces AllowHotspot)" grep -q "ServiceType" backend/internal/radius/authview.go
-check "AllowHotspot removed from AuthView"                   sh -c '! grep -q "AllowHotspot" backend/internal/radius/authview.go'
+check "AuthView carries ServiceType (replaces AllowHotspot)" grep -qE '^\s+ServiceType\s+string' backend/internal/radius/authview.go
+# Match a FIELD DECLARATION, not any mention: the struct's doc comment explains
+# what AllowHotspot used to mean (dual == the old true), which is exactly the
+# context a future reader needs, and a bare grep would forbid saying so.
+check "AllowHotspot removed from AuthView"                   sh -c '! grep -qE "^\s+AllowHotspot\s+bool" backend/internal/radius/authview.go'
 check "AuthView carries FR-64 assignment fields"            grep -q "AssignedNASID" backend/internal/radius/authview.go
 check "nas_not_allowed reject reason added"                 grep -q 'ReasonNASNotAllowed = "nas_not_allowed"' backend/internal/radius/intents.go
 check "loader selects service_type"                        grep -q "service_type" backend/internal/subscribers/authview.go

@@ -71,10 +71,7 @@ export function App() {
           }
         >
           <Route index element={<DashboardPage />} />
-          <Route
-            path="subscribers"
-            element={guard(PERM_SUBSCRIBERS_VIEW, <UserListPage />)}
-          />
+          <Route path="subscribers" element={guard(PERM_SUBSCRIBERS_VIEW, <UserListPage />)} />
           <Route
             path="subscribers/:id"
             element={guard(PERM_SUBSCRIBERS_VIEW, <UserDetailPage />)}
@@ -91,10 +88,7 @@ export function App() {
             element={guard(PERM_CARD_PAYMENTS_VERIFY, <CardPaymentsPage />)}
           />
           <Route path="reports" element={guard(PERM_REPORTS_VIEW, <ReportsIndexPage />)} />
-          <Route
-            path="reports/revenue"
-            element={guard(PERM_REPORTS_VIEW, <RevenueReportPage />)}
-          />
+          <Route path="reports/revenue" element={guard(PERM_REPORTS_VIEW, <RevenueReportPage />)} />
           <Route
             path="reports/settlement"
             element={guard(PERM_REPORTS_VIEW, <SettlementReportPage />)}

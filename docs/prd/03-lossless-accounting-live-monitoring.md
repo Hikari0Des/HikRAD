@@ -41,6 +41,7 @@ This module is HikRAD's deliberate specialty and market wedge: **monitoring and 
 - **FR-31.1** — Redis holds the live-session hash (keyed by nas_id + acct_session_id); the consumer updates it in the same pass as FR-37.2; panel subscribes via WebSocket/SSE (`/api/v1/live/sessions`) per [01](01-platform-install-licensing.md) FR-52.4.
 - **FR-31.2** — Live rate = counter delta ÷ interim interval, labeled as averaged over the interval (honest UI — not instantaneous). Stale sessions show the stale badge instead of a rate.
 - **FR-31.3** — Manager scoping applies: a scoped manager ([06](06-managers-roles-security.md) FR-27) sees only their own users' sessions. Disconnect action requires the `disconnect` permission and calls [02](02-radius-nas-aaa.md)'s CoA service.
+- **FR-31.4** *(v2, FR-63)* — The live feed accepts `?service=pppoe|hotspot`, filtering on the **session's own** service, not the subscriber's `service_type`: a `dual` subscriber has both kinds of session at once, and "show me the hotspot sessions" is the question an operator is asking. The CoA path keys the FR-15.4 ROS quirk matrix off the same per-session service (a multi-service NAS no longer has one service to inherit — see `docs/ops/known-issues.md`).
 
 ### FR-32 (M) — Dashboard
 **Master:** online-users count (now + 24 h sparkline), total active/expired/expiring-soon subscribers, today's revenue, per-NAS health cards, RADIUS requests/sec, accounting-pipeline status.
@@ -113,7 +114,7 @@ This module is HikRAD's deliberate specialty and market wedge: **monitoring and 
 
 ## 4. Data & interfaces
 
-**Owned entities:** `sessions` (nas_id, acct_session_id, subscriber_id, ip, mac, start/stop, terminate_cause, bytes_in/out, stale/reaped flags), `usage_points` (hypertable), `usage_daily` (continuous aggregate), `health_probes` (hypertable), `alert_rules`, `alert_events`, `pipeline_counters`.
+**Owned entities:** `sessions` (nas_id, acct_session_id, subscriber_id, ip, mac, start/stop, terminate_cause, bytes_in/out, stale/reaped flags, service, **nas_service_id** *(v2 FR-62.5; nullable — which service instance the session ran on, resolved per record via [02](02-radius-nas-aaa.md)'s vendor seam; NULL for an unregistered NAS or an unresolvable instance, because losing the record would violate M2)*), `usage_points` (hypertable), `usage_daily` (continuous aggregate), `health_probes` (hypertable), `alert_rules`, `alert_events`, `pipeline_counters`.
 
 **Exposes:**
 - `GET /api/v1/live/sessions` (WS/SSE + REST snapshot, filterable), `GET /api/v1/live/debug` (FR-39 tail)
