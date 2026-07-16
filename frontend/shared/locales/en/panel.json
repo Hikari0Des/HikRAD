@@ -366,7 +366,12 @@
     "serviceEnabled": "Enabled",
     "serviceLastHint": "A NAS must keep at least one service.",
     "serviceSessions": "{count} online",
-    "addService": "Add service"
+    "addService": "Add service",
+    "detectServices": "Detect from router",
+    "detectHint": "Reads this router's real PPPoE/Hotspot servers so you don't retype their names.",
+    "detectNeedsCreds": "Add RouterOS API credentials (step 2) to detect services from the router.",
+    "detected": "Found {count} service(s) on the router — review and Save.",
+    "detectedWithPools": "Found {count} service(s). Router address pools: {pools}. Review and Save."
   },
   "pools": {
     "add": "Add pool",

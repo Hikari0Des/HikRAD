@@ -72,6 +72,14 @@ func (Module) Register(r chi.Router, d httpapi.Deps) {
 	// mutates the stored version.
 	r.With(auth.Require("nas.edit")).Post("/api/v1/nas/{id}/probe", m.probeNASHandler)
 
+	// Service discovery (FR-62.6): reads the router's real PPPoE/Hotspot server
+	// instances (read-only) so the operator imports their exact names rather
+	// than retyping them. Writes nothing — it proposes rows the operator saves
+	// through the normal services[] contract — but it is nas.edit-gated because
+	// it is only ever used while editing a NAS, and it dials the router with
+	// stored credentials.
+	r.With(auth.Require("nas.edit")).Post("/api/v1/nas/{id}/discover-services", m.discoverServicesHandler)
+
 	// RouterOS API auto-setup (FR-56.2-56.4 / contract C6). Preview connects
 	// read-only; apply is the scariest write path in the product (additive-
 	// only, whole-apply-abort-on-conflict, hash-gated against the router

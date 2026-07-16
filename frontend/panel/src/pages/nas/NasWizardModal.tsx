@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 
 import { useT } from '@hikrad/shared'
 
-import { createNas, updateNas } from '../../api/nas'
+import { createNas, discoverNasServices, updateNas } from '../../api/nas'
 import { ApiError, type FieldError } from '../../api/client'
 import type { Nas, NasServiceWrite, NasType, NasWrite } from '../../api/types'
 import { Button } from '../../components/Button'
@@ -101,6 +101,8 @@ export function NasWizardModal({
             services={form.services}
             onChange={(services) => set('services', services)}
             errors={errors}
+            nasId={existing?.id}
+            hasApiCreds={Boolean(existing?.has_api_creds)}
           />
           <div className="flex justify-end gap-2 pt-2">
             <Button variant="ghost" onClick={() => onOpenChange(false)}>
@@ -228,18 +230,107 @@ function ServicesEditor({
   services,
   onChange,
   errors,
+  nasId,
+  hasApiCreds,
 }: {
   services: NasServiceWrite[]
   onChange: (next: NasServiceWrite[]) => void
   errors: Record<string, string>
+  nasId?: string
+  hasApiCreds: boolean
 }) {
   const t = useT()
+  const { toast } = useToast()
+  const [detecting, setDetecting] = useState(false)
   const patch = (i: number, next: Partial<NasServiceWrite>) =>
     onChange(services.map((s, j) => (i === j ? { ...s, ...next } : s)))
+
+  /**
+   * Read the router's real services (FR-62.6) and merge them into the form.
+   *
+   * Merge, never replace: an instance the NAS already has keeps its id (and so
+   * its pool assignment and the subscribers scoped to it) and only refreshes
+   * what the router is authoritative for — the server name, interface and
+   * enabled state. Anything the router doesn't report is left alone rather than
+   * deleted; discovery is not evidence a service is gone, only evidence of what
+   * the router answered right now.
+   *
+   * Nothing is saved here: the operator still reviews and presses Save.
+   */
+  async function detect() {
+    if (!nasId) return
+    setDetecting(true)
+    try {
+      const { items } = await discoverNasServices(nasId)
+      const byId = new Map(services.map((s) => [s.id, s]))
+      const seen = new Set<string>()
+      const merged: NasServiceWrite[] = []
+      for (const d of items) {
+        const existing = d.matched_service_id ? byId.get(d.matched_service_id) : undefined
+        if (existing) seen.add(d.matched_service_id)
+        merged.push({
+          ...(existing ?? {}),
+          service: d.service,
+          label: existing?.label || d.label,
+          interface_note: d.interface_note,
+          ros_server_name: d.ros_server_name,
+          enabled: d.enabled,
+        })
+      }
+      // Keep rows the router didn't report (e.g. an instance it has powered
+      // down, or one added here ahead of the router's config).
+      for (const s of services) {
+        if (!s.id || !seen.has(s.id)) {
+          const alreadyMerged = merged.some(
+            (m) =>
+              m.service === s.service && (m.ros_server_name ?? '') === (s.ros_server_name ?? ''),
+          )
+          if (!alreadyMerged) merged.push(s)
+        }
+      }
+      onChange(merged)
+
+      // Surface the router's own pool names: a hotspot whose pool is named here
+      // but missing on the router is exactly the "no address from ip pool"
+      // login failure, and this is the moment the operator can see both.
+      const pools = items
+        .filter((d) => d.router_pool_name)
+        .map((d) => `${d.ros_server_name || d.label} → ${d.router_pool_name}`)
+      toast(
+        pools.length > 0
+          ? t('nas.detectedWithPools', { count: items.length, pools: pools.join(', ') })
+          : t('nas.detected', { count: items.length }),
+        'ok',
+      )
+    } catch (err) {
+      if (err instanceof ApiError && err.code === 'no_api_credentials') {
+        toast(t('nas.detectNeedsCreds'), 'danger')
+      } else {
+        toast(err instanceof Error ? err.message : t('common.error.body'), 'danger')
+      }
+    } finally {
+      setDetecting(false)
+    }
+  }
 
   return (
     <Field label={t('nas.services')} error={errors.services} hint={t('nas.servicesHint')}>
       <div className="space-y-2">
+        {nasId && (
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={detecting || !hasApiCreds}
+              onClick={detect}
+            >
+              {detecting ? t('ui.working') : t('nas.detectServices')}
+            </Button>
+            <span className="text-xs text-ink-muted">
+              {hasApiCreds ? t('nas.detectHint') : t('nas.detectNeedsCreds')}
+            </span>
+          </div>
+        )}
         {services.map((s, i) => (
           <div key={s.id ?? `new-${i}`} className="rounded border border-surface-sunken p-2">
             <div className="grid gap-2 sm:grid-cols-2">

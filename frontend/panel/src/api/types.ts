@@ -267,6 +267,21 @@ export interface NasService {
   live_sessions: number
 }
 
+/**
+ * A service instance read off the router (FR-62.6). `matched_service_id` is set
+ * when this NAS already has the instance, so a re-run offers no duplicates.
+ */
+export interface DiscoveredService {
+  service: NasType
+  ros_server_name: string
+  label: string
+  interface_note: string
+  /** The pool name the ROUTER has for this hotspot — what Framed-Pool must match. */
+  router_pool_name: string
+  enabled: boolean
+  matched_service_id: string
+}
+
 /** One service instance in a NAS write body; id identifies an existing row. */
 export interface NasServiceWrite {
   id?: string

@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/hikrad/hikrad/internal/auth"
@@ -353,6 +354,95 @@ func (m *module) probeNASHandler(w http.ResponseWriter, r *http.Request) {
 	httpapi.JSON(w, http.StatusOK, map[string]any{
 		"ros_version": info.Version, "board_name": info.BoardName, "identity": info.Identity,
 	})
+}
+
+// discoveredServiceView is one router-reported service instance (FR-62.6).
+// `matched_service_id` links it to an existing nas_services row so the panel can
+// show "already imported" instead of offering a duplicate.
+type discoveredServiceView struct {
+	Service          string `json:"service"`
+	ROSServerName    string `json:"ros_server_name"`
+	Label            string `json:"label"`
+	InterfaceNote    string `json:"interface_note"`
+	RouterPoolName   string `json:"router_pool_name"`
+	Enabled          bool   `json:"enabled"`
+	MatchedServiceID string `json:"matched_service_id"`
+}
+
+// discoverServicesHandler (FR-62.6) reads the router's real PPPoE/Hotspot
+// service instances over the RouterOS API and returns them for the operator to
+// import — instead of hand-typing names that must match the router exactly.
+//
+// READ-ONLY on both sides: it issues only print sentences (never add/set), and
+// it writes nothing to HikRAD either. It proposes; the operator confirms in the
+// NAS form and saves through the normal services[] contract, so a discovery
+// mistake can never silently rewrite a working NAS.
+//
+// 422 without saved API credentials; 502 when the router doesn't answer —
+// matching probeNASHandler, which this deliberately mirrors.
+func (m *module) discoverServicesHandler(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	n, err := getNAS(ctx, m.db, chi.URLParam(r, "id"))
+	if errors.Is(err, pgx.ErrNoRows) {
+		httpapi.Error(w, http.StatusNotFound, "not_found", "nas not found")
+		return
+	}
+	if err != nil {
+		m.internal(w, "get nas", err)
+		return
+	}
+	if n.APIUser == "" || len(n.APIPasswordEnc) == 0 {
+		httpapi.Error(w, http.StatusUnprocessableEntity, "no_api_credentials",
+			"no RouterOS API credentials saved for this NAS")
+		return
+	}
+	apiPassword, err := decryptToString(n.APIPasswordEnc)
+	if err != nil {
+		m.internal(w, "decrypt nas api password", err)
+		return
+	}
+	conn, err := m.dialROS(ctx, n.IP, apiPortOrDefault(n.APIPort), n.APIUser, apiPassword)
+	if err != nil {
+		httpapi.Error(w, http.StatusBadGateway, "router_unreachable",
+			"could not connect to the router: "+err.Error())
+		return
+	}
+	defer conn.Close()
+
+	found, err := vendor.For(n.Vendor).DiscoverServices(conn)
+	if err != nil {
+		httpapi.Error(w, http.StatusBadGateway, "router_unreachable",
+			"connected but could not read the router's services: "+err.Error())
+		return
+	}
+
+	// Match against what the NAS already has so a re-run is idempotent in the
+	// panel: an already-imported instance is shown as such rather than offered
+	// again as a new row (which would collide on ros_server_name anyway).
+	existing, err := listServices(ctx, m.db, n.ID)
+	if err != nil {
+		m.internal(w, "list nas services", err)
+		return
+	}
+	byKey := make(map[string]string, len(existing))
+	for _, s := range existing {
+		byKey[s.Service+"\x00"+strings.ToLower(s.ROSServerName)] = s.ID
+	}
+
+	items := make([]discoveredServiceView, 0, len(found))
+	for _, f := range found {
+		items = append(items, discoveredServiceView{
+			Service:          f.Service,
+			ROSServerName:    f.ROSServerName,
+			Label:            f.Label,
+			InterfaceNote:    f.Interface,
+			RouterPoolName:   f.PoolName,
+			Enabled:          !f.Disabled,
+			MatchedServiceID: byKey[f.Service+"\x00"+strings.ToLower(f.ROSServerName)],
+		})
+	}
+	_ = auth.Audit(ctx, "nas.discover_services", "nas", n.ID, nil, map[string]any{"found": len(items)})
+	httpapi.JSON(w, http.StatusOK, map[string]any{"items": items})
 }
 
 // nasStatusHandler reports the FR-14.4 "seen since created" check: the last

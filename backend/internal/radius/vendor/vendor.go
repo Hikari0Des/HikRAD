@@ -117,6 +117,11 @@ type Adapter interface {
 	// nas_not_allowed reject rather than guessing — an ambiguous match would
 	// otherwise hand the session another zone's address pool.
 	ResolveService(q ServiceQuery, candidates []ServiceInstance) (ServiceInstance, bool)
+	// DiscoverServices reads the router's existing PPPoE/Hotspot service
+	// instances (FR-62.6) so the operator imports them instead of retyping the
+	// names C7 must match exactly. Read-only: print sentences only, never
+	// add/set. Vendor-specific RouterOS paths/fields live only here (FR-17).
+	DiscoverServices(conn ROSConn) ([]DiscoveredService, error)
 	// SupportsInPlace reports whether an in-place CoA-Request change for
 	// intent is known to take effect on an already-active session for a NAS
 	// of type nasType ("pppoe"|"hotspot") running rosVersion — the Phase 4

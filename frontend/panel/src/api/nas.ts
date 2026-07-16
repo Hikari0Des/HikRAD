@@ -4,6 +4,7 @@ import type {
   AutoSetupApplyResult,
   AutoSetupPreview,
   DiscoveredNas,
+  DiscoveredService,
   Nas,
   NasSnippet,
   NasStatus,
@@ -55,6 +56,15 @@ export function probeNas(
   id: string,
 ): Promise<{ ros_version: string; board_name: string; identity: string }> {
   return request(`/nas/${id}/probe`, { method: 'POST' })
+}
+
+/**
+ * Read the router's real PPPoE/Hotspot service instances (FR-62.6). Read-only
+ * on both sides: it touches nothing on the router and saves nothing in HikRAD —
+ * it returns rows for the operator to confirm in the form.
+ */
+export function discoverNasServices(id: string): Promise<{ items: DiscoveredService[] }> {
+  return request(`/nas/${id}/discover-services`, { method: 'POST' })
 }
 
 /**

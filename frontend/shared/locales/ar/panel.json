@@ -366,7 +366,12 @@
     "serviceEnabled": "مفعّلة",
     "serviceLastHint": "يجب أن يبقى لجهاز NAS خدمة واحدة على الأقل.",
     "serviceSessions": "{count} متصل",
-    "addService": "إضافة خدمة"
+    "addService": "إضافة خدمة",
+    "detectServices": "الكشف من الموجّه",
+    "detectHint": "يقرأ خوادم PPPoE/Hotspot الفعلية على هذا الموجّه حتى لا تُعيد كتابة أسمائها.",
+    "detectNeedsCreds": "أضف بيانات RouterOS API (الخطوة 2) للكشف عن الخدمات من الموجّه.",
+    "detected": "تم العثور على {count} خدمة على الموجّه — راجِعها ثم احفظ.",
+    "detectedWithPools": "تم العثور على {count} خدمة. مجمّعات عناوين الموجّه: {pools}. راجِعها ثم احفظ."
   },
   "pools": {
     "add": "إضافة مجمّع",
