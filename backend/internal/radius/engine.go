@@ -35,6 +35,10 @@ type engine struct {
 	// servicesOf returns a NAS's enabled service instances — the candidate set
 	// for C7 resolution. Stubbed in tests.
 	servicesOf func(ctx context.Context, nasID string) ([]serviceRow, error)
+	// sink receives every finished decision (FR-39). Production writes the capped
+	// Redis stream the debug tail reads; a nil sink drops the event, which is the
+	// contract everywhere: recording must never change an auth outcome.
+	sink func(ctx context.Context, ev decisionEvent)
 }
 
 // nasIdentity is the slice of a NAS the authorize path needs: enough to scope
@@ -63,7 +67,7 @@ func defaultEngine() *engine {
 
 // newEngine builds the production engine from the wired NAS registry.
 func newEngine(rdb *redis.Client, log *slog.Logger, reg *nasRegistry, db *pgxpool.Pool) *engine {
-	return &engine{
+	e := &engine{
 		rdb:      rdb,
 		log:      log,
 		now:      time.Now,
@@ -74,6 +78,8 @@ func newEngine(rdb *redis.Client, log *slog.Logger, reg *nasRegistry, db *pgxpoo
 			return enabledServices(ctx, db, nasID)
 		},
 	}
+	e.sink = e.writeDecision
+	return e
 }
 
 // --- decision event stream (FR-39 groundwork; contract handoff) ------------
@@ -105,16 +111,36 @@ type decisionEvent struct {
 	Outcome  string   `json:"outcome"` // accept | reject
 	Reason   string   `json:"reason"`
 	Checks   []string `json:"checks"` // ordered trace of stages passed
-	At       string   `json:"at"`
+	// Instance is the resolved nas_services label/name (FR-62), so an operator
+	// can see WHICH of a multi-service NAS's zones a request landed on.
+	Instance string `json:"instance,omitempty"`
+	// Attributes is the accept's reply intent set — what HikRAD actually told
+	// the router to do. Recorded because an accept is not the same as a working
+	// login: the router still has to honour the reply, and when it can't
+	// ("no address from ip pool" = HikRAD named an address_pool that does not
+	// exist as an /ip pool on that router) the reply is the only place the
+	// mismatch is visible. Reject events carry none.
+	//
+	// Safe to record: these are vendor-neutral intents, never a credential.
+	Attributes []attribute `json:"attributes,omitempty"`
+	At         string      `json:"at"`
 }
 
-// record writes the decision to the capped stream, best-effort. A logging
-// failure must never change the auth outcome.
+// record stamps the decision and hands it to the sink. A nil sink drops it.
 func (e *engine) record(ctx context.Context, ev decisionEvent) {
+	ev.At = e.now().UTC().Format(time.RFC3339Nano)
+	if e.sink == nil {
+		return
+	}
+	e.sink(ctx, ev)
+}
+
+// writeDecision is the production sink: the capped stream, best-effort. A
+// logging failure must never change the auth outcome.
+func (e *engine) writeDecision(ctx context.Context, ev decisionEvent) {
 	if e.rdb == nil {
 		return
 	}
-	ev.At = e.now().UTC().Format(time.RFC3339Nano)
 	payload, err := json.Marshal(ev)
 	if err != nil {
 		return

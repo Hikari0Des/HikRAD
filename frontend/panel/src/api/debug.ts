@@ -7,6 +7,11 @@ import { API_BASE } from './client'
 import { tokenStore } from '../auth/tokenStore'
 import type { SseHandle } from './monitoring'
 
+export interface ReplyAttribute {
+  intent: string
+  value: string
+}
+
 export interface DebugEvent {
   at: string
   username: string
@@ -14,6 +19,14 @@ export interface DebugEvent {
   outcome: string
   reason: string
   checks: string[]
+  /** The resolved nas_services instance (FR-62) this request landed on. */
+  instance?: string
+  /**
+   * The accept's reply intents — what HikRAD told the router to do. Absent on a
+   * reject. An `address_pool` here must name a real `/ip pool` on that router or
+   * the login still fails ("no address from ip pool") despite the accept.
+   */
+  attributes?: ReplyAttribute[]
 }
 
 export function openDebugStream(

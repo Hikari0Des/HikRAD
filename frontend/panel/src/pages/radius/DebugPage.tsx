@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 
 import { Ltr, useFormatters, useT } from '@hikrad/shared'
 
-import { openDebugStream, type DebugEvent } from '../../api/debug'
+import { openDebugStream, type DebugEvent, type ReplyAttribute } from '../../api/debug'
 import { Button } from '../../components/Button'
 import { TextInput } from '../../components/form'
 import { PageHeader } from '../../components/PageHeader'
@@ -68,14 +68,16 @@ export function DebugPage() {
       </div>
 
       <div className="overflow-x-auto rounded-md border border-surface-sunken">
-        <table className="w-full min-w-[40rem] text-sm">
+        <table className="w-full min-w-[56rem] text-sm">
           <thead className="bg-surface-sunken/40 text-xs text-ink-muted">
             <tr>
               <Th>{t('debug.col.at')}</Th>
               <Th>{t('debug.col.user')}</Th>
               <Th>{t('debug.col.nas')}</Th>
+              <Th>{t('debug.col.instance')}</Th>
               <Th>{t('debug.col.outcome')}</Th>
               <Th>{t('debug.col.reason')}</Th>
+              <Th>{t('debug.col.reply')}</Th>
             </tr>
           </thead>
           <tbody>
@@ -89,9 +91,15 @@ export function DebugPage() {
                   <Ltr>{e.nas}</Ltr>
                 </td>
                 <td className="px-3 py-1.5">
+                  <Ltr>{e.instance || '—'}</Ltr>
+                </td>
+                <td className="px-3 py-1.5">
                   <OutcomeBadge outcome={e.outcome} />
                 </td>
                 <td className="px-3 py-1.5 text-ink-muted">{localizedReason(e.reason, t)}</td>
+                <td className="px-3 py-1.5">
+                  <Reply attributes={e.attributes} />
+                </td>
               </tr>
             ))}
           </tbody>
@@ -101,6 +109,34 @@ export function DebugPage() {
         ) : null}
       </div>
     </section>
+  )
+}
+
+/**
+ * The accept's reply intents, as `intent = value` chips.
+ *
+ * This is the answer to "RADIUS accepted, so why did the login fail?" — most
+ * often because `address_pool` names a pool the router does not have, which the
+ * router reports only in its own log ("no address from ip pool"). Values stay
+ * LTR inside RTL: they are pool names and rate strings, not prose.
+ */
+function Reply({ attributes }: { attributes?: ReplyAttribute[] }) {
+  const t = useT()
+  if (!attributes?.length) return <span className="text-ink-muted">—</span>
+  return (
+    <span className="flex flex-wrap gap-1">
+      {attributes.map((a, i) => (
+        <span
+          key={i}
+          className="rounded bg-surface-sunken/60 px-1.5 py-0.5 text-xs whitespace-nowrap"
+          title={t(`debug.intent.${a.intent}`)}
+        >
+          <Ltr>
+            {a.intent} = {a.value}
+          </Ltr>
+        </span>
+      ))}
+    </span>
   )
 }
 

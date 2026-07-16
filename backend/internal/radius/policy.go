@@ -63,6 +63,7 @@ func (e *engine) decide(ctx context.Context, req authorizeRequest) (authorizeRes
 	// The resolved instance's own service supersedes the bridge's coarse hint.
 	hotspot := instance.Service == "hotspot"
 	ev.Service = instance.Service
+	ev.Instance = instanceName(instance)
 	ev.Checks = append(ev.Checks, "service_instance")
 
 	// 3. Resolve the read-model (needed by the service checks below).
@@ -106,13 +107,11 @@ func (e *engine) decide(ctx context.Context, req authorizeRequest) (authorizeRes
 	ev.Checks = append(ev.Checks, "service")
 
 	// 5. NAS scope (FR-64 / C6 step 5) — after service-type, before credentials,
-	// per the frozen chain. Empty assignment = any NAS (v1's behaviour). A
-	// voucher is not scoped to a NAS, so it bypasses this too.
+	// per the frozen chain. An account may be scoped to SEVERAL NAS/service
+	// pairs; no scopes at all = any NAS (v1's behaviour). A voucher is not scoped
+	// to a NAS, so it bypasses this too.
 	if !voucherAuthed {
-		if view.AssignedNASID != "" && view.AssignedNASID != nas.ID {
-			return e.reject(ctx, ev, ReasonNASNotAllowed), nil
-		}
-		if view.AssignedServiceID != "" && view.AssignedServiceID != instance.ID {
+		if !scopeAllows(view.Scopes, nas.ID, instance.ID) {
 			return e.reject(ctx, ev, ReasonNASNotAllowed), nil
 		}
 		ev.Checks = append(ev.Checks, "nas_scope")
@@ -182,8 +181,22 @@ func (e *engine) decide(ctx context.Context, req authorizeRequest) (authorizeRes
 	resp := authorizeResponse{Action: "accept", Reason: ReasonOK, Attributes: e.replyIntents(view, instance, hotspot, mode)}
 	ev.Outcome = "accept"
 	ev.Reason = ReasonOK
+	ev.Attributes = resp.Attributes
 	e.record(ctx, ev)
 	return resp, nil
+}
+
+// instanceName names the resolved instance for the debug tail, preferring what
+// the operator will recognise. An unnamed sole instance (RouterOS allows a
+// nameless PPPoE server) still reports its kind rather than an empty cell.
+func instanceName(s serviceRow) string {
+	if s.Label != "" {
+		return s.Label
+	}
+	if s.ROSServerName != "" {
+		return s.ROSServerName
+	}
+	return s.Service
 }
 
 // resolveInstance maps the request to one of the NAS's enabled service

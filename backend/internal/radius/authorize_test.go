@@ -53,6 +53,18 @@ type testEnv struct {
 	// services is the enabled nas_services rows per NAS id, the candidate set
 	// C7 resolution runs against. Keyed by the ids newTestEnv assigns below.
 	services map[string][]serviceRow
+	// decisions is every event the engine recorded, in order — what the FR-39
+	// debug tail would show an operator.
+	decisions []decisionEvent
+}
+
+// lastDecision is the event for the most recent decide() call.
+func (env *testEnv) lastDecision(t *testing.T) decisionEvent {
+	t.Helper()
+	if len(env.decisions) == 0 {
+		t.Fatal("no decision was recorded")
+	}
+	return env.decisions[len(env.decisions)-1]
 }
 
 // testNASID is the id newTestEnv gives the NAS at a known IP: "nas-<ip>". Tests
@@ -99,6 +111,7 @@ func newTestEnv(t *testing.T, knownIPs ...string) *testEnv {
 		servicesOf: func(_ context.Context, nasID string) ([]serviceRow, error) {
 			return env.services[nasID], nil
 		},
+		sink: func(_ context.Context, ev decisionEvent) { env.decisions = append(env.decisions, ev) },
 	}
 	return env
 }
