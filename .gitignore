@@ -12,6 +12,8 @@ backend/bin/
 *.out
 *.exe
 coverage.*
+# Toolchain tarballs downloaded for WSL2 dev (never commit)
+go*.linux-amd64.tar.gz
 
 # Node / frontend
 node_modules/
