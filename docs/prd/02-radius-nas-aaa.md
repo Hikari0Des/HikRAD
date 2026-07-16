@@ -1,6 +1,6 @@
 # HikRAD — Sub-PRD 02: RADIUS Core, NAS Management & AAA
 
-> Derived from [docs/PRD.md](../PRD.md) v1.1 on 2026-07-08 (updated 2026-07-09: FR-56 added — Decision 17; FR-58 auth-time enforcement referenced — Decision 19). Owns: FR-13, FR-14, FR-15, FR-16, FR-17, FR-18, FR-56 · NFR-1 · Risk: MikroTik CoA/attribute quirks · Open question 2 (pilot ISP)
+> Derived from [docs/PRD.md](../PRD.md) v1.1 on 2026-07-08 (updated 2026-07-09: FR-56 added — Decision 17; FR-58 auth-time enforcement referenced — Decision 19; updated 2026-07-16 for master v1.4: FR-62 multi-service NAS + FR-64 subscriber/profile→NAS scoping enforced at auth — Decision 28, v2 phase 1). Owns: FR-13, FR-14, FR-15, FR-16, FR-17, FR-18, FR-56, FR-62, FR-64 · NFR-1 · Risk: MikroTik CoA/attribute quirks · Open question 2 (pilot ISP)
 > Depends on: [01-platform-install-licensing](01-platform-install-licensing.md) (Compose wiring, `/api/v1` framework), [04-subscribers-profiles](04-subscribers-profiles.md) (subscriber credentials/status, profile attributes it must translate into RADIUS replies) · Depended on by: [03-lossless-accounting-live-monitoring](03-lossless-accounting-live-monitoring.md) (accounting feed, CoA for disconnect actions), [05-billing-payments-vouchers](05-billing-payments-vouchers.md) (CoA on renewal, Hotspot voucher login)
 
 ## 1. Scope & context
@@ -69,6 +69,25 @@ This module is HikRAD's protocol heart: FreeRADIUS 3.2 wired to the Go backend's
 - **FR-56.3** — Copy-paste (FR-14) remains the always-available path; any API failure falls back to showing the snippet. A successful apply automatically runs the FR-14.4 "seen since created" test and reports the result.
 - **FR-56.4** — All RouterOS API client code lives inside the MikroTik vendor adapter boundary — the FR-17.1 rule applies verbatim and the CI vendor-isolation grep covers it.
 
+### FR-62 (S) — Multi-service NAS (v2)
+**Master:** A router can run multiple Hotspot + PPPoE server instances at once; a `nas_services` child table replaces the one-`type`-per-NAS model; the policy engine resolves the service instance from RADIUS attributes (vendor adapter owns the mapping, FR-17); FR-14/FR-56 cover all enabled services; live/graphs/reports can group by instance; `nas.type` retired after backfill.
+
+*Elaboration:*
+- **FR-62.1** — Schema `nas_services` (one NAS → N rows): `service pppoe|hotspot`, `label` (zone/SSID), `interface_note`, `ip_pool_id` (per-service pool, nullable), `ros_server_name` (RouterOS Hotspot server name / PPPoE service-name used for instance matching), `enabled`. Migration seeds one row per existing NAS from `nas.type`, then drops `nas.type`. Every NAS has ≥ 1 service row.
+- **FR-62.2** — Service-instance resolution at auth is **vendor-owned** (FR-17): the FreeRADIUS bridge forwards the raw identifying attributes (Called-Station-Id, NAS-Port-Type, NAS-Port-Id) into the authorize request; the MikroTik adapter maps them to the matching `nas_services` row (by `ros_server_name` for Hotspot, service-name for PPPoE), falling back to the NAS's single enabled service of the coarse `service` kind when no finer match exists. No RADIUS-attribute parsing for instance identity appears outside `internal/radius/vendor/` — the CI isolation grep covers it.
+- **FR-62.3** — The resolved instance supplies the address pool (FR-64 precedence) and per-instance attributes. Unknown/no-match with multiple candidate instances of that kind rejects (surfaced in the FR-39 debug tool) rather than guessing.
+- **FR-62.4** — FR-14 wizard renders one snippet covering **all** enabled services (multiple `/ip hotspot` servers + PPPoE AAA + a single shared `/radius`), ROS 6/7 tabs preserved; FR-56 auto-setup treats each service additively.
+
+### FR-64 (S) — Subscriber/profile → NAS scoping, enforced at auth (v2)
+**Master:** Subscribers and profiles can be assigned to specific NAS devices + service instances (nullable = any); enforced at RADIUS auth with a new `nas_not_allowed` reject; precedence subscriber-over-profile; missing-pool-anywhere omits `address_pool` so the router uses its local pool; assignment carried in AuthView + `InvalidatePolicy` on change.
+
+*Elaboration (this module owns the columns' **enforcement**; [04](04-subscribers-profiles.md) renders the pickers):*
+- **FR-64.1** — Columns: `nas_id` + `nas_service_id` (nullable, `ON DELETE SET NULL`) on **both** `subscribers` and `profiles`. Nullable pair = any NAS/service (v1 behaviour, the default). `nas_service_id` set without `nas_id` implies its parent NAS.
+- **FR-64.2** — Enforcement order (auth-time): after known-NAS + service-instance resolution (FR-62.2) and subscriber resolution, compute the **effective assignment** with subscriber-over-profile precedence (subscriber's pair wins whole when its `nas_id` is set; else the profile's). If the effective assignment is non-empty and the authenticating NAS (and, when `nas_service_id` is set, the resolved service instance) does not match, reject `nas_not_allowed`. Empty effective assignment = accept anywhere. This check sits before credentials in the chain so scope is enforced regardless of password (order is frozen in the phase brief).
+- **FR-64.3** — Address-pool precedence (FR-16): static IP (subscriber) → profile `pool_id` → resolved service `ip_pool_id` → **omit `address_pool` entirely** so the MikroTik uses its own local pool. (Verified true today: the engine only emits `address_pool` for a non-empty pool name; this locks it with a test and documents it on the pools screen.)
+- **FR-64.4** — AuthView carries the effective `nas_id`/`nas_service_id`; `InvalidatePolicy(subscriberID)` fires on any subscriber **or profile** assignment change (a profile change fans out to its subscribers' cached views).
+- **FR-64.5** — Panel: `nas_not_allowed` is localized (en/ar/ku) in the FR-39 debug reason list; the NAS page shows a per-service session/status sub-list (FR-63 renders the subscriber/profile assignment pickers).
+
 ### NFR-1 (owned) — Performance
 **Master:** At 5,000 subscribers / ~2,000 concurrent sessions with 5-minute interims (~7 acct packets/sec sustained, 50/sec burst): auth latency < 100 ms at the backend (p99), accounting ingest keeps queue depth near zero, panel pages load < 1.5 s, live-session updates ≤ 2 s end-to-end.
 
@@ -76,6 +95,8 @@ This module is HikRAD's protocol heart: FreeRADIUS 3.2 wired to the Go backend's
 
 ### Enforced-here policies owned elsewhere (reference, not ownership)
 At Access-Request time this module enforces, per the master's key flow 1: credential check against stored password (storage rules NFR-4 → [06](06-managers-roles-security.md)); status active/disabled/expired and expiry behavior (FR-9 → [04](04-subscribers-profiles.md)); quota-exhausted behavior (FR-10 → [04](04-subscribers-profiles.md)); simultaneous-session limit and MAC lock incl. first-MAC auto-learn (FR-5 → [04](04-subscribers-profiles.md)); per-user overrides (FR-7 → [04](04-subscribers-profiles.md)); dual-service login (FR-58 → [04](04-subscribers-profiles.md)): a Hotspot-service Access-Request for a PPPoE subscriber is accepted only when 04's allow-Hotspot flag is set — at most one concurrent Hotspot session, **not** counted against the PPPoE session limit, reply rate = the profile's Hotspot-specific rate (fallback: main rate), and the session is tagged `hotspot` in accounting so [03](03-lossless-accounting-live-monitoring.md)/[04](04-subscribers-profiles.md) exclude its usage from quota math (it still counts for graphs/reports and requires a non-expired, non-disabled account). Reject reason for a non-flagged attempt: `service_not_allowed`. This file defines *where* they execute; their business rules live with their owners.
+
+**v2 (FR-61/64 → owned data in [04](04-subscribers-profiles.md), enforcement here):** the FR-58 flag generalizes to `service_type ∈ {pppoe,hotspot,dual}` — this module applies the service matrix (pppoe/hotspot each reject the other kind `service_not_allowed`; dual keeps FR-58; hotspot-only uses `session_limit` for concurrent Hotspot sessions and **applies** the data quota); and enforces the FR-64 subscriber/profile→NAS scope (`nas_not_allowed`). The concrete authorize check chain, request/response deltas and matrix are frozen in `docs/v2/phases/phase-v2-1-hotspot-management/00-phase.md`.
 
 ## 3. Acceptance criteria
 
@@ -88,10 +109,13 @@ At Access-Request time this module enforces, per the master's key flow 1: creden
 - **AC-NFR1a** — Given 2,000 active sessions and a 50/sec burst of auth requests (CI packet harness, NFR-8), then backend auth latency p99 < 100 ms.
 - **AC-18a** — Given Hotspot type NAS with the served login page, when a subscriber enters a valid unused voucher code, then they get online and the voucher is consumed (verified with [05](05-billing-payments-vouchers.md)).
 - **AC-56a** — Given a discovered router and valid admin credentials, when auto-setup preview is accepted, then only additive HikRAD-scoped entries are created on the router and a subsequent test Access-Request succeeds; given a conflicting existing `/radius` entry, the apply aborts with a per-item report and the router is unchanged.
+- **AC-62a** *(v2)* — Given one router with two Hotspot services + one PPPoE service (three `nas_services` rows), when a subscriber authenticates on each, then each is resolved to its own instance and receives that instance's pool; the FR-14 snippet configures all three; live sessions show the service instance. The service-instance resolution from RADIUS attributes appears only inside `internal/radius/vendor/` (isolation grep green).
+- **AC-64a** *(v2)* — Given a subscriber assigned to NAS A (and/or a service instance), when it authenticates through NAS B (or a non-assigned instance), then auth rejects `nas_not_allowed`; through the assigned NAS/service it accepts. A profile-level assignment applies to its subscribers unless the subscriber sets its own (subscriber-over-profile).
+- **AC-64b** *(v2)* — Given a subscriber whose static IP is unset and whose profile **and** resolved service instance carry no pool, when it authenticates, then the accept reply contains **no** `address_pool` intent (the router uses its local pool); setting a pool at any level restores the intent with static-IP → profile → service precedence.
 
 ## 4. Data & interfaces
 
-**Owned entities:** `nas` (id, name, ip, secret_enc, type, vendor, coa_port, snmp_community_enc, ros_version, location, enabled, api_port, api_user, api_password_enc — the api_* fields for FR-56 auto-setup), `ip_pools` (id, name, ranges[], purpose), `pool_assignments` (pool ↔ profile/NAS).
+**Owned entities:** `nas` (id, name, ip, secret_enc, ~~type~~ *(v2 FR-62: retired — moved to `nas_services`)*, vendor, coa_port, snmp_community_enc, ros_version, location, enabled, api_port, api_user, api_password_enc — the api_* fields for FR-56 auto-setup), `nas_services` *(v2 FR-62: nas_id, service pppoe|hotspot, label, interface_note, ip_pool_id, ros_server_name, enabled)*, `ip_pools` (id, name, ranges[], purpose), `pool_assignments` (pool ↔ profile/NAS). Enforces (data owned by [04](04-subscribers-profiles.md)) the FR-64 `subscribers.nas_id/nas_service_id` and `profiles.nas_id/nas_service_id` assignment columns.
 
 **Exposes:**
 - `POST /api/v1/radius/authorize` — internal endpoint called by FreeRADIUS `rlm_rest`; input: RADIUS request attrs; output: accept/reject + abstract attribute intents (vendor adapter applied before reply).

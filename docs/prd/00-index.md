@@ -1,15 +1,15 @@
 # HikRAD — Sub-PRD Index
 
-> Generated from [docs/PRD.md](../PRD.md) v1.0 on 2026-07-08; updated 2026-07-09 for master v1.1 (FR-55–58, Decisions 16–20). The master PRD remains the source of truth; these files elaborate it, never contradict it. Split confirmed by the product owner on 2026-07-08.
+> Generated from [docs/PRD.md](../PRD.md) v1.0 on 2026-07-08; updated 2026-07-09 for master v1.1 (FR-55–58, Decisions 16–20); updated 2026-07-16 for master v1.4 (FR-61–64 hotspot management + NAS scoping, Decision 28 — v2 phase 1). The master PRD remains the source of truth; these files elaborate it, never contradict it. Split confirmed by the product owner on 2026-07-08.
 
 ## Files & ownership
 
 | # | File | Scope (one line) | Owns FRs | Owns NFRs | Owns risks / open questions | Build order (master phase) |
 |---|---|---|---|---|---|---|
 | 01 | [01-platform-install-licensing.md](01-platform-install-licensing.md) | Docker installer, offline license, backup/updates, `/api/v1` skeleton, settings, optional Cloudflare tunnel | FR-49–53, FR-57 | NFR-3, NFR-7, NFR-8 | Scope-creep risk, license-cracking risk · OQ-3 (price) | 1st (P1, finishes P6) |
-| 02 | [02-radius-nas-aaa.md](02-radius-nas-aaa.md) | FreeRADIUS↔Go auth path, NAS CRUD/wizard + auto-discovery/auto-setup, CoA, IP pools, vendor-neutral core | FR-13–18, FR-56 | NFR-1 | MikroTik ROS-quirks risk · OQ-2 (pilot ISP) | 2nd (P1–P2) |
+| 02 | [02-radius-nas-aaa.md](02-radius-nas-aaa.md) | FreeRADIUS↔Go auth path, NAS CRUD/wizard + auto-discovery/auto-setup, CoA, IP pools, vendor-neutral core; **v2: multi-service NAS (`nas_services`) + subscriber/profile→NAS scoping enforced at auth** | FR-13–18, FR-56, FR-62, FR-64 | NFR-1 | MikroTik ROS-quirks risk · OQ-2 (pilot ISP) | 2nd (P1–P2; v2 phase 1) |
 | 03 | [03-lossless-accounting-live-monitoring.md](03-lossless-accounting-live-monitoring.md) | Lossless accounting pipeline, live sessions, usage graphs, dashboard, NAS/system/device health, alerts, WhatsApp subscriber messaging | FR-31–40, FR-55, FR-60 | NFR-2 | Pipeline-complexity risk, SAS4-competition risk | 3rd (P2, alerts P4) |
-| 04 | [04-subscribers-profiles.md](04-subscribers-profiles.md) | Subscriber CRUD/search/bulk/CSV-import, user page, profiles + expiry/quota behaviors, dual-service (PPPoE-on-Hotspot) rules | FR-1–12, FR-58 | NFR-5 | — | 4th (P3) |
+| 04 | [04-subscribers-profiles.md](04-subscribers-profiles.md) | Subscriber CRUD/search/bulk/CSV-import, user page, profiles + expiry/quota behaviors, dual-service (PPPoE-on-Hotspot) rules; **v2: `service_type` enum (hotspot-only accounts) + service-type panel/UX** | FR-1–12, FR-58, FR-61, FR-63 | NFR-5 | — | 4th (P3; v2 phase 1) |
 | 05 | [05-billing-payments-vouchers.md](05-billing-payments-vouchers.md) | Renewals, immutable ledger, agent balances, receipts, vouchers, e-wallet gateway interface, scratch-card manual payments | FR-19–26, FR-59 | — | E-wallet-availability risk · OQ-1 (gateway priority) | 5th (P3, gateways P5) |
 | 06 | [06-managers-roles-security.md](06-managers-roles-security.md) | Manager accounts, granular permissions + scoping, 2FA, audit log, security posture | FR-27–30 | NFR-4 | — | 6th (P4; middleware needed from P1) |
 | 07 | [07-subscriber-portal-pwa.md](07-subscriber-portal-pwa.md) | Subscriber portal, trilingual RTL localization, PWA packaging of portal + panel | FR-41–44, FR-54 | NFR-6 | RTL/trilingual-effort risk | 7th (P5; NFR-6 rules apply from P1) |
@@ -17,7 +17,7 @@
 
 ## Coverage audit (mandatory check — passed)
 
-- **FRs: 60/60 owned, each by exactly one sub-PRD** (updated 2026-07-11 for master v1.3). FR-1…FR-12 → 04 · FR-13…FR-18 → 02 · FR-19…FR-26 → 05 · FR-27…FR-30 → 06 · FR-31…FR-40 → 03 · FR-41…FR-44 → 07 · FR-45…FR-48 → 08 · FR-49…FR-53 → 01 · FR-54 → 07 · FR-55 → 03 · FR-56 → 02 · FR-57 → 01 · FR-58 → 04 · FR-59 → 05 (portal UI in 07, panel queue UI cross-assigned per phase briefs) · FR-60 → 03. No gaps, no double ownership. (FR-58 splits like FR-5/9/10: 04 owns data + rules, 02 enforces at auth time.)
+- **FRs: 64/64 owned, each by exactly one sub-PRD** (updated 2026-07-16 for master v1.4). FR-1…FR-12 → 04 · FR-13…FR-18 → 02 · FR-19…FR-26 → 05 · FR-27…FR-30 → 06 · FR-31…FR-40 → 03 · FR-41…FR-44 → 07 · FR-45…FR-48 → 08 · FR-49…FR-53 → 01 · FR-54 → 07 · FR-55 → 03 · FR-56 → 02 · FR-57 → 01 · FR-58 → 04 · FR-59 → 05 (portal UI in 07, panel queue UI cross-assigned per phase briefs) · FR-60 → 03 · **FR-61 → 04 · FR-62 → 02 · FR-63 → 04 · FR-64 → 02 (v2 phase 1)**. No gaps, no double ownership. (FR-58/61/63/64 split like FR-5/9/10: 04 owns subscriber data + rules + panel UX, 02 owns the NAS model + auth-time enforcement.)
 - **NFRs: 8/8 owned.** NFR-1 → 02 · NFR-2 → 03 · NFR-3 → 01 · NFR-4 → 06 · NFR-5 → 04 · NFR-6 → 07 · NFR-7 → 01 · NFR-8 → 01.
 - **Master risks: 7/7 owned.** E-wallet → 05 · MikroTik quirks → 02 · Scope creep → 01 · Pipeline complexity → 03 · License cracking → 01 · RTL/trilingual → 07 · SAS4 competition → 03.
 - **Open questions: 3/3 owned.** OQ-1 (gateway priority) → 05 · OQ-2 (pilot ISP) → 02 · OQ-3 (price point) → 01.

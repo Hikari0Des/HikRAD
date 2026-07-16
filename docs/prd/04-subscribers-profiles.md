@@ -1,6 +1,6 @@
 # HikRAD — Sub-PRD 04: Subscribers & Profiles
 
-> Derived from [docs/PRD.md](../PRD.md) v1.1 on 2026-07-08 (updated 2026-07-09: FR-58 added — Decision 19; WhatsApp opt-in field for [03](03-lossless-accounting-live-monitoring.md) FR-55 — Decision 16). Owns: FR-1, FR-2, FR-3, FR-4, FR-5, FR-6, FR-7, FR-8, FR-9, FR-10, FR-11, FR-12, FR-58 · NFR-5
+> Derived from [docs/PRD.md](../PRD.md) v1.1 on 2026-07-08 (updated 2026-07-09: FR-58 added — Decision 19; WhatsApp opt-in field for [03](03-lossless-accounting-live-monitoring.md) FR-55 — Decision 16; updated 2026-07-16 for master v1.4: FR-61 subscriber `service_type` + FR-63 panel/UX added — Decision 28, v2 phase 1). Owns: FR-1, FR-2, FR-3, FR-4, FR-5, FR-6, FR-7, FR-8, FR-9, FR-10, FR-11, FR-12, FR-58, FR-61, FR-63 · NFR-5
 > Depends on: [01-platform-install-licensing](01-platform-install-licensing.md) (API framework, settings defaults), [03-lossless-accounting-live-monitoring](03-lossless-accounting-live-monitoring.md) (live widget + usage graphs on the user page), [06-managers-roles-security](06-managers-roles-security.md) (ownership scoping, permissions, audit log) · Depended on by: [02-radius-nas-aaa](02-radius-nas-aaa.md) (reads subscriber/profile state at auth), [05-billing-payments-vouchers](05-billing-payments-vouchers.md) (renewals change expiry/profile), [07-subscriber-portal-pwa](07-subscriber-portal-pwa.md) (portal reads subscriber state), [08-reports](08-reports.md) (subscriber reports)
 
 ## 1. Scope & context
@@ -85,6 +85,23 @@ The subscriber base and the service plans that govern it. This module owns subsc
 - **FR-58.3** — Quota rule (Decision 19b): usage from Hotspot sessions is tagged by service in the accounting data ([03](03-lossless-accounting-live-monitoring.md) coordination, same mechanism family as FR-11's exemption flag) and **excluded** from FR-8/FR-10 quota consumption; it still appears in usage graphs and reports. Validity rule: Hotspot login requires a non-expired, non-disabled account — FR-9 expiry behaviors apply to it exactly like PPPoE.
 - **FR-58.4** — Enforcement is auth-time in [02](02-radius-nas-aaa.md) (the authorize request's `service` field distinguishes pppoe/hotspot); this module owns the fields and rules. With the flag off, a Hotspot attempt rejects with `service_not_allowed` (visible in the FR-39 debug tool).
 
+### FR-61 (S) — Subscriber service type (v2)
+**Master:** Replace the FR-58 `allow_hotspot` boolean with a per-subscriber `service_type ∈ {pppoe, hotspot, dual}`; hotspot-only subscribers are full records that authenticate only on Hotspot services, with quota applied; `dual` keeps FR-58 semantics.
+
+*Elaboration (this module owns the data + rules; [02](02-radius-nas-aaa.md) enforces them at auth):*
+- **FR-61.1** — Data: subscriber column `service_type text NOT NULL DEFAULT 'pppoe' CHECK (service_type IN ('pppoe','hotspot','dual'))`, editable on the user page and via bulk action. **Migration is lossless**: `allow_hotspot=false → pppoe`, `true → dual`; the `allow_hotspot` column is dropped after backfill. Any change to `service_type` calls `InvalidatePolicy` ([02](02-radius-nas-aaa.md) contract). Profile Hotspot-rate fields (`hotspot_rate_down/up`) are unchanged and reused by hotspot-only and dual alike.
+- **FR-61.2** — Service matrix (the rule [02](02-radius-nas-aaa.md) enforces, per the authorize request's `service`): `pppoe` accepts pppoe / rejects hotspot `service_not_allowed`; `hotspot` accepts hotspot / rejects pppoe `service_not_allowed` (the exact mirror); `dual` accepts both, with the Hotspot session keeping FR-58 semantics. A redeemed FR-22 voucher is inherently a Hotspot credential and bypasses this gate.
+- **FR-61.3** — Hotspot-only session/quota/validity rules (differ from dual): concurrent Hotspot sessions are governed by the subscriber's `session_limit` **directly** (not the FR-58.2 fixed "+1, max one" rule, which exists only to protect a PPPoE limit); the account's **data quota applies** to Hotspot usage (contrast FR-58.3's dual exemption, which protects the PPPoE quota); expiry/disabled/validity behave exactly like PPPoE (FR-9). Hotspot rate = profile `hotspot_rate_*` when set, else main rate.
+- **FR-61.4** — Portal (Decision 21): a hotspot-only subscriber has a full portal login and sees **consumed** data like any subscriber — never the quota ceiling/remaining balance.
+
+### FR-63 (S) — Service-type & multi-service panel/UX (v2)
+**Master:** Subscriber form service-type selector replacing the toggle; bulk `set_allow_hotspot → set_service_type`; NAS services sub-list + per-service wizard steps; `service_type` filters; FR-64 NAS/service assignment selectors on subscriber + profile forms.
+
+*Elaboration:*
+- **FR-63.1** — Subscriber form: a three-way service-type selector (radio: **PPPoE / Hotspot / Both**) replaces the `allow_hotspot` toggle; localized (en/ar/ku). The bulk action key `set_allow_hotspot` is renamed `set_service_type` (param `service_type`), API + panel in step.
+- **FR-63.2** — Filters: `service_type` filter on the subscriber list (and, via the owning modules, live sessions and reports — coordinated with [03](03-lossless-accounting-live-monitoring.md)/[08](08-reports.md)).
+- **FR-63.3** — Assignment selectors (FR-64, owned by [02](02-radius-nas-aaa.md)): NAS + service-instance pickers on the subscriber form and profile form (nullable = any NAS); this module renders them, [02](02-radius-nas-aaa.md) owns the columns' enforcement. The NAS-page services sub-list itself is [02](02-radius-nas-aaa.md)'s UX.
+
 ### NFR-5 (owned) — Usability
 **Master:** Every daily operator task ≤ 3 clicks from dashboard; keyboard-first global search; a new front-desk operator productive within one hour using a one-page guide; mobile-responsive panel (Hassan's phone).
 
@@ -102,10 +119,13 @@ The subscriber base and the service plans that govern it. This module owns subsc
 - **AC-NFR5a** — Given the dashboard, then renew-a-user completes in ≤ 3 clicks after search, measured on the release build.
 - **AC-58a** — Given a PPPoE subscriber with `allow_hotspot` on and active PPPoE sessions at their session limit, when they log in on a Hotspot NAS, then the auth accepts with the profile's Hotspot rate (or main rate when unset); a second concurrent Hotspot login rejects with `session_limit`; with the flag off, the Hotspot login rejects with `service_not_allowed`.
 - **AC-58b** — Given N GB of Hotspot usage on a quota-limited profile, then remaining quota is unchanged while the usage graphs and reports include the N GB.
+- **AC-61a** *(v2)* — Given a base of mixed `allow_hotspot` subscribers, when the 0500 migration runs, then every `false` becomes `service_type='pppoe'` and every `true` becomes `'dual'`, no row is lost, and all Phase-2 policy tests still pass with pppoe/dual semantics unchanged.
+- **AC-61b** *(v2)* — Given a `hotspot`-only subscriber, when it authenticates on a Hotspot service it accepts (Hotspot rate, quota **enforced**, concurrent sessions capped by `session_limit`); when it attempts PPPoE it rejects `service_not_allowed`.
+- **AC-63a** *(v2)* — Given the subscriber form, then the PPPoE/Hotspot/Both selector persists `service_type`, the bulk `set_service_type` action updates a filtered set, and the `service_type` list filter narrows results — all strings localized (i18n:check green).
 
 ## 4. Data & interfaces
 
-**Owned entities:** `subscribers` (username, password_enc, name, phone, address, notes, owner_manager_id, profile_id, expires_at, status, mac_lock_mode, learned_mac, static_ip, overrides{rate, price}, pending_profile_id, allow_hotspot, whatsapp_opt_in), `profiles` (name, price, duration_days, rate_down/up, burst fields, hotspot_rate_down/up, quota_mode, quota bytes, throttle_rate, expiry_behavior, quota_behavior, pool_id, session_limit_default, archived), import batches/rows.
+**Owned entities:** `subscribers` (username, password_enc, name, phone, address, notes, owner_manager_id, profile_id, expires_at, status, mac_lock_mode, learned_mac, static_ip, overrides{rate, price}, pending_profile_id, **service_type** *(v2 FR-61, replaces `allow_hotspot`)*, whatsapp_opt_in, **nas_id / nas_service_id** *(v2 FR-64 assignment; nullable = any — columns enforced by [02](02-radius-nas-aaa.md))*), `profiles` (name, price, duration_days, rate_down/up, burst fields, hotspot_rate_down/up, quota_mode, quota bytes, throttle_rate, expiry_behavior, quota_behavior, pool_id, session_limit_default, archived, **nas_id / nas_service_id** *(v2 FR-64 default scope; nullable — enforced by [02](02-radius-nas-aaa.md))*), import batches/rows.
 
 **Exposes:**
 - `GET/POST/PUT/DELETE /api/v1/subscribers` (+ `/bulk`, `/search?q=`, `/{id}/reset-mac`), `GET/POST/PUT /api/v1/profiles`
