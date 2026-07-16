@@ -33,6 +33,7 @@ func (m *Module) Register(r chi.Router, d httpapi.Deps) {
 	// state does not carry pool membership; documented in the package README.
 	radius.SetLiveCounter(Count)
 	radius.SetNASLiveCounter(NASCount)
+	radius.SetServiceLiveCounts(ServiceCounts)
 	radius.SetPoolUsageCounter(func(string) int { return 0 })
 
 	// Live feed (SSE) + Disconnect (CoA via B).

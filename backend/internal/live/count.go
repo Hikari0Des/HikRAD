@@ -43,6 +43,34 @@ func NASCount(nasID string) int {
 	return livestate.NASCount(ctx, pkgRDB, nasID)
 }
 
+// ServiceCounts returns the live-session count of every service instance,
+// keyed by nas_services.id — B's FR-63 services sub-list (radius.SetServiceLiveCounts).
+//
+// Counted by scanning live state rather than kept in a Redis set per instance
+// like Count/NASCount. Those are on the authorize hot path and must be O(1);
+// this one renders an operator's NAS page, where a stale set would be worse
+// than a scan: it would show phantom sessions on a zone that is actually empty,
+// and a leaked member is invisible until someone notices the number is wrong.
+// One HGETALL per page load is the honest trade.
+//
+// Sessions that never resolved to an instance are simply absent — they are
+// still recorded (M2), just not attributable to a zone.
+func ServiceCounts() map[string]int {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	all, err := livestate.All(ctx, pkgRDB)
+	if err != nil {
+		return nil
+	}
+	out := make(map[string]int, len(all))
+	for _, s := range all {
+		if s.NASServiceID != "" {
+			out[s.NASServiceID]++
+		}
+	}
+	return out
+}
+
 // List returns the live sessions passing filter f and the caller's scope,
 // sorted by start time (newest first). It resolves subscriber attributes for
 // profile/manager filtering in one batched query.

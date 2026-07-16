@@ -112,12 +112,12 @@ type PolicyProvider interface {
 }
 
 var (
-	seamMu             sync.RWMutex
-	provider           PolicyProvider
-	liveCountFn        = func(subscriberID, service string) int { return 0 }
-	nasLiveCountFn     = func(nasID string) int { return 0 }
-	serviceLiveCountFn = func(serviceID string) int { return 0 }
-	poolUsageFn        = func(poolName string) int { return 0 }
+	seamMu              sync.RWMutex
+	provider            PolicyProvider
+	liveCountFn         = func(subscriberID, service string) int { return 0 }
+	nasLiveCountFn      = func(nasID string) int { return 0 }
+	serviceLiveCountsFn func() map[string]int
+	poolUsageFn         = func(poolName string) int { return 0 }
 )
 
 // SetPolicyProvider installs D's read-model. Called once from the subscribers
@@ -151,18 +151,41 @@ func currentNASLiveCount() func(string) int {
 	return nasLiveCountFn
 }
 
-// SetServiceLiveCounter installs C's per-service-instance live count, used by
-// the FR-63 services sub-list. Unset → 0, so the panel renders before C wires it.
-func SetServiceLiveCounter(count func(serviceID string) int) {
+// SetServiceLiveCounts installs C's per-service-instance live counts for the
+// FR-63 services sub-list: one call returns every instance's count, keyed by
+// nas_services.id. Unset → empty, so the panel renders before C wires it.
+//
+// It returns the whole map rather than taking a service id (its original shape)
+// so the NAS list reads live state ONCE instead of once per service instance —
+// the list renders every NAS with all of its services.
+func SetServiceLiveCounts(counts func() map[string]int) {
 	seamMu.Lock()
-	serviceLiveCountFn = count
+	serviceLiveCountsFn = counts
 	seamMu.Unlock()
 }
 
-func currentServiceLiveCount() func(string) int {
+func currentServiceLiveCounts() map[string]int {
+	seamMu.RLock()
+	fn := serviceLiveCountsFn
+	seamMu.RUnlock()
+	if fn == nil {
+		return nil
+	}
+	return fn()
+}
+
+// ServiceLiveCountsWired reports whether the live module has installed the
+// counts seam.
+//
+// It exists so the owning module can TEST that it wired it. An unwired counter
+// seam is silent by construction — the unset case deliberately degrades to zero
+// so the panel renders before C boots — which means "never wired" and "nobody
+// online" are indistinguishable at runtime. That is exactly how this seam
+// shipped dead in v2 phase 1.
+func ServiceLiveCountsWired() bool {
 	seamMu.RLock()
 	defer seamMu.RUnlock()
-	return serviceLiveCountFn
+	return serviceLiveCountsFn != nil
 }
 
 // SetPoolUsageCounter installs C's per-pool live-session count (from live.List

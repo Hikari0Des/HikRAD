@@ -114,13 +114,14 @@ func (m *module) withServices(ctx context.Context, rows []nasRow) ([]nasView, er
 	if err != nil {
 		return nil, err
 	}
-	count := currentServiceLiveCount()
+	// One live-state read for the whole page, not one per service instance.
+	counts := currentServiceLiveCounts()
 	views := make([]nasView, 0, len(rows))
 	for _, n := range rows {
 		v := n.view()
 		for _, s := range byNAS[n.ID] {
 			sv := s.view()
-			sv.LiveSessions = count(s.ID)
+			sv.LiveSessions = counts[s.ID]
 			v.Services = append(v.Services, sv)
 		}
 		views = append(views, v)

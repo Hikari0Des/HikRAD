@@ -116,6 +116,7 @@ Renew dialog: opens pre-filled with current profile + resolved price (key flow 2
 - Report layouts over ledger data → [08](08-reports.md).
 - Manager account CRUD/permissions themselves → [06](06-managers-roles-security.md).
 - **Deferred by master:** prepaid card system with drag-and-drop designer (Phase 2 — vouchers here are code batches only); reseller tree with balance transfer down the chain (Phase 2 — balances here are flat); postpaid invoicing (non-goal).
+- **Cost, margin and reseller (wholesale) pricing → v2-3b**, briefed at [docs/v2/09-cost-margin-and-reseller-pricing.md](../v2/09-cost-margin-and-reseller-pricing.md) (owner request 2026-07-16). v1 deliberately has **no concept of cost**: `profiles.price_iqd` is what the subscriber is charged, and a renewal debits the owning manager's balance **that same amount** — so every reseller pays retail and margin is unrepresentable. That is a real limitation, not an oversight to patch here: adding a cost price and a wholesale price changes what a renewal ledger row *means* (one debit at one price becomes a retail charge + a wholesale debit + a cost stamp), which is the contract Phase 3 froze and [08](08-reports.md) reconciles against. It lands with v2-3's multi-currency rework so the ledger is migrated once.
 
 ## 7. Risks & open questions (owned)
 
