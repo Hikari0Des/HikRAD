@@ -294,6 +294,18 @@ export interface DiscoveredService {
   matched_service_id: string
 }
 
+/**
+ * FR-62.7: router-side config that breaks HikRAD logins even when HikRAD is
+ * behaving correctly — the "RADIUS says accept and the user still can't get on"
+ * class. `code` is localized by the panel; `detail` carries the router's own
+ * strings, `fix` the exact command that resolves it.
+ */
+export interface NasHealthFinding {
+  code: string
+  detail: string
+  fix: string
+}
+
 /** One service instance in a NAS write body; id identifies an existing row. */
 export interface NasServiceWrite {
   id?: string

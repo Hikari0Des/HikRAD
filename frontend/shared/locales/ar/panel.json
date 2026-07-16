@@ -370,6 +370,11 @@
     "detectServices": "الكشف من الموجّه",
     "detectHint": "يقرأ خوادم PPPoE/Hotspot الفعلية على هذا الموجّه حتى لا تُعيد كتابة أسمائها.",
     "detectNeedsCreds": "أضف بيانات RouterOS API (الخطوة 2) للكشف عن الخدمات من الموجّه.",
+    "health": {
+      "fixLabel": "نفّذ هذا الأمر على الموجّه لإصلاحه:",
+      "hotspot_user_profile_pool_missing": "هذا الموجّه لا يستطيع إكمال أي تسجيل دخول هوت‑سبوت عبر HikRAD",
+      "hotspot_user_profile_pool": "هذا الموجّه يتجاوز توزيع العناوين الذي يرسله HikRAD"
+    },
     "detected": "تم العثور على {count} خدمة على الموجّه — راجِعها ثم احفظ.",
     "detectedWithPools": "تم العثور على {count} خدمة. مجمّعات عناوين الموجّه: {pools}. راجِعها ثم احفظ."
   },

@@ -93,6 +93,29 @@ type SnippetInput struct {
 	WalledGarden []string // hotspot walled-garden hosts (portal/payment/expired-redirect)
 }
 
+// HealthFinding is one router-side problem CheckHealth found. Code is a stable
+// key the panel localizes; Detail carries the router's own strings (pool names,
+// ids) that make the finding actionable. Fix is the exact command that resolves
+// it — the operator is being told their router is misconfigured, so the least
+// HikRAD can do is say precisely how to fix it rather than leave them guessing.
+type HealthFinding struct {
+	Code   string `json:"code"`
+	Detail string `json:"detail"`
+	Fix    string `json:"fix"`
+}
+
+// Health finding codes.
+const (
+	// HealthHotspotUserProfilePool: the default hotspot user profile assigns an
+	// address pool, so every RADIUS hotspot login is re-assigned from it at
+	// login time — overriding the hotspot server's own pool.
+	HealthHotspotUserProfilePool = "hotspot_user_profile_pool"
+	// HealthHotspotUserProfilePoolMissing: ...and that pool does not exist, so
+	// every RADIUS hotspot login on this router fails ("no address from ip
+	// pool") while RADIUS reports a clean accept.
+	HealthHotspotUserProfilePoolMissing = "hotspot_user_profile_pool_missing"
+)
+
 // Adapter maps abstract intents to concrete vendor behavior.
 type Adapter interface {
 	// Name is the vendor key stored in nas.vendor.
@@ -122,6 +145,13 @@ type Adapter interface {
 	// names C7 must match exactly. Read-only: print sentences only, never
 	// add/set. Vendor-specific RouterOS paths/fields live only here (FR-17).
 	DiscoverServices(conn ROSConn) ([]DiscoveredService, error)
+	// CheckHealth reports router-side configuration that will break HikRAD
+	// logins even though HikRAD itself is behaving correctly (FR-62.7). It is
+	// the answer to "RADIUS says accept and the user still can't get on" —
+	// conditions the operator cannot see from HikRAD and would not think to
+	// check on the router. Read-only. An empty result means nothing known-bad
+	// was found, never "healthy" in any stronger sense.
+	CheckHealth(conn ROSConn) ([]HealthFinding, error)
 	// SupportsInPlace reports whether an in-place CoA-Request change for
 	// intent is known to take effect on an already-active session for a NAS
 	// of type nasType ("pppoe"|"hotspot") running rosVersion — the Phase 4

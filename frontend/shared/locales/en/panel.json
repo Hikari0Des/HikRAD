@@ -370,6 +370,11 @@
     "detectServices": "Detect from router",
     "detectHint": "Reads this router's real PPPoE/Hotspot servers so you don't retype their names.",
     "detectNeedsCreds": "Add RouterOS API credentials (step 2) to detect services from the router.",
+    "health": {
+      "fixLabel": "Run this on the router to fix it:",
+      "hotspot_user_profile_pool_missing": "This router cannot complete any HikRAD hotspot login",
+      "hotspot_user_profile_pool": "This router overrides HikRAD's address assignment"
+    },
     "detected": "Found {count} service(s) on the router — review and Save.",
     "detectedWithPools": "Found {count} service(s). Router address pools: {pools}. Review and Save."
   },

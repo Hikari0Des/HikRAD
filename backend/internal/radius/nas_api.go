@@ -441,8 +441,22 @@ func (m *module) discoverServicesHandler(w http.ResponseWriter, r *http.Request)
 			MatchedServiceID: byKey[f.Service+"\x00"+strings.ToLower(f.ROSServerName)],
 		})
 	}
-	_ = auth.Audit(ctx, "nas.discover_services", "nas", n.ID, nil, map[string]any{"found": len(items)})
-	httpapi.JSON(w, http.StatusOK, map[string]any{"items": items})
+	// Health findings (FR-62.7) ride along with discovery: the operator is
+	// already looking at this router, and these are the conditions that make a
+	// perfectly good HikRAD config fail anyway. Best-effort — a health probe that
+	// errors must never fail the discovery the operator actually asked for.
+	health, err := vendor.For(n.Vendor).CheckHealth(conn)
+	if err != nil {
+		m.log.Warn("radius: nas health check failed", "error", err, "nas", n.ID)
+		health = nil
+	}
+	if health == nil {
+		health = []vendor.HealthFinding{}
+	}
+
+	_ = auth.Audit(ctx, "nas.discover_services", "nas", n.ID, nil,
+		map[string]any{"found": len(items), "health_findings": len(health)})
+	httpapi.JSON(w, http.StatusOK, map[string]any{"items": items, "health": health})
 }
 
 // nasStatusHandler reports the FR-14.4 "seen since created" check: the last

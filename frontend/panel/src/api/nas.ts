@@ -6,6 +6,7 @@ import type {
   DiscoveredNas,
   DiscoveredService,
   Nas,
+  NasHealthFinding,
   NasSnippet,
   NasStatus,
   NasWrite,
@@ -63,7 +64,9 @@ export function probeNas(
  * on both sides: it touches nothing on the router and saves nothing in HikRAD —
  * it returns rows for the operator to confirm in the form.
  */
-export function discoverNasServices(id: string): Promise<{ items: DiscoveredService[] }> {
+export function discoverNasServices(
+  id: string,
+): Promise<{ items: DiscoveredService[]; health: NasHealthFinding[] }> {
   return request(`/nas/${id}/discover-services`, { method: 'POST' })
 }
 

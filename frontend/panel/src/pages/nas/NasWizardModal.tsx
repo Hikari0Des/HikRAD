@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react'
 
-import { useT } from '@hikrad/shared'
+import { Ltr, useT } from '@hikrad/shared'
 
 import { createNas, discoverNasServices, updateNas } from '../../api/nas'
 import { ApiError, type FieldError } from '../../api/client'
-import type { Nas, NasServiceWrite, NasType, NasWrite } from '../../api/types'
+import type { Nas, NasHealthFinding, NasServiceWrite, NasType, NasWrite } from '../../api/types'
 import { Button } from '../../components/Button'
 import { Modal } from '../../components/Modal'
 import { Checkbox, Field, Select, TextInput } from '../../components/form'
@@ -242,6 +242,10 @@ function ServicesEditor({
   const t = useT()
   const { toast } = useToast()
   const [detecting, setDetecting] = useState(false)
+  // Health findings persist in the form rather than passing through a toast:
+  // each one is a standing router misconfiguration with a command attached, and
+  // an operator needs to read it while typing, not catch it as it disappears.
+  const [health, setHealth] = useState<NasHealthFinding[]>([])
   const patch = (i: number, next: Partial<NasServiceWrite>) =>
     onChange(services.map((s, j) => (i === j ? { ...s, ...next } : s)))
 
@@ -261,7 +265,8 @@ function ServicesEditor({
     if (!nasId) return
     setDetecting(true)
     try {
-      const { items } = await discoverNasServices(nasId)
+      const { items, health: found } = await discoverNasServices(nasId)
+      setHealth(found ?? [])
       const byId = new Map(services.map((s) => [s.id, s]))
       const seen = new Set<string>()
       const merged: NasServiceWrite[] = []
@@ -331,6 +336,23 @@ function ServicesEditor({
             </span>
           </div>
         )}
+        {health.map((h) => (
+          <div
+            key={h.code}
+            className="rounded border border-warn/40 bg-warn/10 p-2 text-sm"
+            role="status"
+          >
+            <p className="font-medium">{t(`nas.health.${h.code}`)}</p>
+            <p className="mt-0.5 text-ink-muted">{h.detail}</p>
+            {/* The router command, verbatim and copyable: HikRAD is telling the
+                operator their router is misconfigured, so it owes them the exact
+                fix rather than a description of one. LTR — it is a command. */}
+            <p className="mt-1 text-xs text-ink-muted">{t('nas.health.fixLabel')}</p>
+            <code className="mt-0.5 block overflow-x-auto rounded bg-surface-sunken px-2 py-1 text-xs">
+              <Ltr>{h.fix}</Ltr>
+            </code>
+          </div>
+        ))}
         {services.map((s, i) => (
           <div key={s.id ?? `new-${i}`} className="rounded border border-surface-sunken p-2">
             <div className="grid gap-2 sm:grid-cols-2">

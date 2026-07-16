@@ -160,6 +160,20 @@ func writeHotspotBlock(b *strings.Builder, s ServiceSnippet, walledGarden []stri
 		// ROS 6 spells the interim knob differently on the hotspot profile.
 		b.WriteString("radius-accounting=yes interim-update=" + secs(interim) + "\n")
 	}
+	// The hotspot USER profile decides the login-time address, and it OVERRIDES
+	// the hotspot server's own address-pool. A RADIUS-authenticated user lands on
+	// the `default` user profile (HikRAD sends no Mikrotik-Group), so if that
+	// profile carries an address-pool, every HikRAD login on this router is
+	// re-assigned from it — and if it names a pool that no longer exists, every
+	// login fails with "no address from ip pool" while RADIUS reports a clean
+	// accept. That is a real pilot outage (2026-07-16, docs/ops/known-issues.md):
+	// the router's default profile pointed at a deleted pool, and the DHCP
+	// address the client already held looked like proof the pool was fine.
+	//
+	// Setting it to none is correct either way: with no HikRAD pool the client
+	// keeps the address the hotspot server's pool already gave it, and with one
+	// the Framed-Pool reply takes precedence regardless.
+	b.WriteString("/ip hotspot user profile set [find default=yes] address-pool=none\n")
 	if s.PoolName != "" {
 		fmt.Fprintf(b, "#   addresses come from HikRAD's per-service pool %q (reply attribute)\n", s.PoolName)
 	} else {

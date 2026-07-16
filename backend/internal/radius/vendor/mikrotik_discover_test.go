@@ -4,7 +4,10 @@ package vendor
 // `ros_server_name` and the router's pool names stop being hand-typed, so these
 // pin down that what the router reports is what comes back — verbatim.
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func routerWith(rows map[string][]map[string]string) *fakeROSConn {
 	c := newFakeROS()
@@ -155,4 +158,97 @@ func find(t *testing.T, list []DiscoveredService, service, name string) Discover
 	}
 	t.Fatalf("no %s instance named %q in %+v", service, name, list)
 	return DiscoveredService{}
+}
+
+// --- FR-62.7 health checks -------------------------------------------------
+
+// The pilot outage, reproduced exactly (2026-07-16): the default hotspot user
+// profile references pool "*1D" — an internal id left behind by a deleted pool.
+// Every RADIUS hotspot login failed with "no address from ip pool" while HikRAD
+// reported a clean accept and `/ip pool print` showed 1002 free addresses. It
+// defeated three rounds of HikRAD-side debugging, so it gets a test.
+func TestCheckHealth_DanglingDefaultUserProfilePool(t *testing.T) {
+	conn := routerWith(map[string][]map[string]string{
+		"/ip/hotspot/user/profile/print": {
+			{"name": "default", "default": "true", "address-pool": "*1D"},
+			{"name": "IT", "default": "false"},
+		},
+		"/ip/pool/print": {
+			{".id": "*3", "name": "Students-WiFi_Pool", "ranges": "16.144.96.10-16.144.99.254"},
+		},
+	})
+	got, err := For("mikrotik").CheckHealth(conn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].Code != HealthHotspotUserProfilePoolMissing {
+		t.Fatalf("got %+v, want one %s finding", got, HealthHotspotUserProfilePoolMissing)
+	}
+	// The operator must be able to act on it without a support call.
+	if !strings.Contains(got[0].Detail, "*1D") {
+		t.Errorf("the finding does not name the offending pool: %q", got[0].Detail)
+	}
+	if !strings.Contains(got[0].Fix, "address-pool=none") {
+		t.Errorf("the finding does not carry the fix command: %q", got[0].Fix)
+	}
+}
+
+// A pool that DOES exist is still worth flagging — it silently overrides every
+// hotspot's own address-pool — but it is not the outage, so it gets the milder
+// code.
+func TestCheckHealth_ExistingDefaultUserProfilePool(t *testing.T) {
+	conn := routerWith(map[string][]map[string]string{
+		"/ip/hotspot/user/profile/print": {{"name": "default", "default": "true", "address-pool": "Guests"}},
+		"/ip/pool/print":                 {{".id": "*1", "name": "Guests"}},
+	})
+	got, err := For("mikrotik").CheckHealth(conn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].Code != HealthHotspotUserProfilePool {
+		t.Fatalf("got %+v, want one %s finding", got, HealthHotspotUserProfilePool)
+	}
+}
+
+// The healthy shape HikRAD's own snippet configures, and a router matching it
+// must produce NO findings — a check that always complains gets ignored.
+func TestCheckHealth_CleanRouter(t *testing.T) {
+	for _, pool := range []string{"none", "", "NONE"} {
+		conn := routerWith(map[string][]map[string]string{
+			"/ip/hotspot/user/profile/print": {{"name": "default", "default": "true", "address-pool": pool}},
+		})
+		got, err := For("mikrotik").CheckHealth(conn)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(got) != 0 {
+			t.Errorf("address-pool=%q produced findings on a healthy router: %+v", pool, got)
+		}
+	}
+}
+
+// A PPPoE-only box has no /ip hotspot at all. "We couldn't check" must never
+// render as "your router is broken".
+func TestCheckHealth_PPPoEOnlyRouterHasNoFindings(t *testing.T) {
+	got, err := For("mikrotik").CheckHealth(newFakeROS())
+	if err != nil {
+		t.Fatalf("a router with no hotspot returned an error: %v", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("a PPPoE-only router produced findings: %+v", got)
+	}
+}
+
+// The check must not write.
+func TestCheckHealth_IsReadOnly(t *testing.T) {
+	conn := routerWith(map[string][]map[string]string{
+		"/ip/hotspot/user/profile/print": {{"name": "default", "default": "true", "address-pool": "*1D"}},
+		"/ip/pool/print":                 {{".id": "*1", "name": "other"}},
+	})
+	if _, err := For("mikrotik").CheckHealth(conn); err != nil {
+		t.Fatal(err)
+	}
+	if len(conn.writes) != 0 {
+		t.Fatalf("the health check wrote to the router: %+v", conn.writes)
+	}
 }
