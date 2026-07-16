@@ -122,9 +122,19 @@ export function SubscriberFormModal({
             type="text"
             value={form.password}
             dir="ltr"
+            disabled={form.noPassword}
             onChange={(e) => set('password', e.target.value)}
           />
         </Field>
+        <div className="sm:col-span-2">
+          {/* Item 13: hotspot logins may deliberately carry password="". */}
+          <Checkbox
+            label={t('subscriber.noPassword')}
+            description={t('subscriber.noPasswordHint')}
+            checked={form.noPassword}
+            onChange={(e) => set('noPassword', e.target.checked)}
+          />
+        </div>
         <Field label={t('subscriber.name')} error={errors.name}>
           <TextInput value={form.name} onChange={(e) => set('name', e.target.value)} />
         </Field>
@@ -280,6 +290,7 @@ export function SubscriberFormModal({
 interface FormState {
   username: string
   password: string
+  noPassword: boolean
   name: string
   phone: string
   whatsappOptIn: boolean
@@ -302,6 +313,7 @@ function initialForm(s?: Subscriber): FormState {
   return {
     username: s?.username ?? '',
     password: '',
+    noPassword: s ? s.has_password === false : false,
     name: s?.name ?? '',
     phone: s?.phone ?? '',
     whatsappOptIn: s?.whatsapp_opt_in ?? false,
@@ -341,7 +353,11 @@ function toWrite(f: FormState, editing: boolean): SubscriberWrite {
     owner_manager_id: f.ownerId || null,
   }
   if (!editing) body.username = f.username
-  if (f.password) body.password = f.password
+  if (f.noPassword) {
+    body.no_password = true
+  } else if (f.password) {
+    body.password = f.password
+  }
   return body
 }
 

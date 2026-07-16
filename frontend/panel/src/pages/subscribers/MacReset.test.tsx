@@ -51,6 +51,7 @@ const subscriber: Subscriber = {
   disabled_reason: null,
   allow_hotspot: false,
   whatsapp_opt_in: false,
+  has_password: true,
   pending_profile_id: null,
   created_at: '2026-07-01T00:00:00Z',
   updated_at: '2026-07-01T00:00:00Z',

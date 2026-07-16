@@ -31,6 +31,8 @@ export interface Subscriber {
   allow_hotspot: boolean
   whatsapp_opt_in: boolean
   pending_profile_id: string | null
+  /** false = deliberately passwordless hotspot login (item 13). */
+  has_password: boolean
   created_at: string
   updated_at: string
 }
@@ -55,6 +57,8 @@ export interface SubscriberWrite {
   disabled_reason?: string | null
   allow_hotspot?: boolean
   whatsapp_opt_in?: boolean
+  /** true clears/omits the credential — the NAS then sends password="". */
+  no_password?: boolean
 }
 
 export interface ProfileSummary {

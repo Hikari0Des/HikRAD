@@ -39,8 +39,12 @@ type Subscriber struct {
 	AllowHotspot         bool       `json:"allow_hotspot"`
 	WhatsappOptIn        bool       `json:"whatsapp_opt_in"`
 	PendingProfileID     *string    `json:"pending_profile_id"`
-	CreatedAt            time.Time  `json:"created_at"`
-	UpdatedAt            time.Time  `json:"updated_at"`
+	// HasPassword is false for passwordless hotspot logins (item 13) — the
+	// credential column then seals an empty string and the portal refuses
+	// password login for the account.
+	HasPassword bool      `json:"has_password"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 // columns is the SELECT list backing scanSubscriber. host(static_ip) strips the
@@ -48,14 +52,14 @@ type Subscriber struct {
 const columns = `id::text, username::text, name, phone, address, notes, status,
 	profile_id::text, owner_manager_id::text, expires_at, mac_lock_mode, learned_mac,
 	host(static_ip), session_limit_override, rate_override, price_override, disabled_reason,
-	allow_hotspot, whatsapp_opt_in, pending_profile_id::text, created_at, updated_at`
+	allow_hotspot, whatsapp_opt_in, pending_profile_id::text, has_password, created_at, updated_at`
 
 func scanSubscriber(row pgx.Row) (Subscriber, error) {
 	var s Subscriber
 	err := row.Scan(&s.ID, &s.Username, &s.Name, &s.Phone, &s.Address, &s.Notes, &s.Status,
 		&s.ProfileID, &s.OwnerManagerID, &s.ExpiresAt, &s.MacLockMode, &s.LearnedMac,
 		&s.StaticIP, &s.SessionLimitOverride, &s.RateOverride, &s.PriceOverride, &s.DisabledReason,
-		&s.AllowHotspot, &s.WhatsappOptIn, &s.PendingProfileID, &s.CreatedAt, &s.UpdatedAt)
+		&s.AllowHotspot, &s.WhatsappOptIn, &s.PendingProfileID, &s.HasPassword, &s.CreatedAt, &s.UpdatedAt)
 	if err != nil {
 		return Subscriber{}, err
 	}

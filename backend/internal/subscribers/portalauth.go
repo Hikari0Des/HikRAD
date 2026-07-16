@@ -58,6 +58,11 @@ func VerifyPassword(ctx context.Context, db *pgxpool.Pool, username, password st
 	if derr != nil {
 		return PortalIdentity{}, false, nil
 	}
+	// Passwordless hotspot accounts (item 13) seal an empty credential; letting
+	// "" match "" here would open the portal to anyone knowing a username.
+	if len(plain) == 0 {
+		return PortalIdentity{}, false, nil
+	}
 	match := subtle.ConstantTimeCompare(plain, []byte(password)) == 1
 	for i := range plain {
 		plain[i] = 0
@@ -103,6 +108,14 @@ func SetPassword(ctx context.Context, db *pgxpool.Pool, subscriberID, newPasswor
 func SetPhone(ctx context.Context, db *pgxpool.Pool, subscriberID, phone string) error {
 	_, err := db.Exec(ctx, `UPDATE subscribers SET phone = NULLIF($2,''), updated_at = now() WHERE id = $1::uuid`,
 		subscriberID, phone)
+	return err
+}
+
+// SetName lets a subscriber correct their own display name (FR-44/item 22 —
+// subscriber-safe field, same class as SetPhone).
+func SetName(ctx context.Context, db *pgxpool.Pool, subscriberID, name string) error {
+	_, err := db.Exec(ctx, `UPDATE subscribers SET name = NULLIF($2,''), updated_at = now() WHERE id = $1::uuid`,
+		subscriberID, name)
 	return err
 }
 

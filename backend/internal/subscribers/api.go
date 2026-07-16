@@ -39,6 +39,11 @@ type writeInput struct {
 	DisabledReason       *string    `json:"disabled_reason"`
 	AllowHotspot         *bool      `json:"allow_hotspot"`
 	WhatsappOptIn        *bool      `json:"whatsapp_opt_in"`
+	// NoPassword (item 13): hotspot subscribers may deliberately have no
+	// password — the NAS then sends password="" and auth compares empty to
+	// empty. true seals an empty credential (and clears any existing one);
+	// portal password login is refused for such accounts.
+	NoPassword *bool `json:"no_password"`
 }
 
 func (m *Module) listHandler(w http.ResponseWriter, r *http.Request) {
@@ -114,7 +119,8 @@ func (m *Module) createHandler(w http.ResponseWriter, r *http.Request) {
 	if strings.TrimSpace(in.Username) == "" {
 		fe = append(fe, httpapi.FieldError{Field: "username", Message: "this field is required"})
 	}
-	if in.Password == nil || *in.Password == "" {
+	noPassword := in.NoPassword != nil && *in.NoPassword
+	if !noPassword && (in.Password == nil || *in.Password == "") {
 		fe = append(fe, httpapi.FieldError{Field: "password", Message: "this field is required"})
 	}
 	norm, feMore := m.normalizeWrite(r.Context(), &in, "")
@@ -124,7 +130,11 @@ func (m *Module) createHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	enc, err := crypto.Encrypt([]byte(*in.Password))
+	plainPassword := ""
+	if !noPassword {
+		plainPassword = *in.Password
+	}
+	enc, err := crypto.Encrypt([]byte(plainPassword))
 	if err != nil {
 		m.internalError(w, "seal password", err)
 		return
@@ -152,13 +162,13 @@ func (m *Module) createHandler(w http.ResponseWriter, r *http.Request) {
 		   (username, password_enc, name, phone, address, notes, status, profile_id,
 		    owner_manager_id, expires_at, mac_lock_mode, static_ip, session_limit_override,
 		    rate_override, price_override, disabled_reason, allow_hotspot, whatsapp_opt_in,
-		    quota_cycle_anchor)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8::uuid,$9::uuid,$10,$11,$12::inet,$13,$14,$15,$16,$17,$18, now())
+		    has_password, quota_cycle_anchor)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8::uuid,$9::uuid,$10,$11,$12::inet,$13,$14,$15,$16,$17,$18,$19, now())
 		 RETURNING `+columns,
 		in.Username, enc, in.Name, norm.phonePtr, in.Address, in.Notes, status, in.ProfileID,
 		owner, in.ExpiresAt, macMode, norm.staticIP, in.SessionLimitOverride,
 		in.RateOverride, in.PriceOverride, in.DisabledReason, boolOr(in.AllowHotspot, false),
-		boolOr(in.WhatsappOptIn, false)))
+		boolOr(in.WhatsappOptIn, false), !noPassword))
 	if err != nil {
 		if isUniqueViolation(err) {
 			httpapi.Error(w, http.StatusConflict, "conflict", "username already exists")
@@ -211,14 +221,27 @@ func (m *Module) updateHandler(w http.ResponseWriter, r *http.Request) {
 
 	// COALESCE-style partial update: a nil pointer leaves the column unchanged;
 	// password reseals only when provided. static_ip/mac_lock are pre-normalized.
+	// no_password (item 13) wins over a password value: it seals an empty
+	// credential and flips has_password off; a provided password flips it on.
 	var encArg any
-	if in.Password != nil && *in.Password != "" {
+	var hasPasswordArg *bool
+	switch {
+	case in.NoPassword != nil && *in.NoPassword:
+		enc, err := crypto.Encrypt([]byte(""))
+		if err != nil {
+			m.internalError(w, "seal password", err)
+			return
+		}
+		encArg = enc
+		hasPasswordArg = boolPtr(false)
+	case in.Password != nil && *in.Password != "":
 		enc, err := crypto.Encrypt([]byte(*in.Password))
 		if err != nil {
 			m.internalError(w, "seal password", err)
 			return
 		}
 		encArg = enc
+		hasPasswordArg = boolPtr(true)
 	}
 
 	after, err := scanSubscriber(m.db.QueryRow(r.Context(),
@@ -239,7 +262,8 @@ func (m *Module) updateHandler(w http.ResponseWriter, r *http.Request) {
 		    price_override        = CASE WHEN $25::bool THEN $26 ELSE price_override END,
 		    disabled_reason       = CASE WHEN $27::bool THEN $28 ELSE disabled_reason END,
 		    allow_hotspot         = COALESCE($29, allow_hotspot),
-		    whatsapp_opt_in       = COALESCE($30, whatsapp_opt_in)
+		    whatsapp_opt_in       = COALESCE($30, whatsapp_opt_in),
+		    has_password          = COALESCE($31, has_password)
 		  WHERE id = $1::uuid
 		 RETURNING `+columns,
 		id, encArg,
@@ -255,7 +279,7 @@ func (m *Module) updateHandler(w http.ResponseWriter, r *http.Request) {
 		in.RateOverride != nil, in.RateOverride,
 		in.PriceOverride != nil, in.PriceOverride,
 		in.DisabledReason != nil, in.DisabledReason,
-		in.AllowHotspot, in.WhatsappOptIn))
+		in.AllowHotspot, in.WhatsappOptIn, hasPasswordArg))
 	if err != nil {
 		if isForeignKeyViolation(err) {
 			httpapi.Error(w, http.StatusUnprocessableEntity, "validation_failed", "request validation failed",
@@ -388,6 +412,8 @@ func boolOr(p *bool, d bool) bool {
 	}
 	return *p
 }
+
+func boolPtr(b bool) *bool { return &b }
 
 func nilIfEmpty(p *string) *string {
 	if p == nil || *p == "" {
