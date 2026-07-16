@@ -842,12 +842,21 @@
       "at": "Time",
       "user": "User",
       "nas": "NAS",
+      "instance": "Service",
       "outcome": "Outcome",
-      "reason": "Reason"
+      "reason": "Reason",
+      "reply": "Reply sent"
     },
     "outcome": {
       "accept": "Accept",
       "reject": "Reject"
+    },
+    "intent": {
+      "address_pool": "The router must have an /ip pool with exactly this name, or the login fails with \"no address from ip pool\".",
+      "rate_limit": "Speed limit applied to the session.",
+      "static_ip": "Fixed address assigned to the session.",
+      "session_timeout": "The session is cut after this many seconds.",
+      "redirect_expired": "Walled-garden address list for the renewal redirect."
     },
     "reason": {
       "ok": "OK",
@@ -1241,11 +1250,14 @@
     "dual": "PPPoE + Hotspot"
   },
   "nasScope": {
-    "nas": "Allowed NAS",
-    "service": "Allowed service",
-    "hint": "Restrict logins to one router. Any NAS is the default.",
-    "anyNas": "Any NAS",
-    "anyService": "Any service on this NAS",
+    "label": "Allowed NAS / services",
+    "hint": "Pick as many routers or services as you like. Selecting none allows every NAS, which is the default.",
+    "add": "Add a NAS or service…",
+    "anyNas": "Any NAS — logins are allowed everywhere",
+    "wholeNas": "{name} — every service",
+    "remove": "Remove {name}",
+    "unknown": "Unknown NAS",
+    "noNas": "No NAS has been added yet.",
     "loadFailed": "Could not load the NAS list."
   }
 }

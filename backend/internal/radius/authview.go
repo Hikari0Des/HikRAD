@@ -23,6 +23,34 @@ import (
 // subscriber matches the username; the engine maps it to reason unknown_user.
 var ErrNoSubscriber = errors.New("radius: no such subscriber")
 
+// NASScope is one place an account may authenticate (FR-64 / C4). An empty
+// ServiceID means the whole NAS — every service instance on it.
+type NASScope struct {
+	NASID     string `json:"nas_id"`
+	ServiceID string `json:"nas_service_id"`
+}
+
+// scopeAllows reports whether an account carrying these scopes may authenticate
+// on this NAS through this service instance.
+//
+// An EMPTY set means any NAS: that is v1's behaviour, the column default, and
+// what a view built before scoping existed decodes to — so the empty case must
+// allow, never deny. A non-empty set allows if ANY row matches.
+func scopeAllows(scopes []NASScope, nasID, serviceID string) bool {
+	if len(scopes) == 0 {
+		return true
+	}
+	for _, s := range scopes {
+		if s.NASID != nasID {
+			continue
+		}
+		if s.ServiceID == "" || s.ServiceID == serviceID {
+			return true
+		}
+	}
+	return false
+}
+
 // AuthView is the cached policy read-model for one subscriber (contract C4,
 // amended 2026-07-09 for FR-58). PasswordEnc is the AES-GCM-sealed RADIUS
 // password (platform/crypto envelope) — decrypted only in the authorize path
@@ -49,11 +77,12 @@ type AuthView struct {
 	// case v1 could not express — a full subscriber with no PPPoE access, whose
 	// quota and session limit DO apply (unlike dual's hotspot leg).
 	ServiceType string `json:"service_type"`
-	// AssignedNASID/AssignedServiceID are the FR-64 effective scope the loader
-	// resolves with subscriber-over-profile precedence; "" means any (v1's
-	// behaviour). The engine rejects nas_not_allowed on a mismatch.
-	AssignedNASID     string `json:"assigned_nas_id"`
-	AssignedServiceID string `json:"assigned_service_id"`
+	// Scopes is the FR-64 effective scope the loader resolves with
+	// subscriber-over-profile precedence: every NAS/service the account may
+	// authenticate on. EMPTY MEANS ANY NAS (v1's behaviour, and the default for
+	// the overwhelming majority of accounts) — it is not "nowhere". The engine
+	// rejects nas_not_allowed when a non-empty set matches nothing.
+	Scopes []NASScope `json:"scopes"`
 	// StaticIP is the subscriber's fixed Framed-IP-Address (FR-16.2), empty
 	// when the subscriber uses a pool. NOTE: this field is NOT in the frozen
 	// C4 AuthView struct but the engine provably needs it — the FR-16.2 /

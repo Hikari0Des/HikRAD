@@ -69,7 +69,13 @@ check "AuthView carries ServiceType (replaces AllowHotspot)" grep -qE '^\s+Servi
 # what AllowHotspot used to mean (dual == the old true), which is exactly the
 # context a future reader needs, and a bare grep would forbid saying so.
 check "AllowHotspot removed from AuthView"                   sh -c '! grep -qE "^\s+AllowHotspot\s+bool" backend/internal/radius/authview.go'
-check "AuthView carries FR-64 assignment fields"            grep -q "AssignedNASID" backend/internal/radius/authview.go
+# FR-64 scope. Amended 2026-07-16 with C4: the scope is a SET (Scopes []NASScope),
+# not the single AssignedNASID/AssignedServiceID pair this leg originally checked.
+# Assert the field AND that the retired pair is gone, so the two shapes cannot
+# coexist and drift.
+check "AuthView carries the FR-64 scope set"                grep -qE '^\s+Scopes\s+\[\]NASScope' backend/internal/radius/authview.go
+check "AuthView's single-pair scope fields removed"         sh -c '! grep -qE "^\s+Assigned(NAS|Service)ID\s+string" backend/internal/radius/authview.go'
+check "an empty scope set means ANY NAS, not none"          grep -q "func TestScopeAllowsEmptySetMeansAnyNAS" backend/internal/radius/service_type_test.go
 check "nas_not_allowed reject reason added"                 grep -q 'ReasonNASNotAllowed = "nas_not_allowed"' backend/internal/radius/intents.go
 check "loader selects service_type"                        grep -q "service_type" backend/internal/subscribers/authview.go
 check "bulk action renamed set_service_type"               grep -q "set_service_type" backend/internal/subscribers/bulk.go

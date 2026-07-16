@@ -1,10 +1,11 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { I18nProvider } from '@hikrad/shared'
 import en from '@hikrad/shared/locales/en/panel.json'
 
-import { NasScopePicker } from './NasScopePicker'
+import type { NasScope } from '../api/types'
+import { NasScopePicker, toggleScope } from './NasScopePicker'
 
 const fetchMock = vi.fn()
 
@@ -50,6 +51,23 @@ const NAS_LIST = {
       created_at: '2026-07-01T00:00:00Z',
       updated_at: '2026-07-01T00:00:00Z',
     },
+    {
+      id: 'nas-b',
+      name: 'Mansour tower',
+      ip: '10.0.0.2',
+      services: [],
+      vendor: 'mikrotik',
+      coa_port: 3799,
+      has_snmp: false,
+      ros_version: '7',
+      location: '',
+      enabled: true,
+      api_port: 8728,
+      api_user: '',
+      has_api_creds: false,
+      created_at: '2026-07-01T00:00:00Z',
+      updated_at: '2026-07-01T00:00:00Z',
+    },
   ],
 }
 
@@ -66,62 +84,92 @@ beforeEach(() => {
 
 afterEach(() => vi.unstubAllGlobals())
 
-function renderPicker(props: {
-  nasId: string
-  nasServiceId: string
-  onChange: (n: { nasId: string; nasServiceId: string }) => void
-}) {
+function renderPicker(props: { scopes: NasScope[]; onChange?: (n: NasScope[]) => void }) {
   return render(
     <I18nProvider>
-      <NasScopePicker {...props} />
+      <NasScopePicker scopes={props.scopes} onChange={props.onChange ?? (() => {})} />
     </I18nProvider>,
   )
 }
 
-it('defaults to "any NAS" — the v1 behaviour an unscoped account keeps', async () => {
-  renderPicker({ nasId: '', nasServiceId: '', onChange: () => {} })
-  await waitFor(() => expect(screen.getByText('Karrada tower')).toBeInTheDocument())
-  const [nasSel] = screen.getAllByRole('combobox')
-  expect((nasSel as HTMLSelectElement).value).toBe('')
-  expect(screen.getByText(en.nasScope.anyNas)).toBeInTheDocument()
+async function openMenu() {
+  fireEvent.click(await screen.findByText(en.nasScope.add))
+}
+
+// The most important thing this component can say. An empty selection is "any
+// NAS" (v1's behaviour, and what nearly every account has) — the opposite of
+// "nowhere", which is how an unlabelled empty list would read.
+it('says an empty selection means any NAS', async () => {
+  renderPicker({ scopes: [] })
+  await waitFor(() => expect(screen.getByText(en.nasScope.anyNas)).toBeInTheDocument())
 })
 
-// The service select is meaningless without a NAS, and the backend never stores
-// that pair — so it stays disabled until one is chosen.
-it('disables the service select until a NAS is picked', async () => {
-  renderPicker({ nasId: '', nasServiceId: '', onChange: () => {} })
-  await waitFor(() => expect(screen.getByText('Karrada tower')).toBeInTheDocument())
-  const [, svcSel] = screen.getAllByRole('combobox')
-  expect(svcSel).toBeDisabled()
-})
-
-it("lists the chosen NAS's service instances by label and kind", async () => {
-  renderPicker({ nasId: 'nas-a', nasServiceId: '', onChange: () => {} })
-  await waitFor(() => expect(screen.getByText('Subscribers (PPPoE)')).toBeInTheDocument())
+it('offers every NAS and its service instances, named by label and kind', async () => {
+  renderPicker({ scopes: [] })
+  await openMenu()
+  expect(screen.getByText('Karrada tower — every service')).toBeInTheDocument()
+  expect(screen.getByText('Mansour tower — every service')).toBeInTheDocument()
+  expect(screen.getByText('Subscribers (PPPoE)')).toBeInTheDocument()
   expect(screen.getByText('Lobby (Hotspot)')).toBeInTheDocument()
 })
 
-// The invariant the AuthView loader depends on: nas_service_id is never set
-// while nas_id is empty, because the loader reads the pair as a whole keyed on
-// nas_id and would silently ignore an orphaned service scope.
-it('clears the service when the NAS is cleared', async () => {
+// The whole point of the multi-select: two NASes at once, which the single
+// dropdown this replaced could not express.
+it('selects several NASes', async () => {
   const onChange = vi.fn()
-  renderPicker({ nasId: 'nas-a', nasServiceId: 'svc-lobby', onChange })
-  await waitFor(() => expect(screen.getByText('Lobby (Hotspot)')).toBeInTheDocument())
-
-  const [nasSel] = screen.getAllByRole('combobox')
-  fireEvent.change(nasSel, { target: { value: '' } })
-  expect(onChange).toHaveBeenCalledWith({ nasId: '', nasServiceId: '' })
+  renderPicker({ scopes: [{ nas_id: 'nas-a', nas_service_id: '' }], onChange })
+  await openMenu()
+  fireEvent.click(screen.getByText('Mansour tower — every service'))
+  expect(onChange).toHaveBeenCalledWith([
+    { nas_id: 'nas-a', nas_service_id: '' },
+    { nas_id: 'nas-b', nas_service_id: '' },
+  ])
 })
 
-// Same reason, the other direction: switching NAS must not keep the old NAS's
-// service id, which would be an unsatisfiable scope (rejects every login).
-it('clears the service when the NAS changes', async () => {
+it('shows each selected scope as a removable chip', async () => {
   const onChange = vi.fn()
-  renderPicker({ nasId: '', nasServiceId: '', onChange })
-  await waitFor(() => expect(screen.getByText('Karrada tower')).toBeInTheDocument())
+  renderPicker({ scopes: [{ nas_id: 'nas-a', nas_service_id: 'svc-lobby' }], onChange })
+  await waitFor(() => expect(screen.getByText('Lobby (Hotspot)')).toBeInTheDocument())
+  fireEvent.click(screen.getByLabelText('Remove Lobby (Hotspot)'))
+  expect(onChange).toHaveBeenCalledWith([])
+})
 
-  const [nasSel] = screen.getAllByRole('combobox')
-  fireEvent.change(nasSel, { target: { value: 'nas-a' } })
-  expect(onChange).toHaveBeenCalledWith({ nasId: 'nas-a', nasServiceId: '' })
+describe('toggleScope', () => {
+  it('adds and removes', () => {
+    const a = { nas_id: 'nas-a', nas_service_id: '' }
+    expect(toggleScope([], a)).toEqual([a])
+    expect(toggleScope([a], a)).toEqual([])
+  })
+
+  // Selecting the whole NAS supersedes its per-service picks: the NAS-wide entry
+  // already allows them, and leaving both would show a contradictory list.
+  it('choosing a whole NAS drops that NAS’s service scopes', () => {
+    const scopes = [
+      { nas_id: 'nas-a', nas_service_id: 'svc-lobby' },
+      { nas_id: 'nas-b', nas_service_id: 'svc-x' },
+    ]
+    expect(toggleScope(scopes, { nas_id: 'nas-a', nas_service_id: '' })).toEqual([
+      { nas_id: 'nas-b', nas_service_id: 'svc-x' },
+      { nas_id: 'nas-a', nas_service_id: '' },
+    ])
+  })
+
+  // ...and the reverse narrows, rather than doing nothing. A checkbox that
+  // visibly does nothing when clicked is worse than one that is disabled.
+  it('choosing a service on a whole-NAS selection narrows to that service', () => {
+    const scopes = [{ nas_id: 'nas-a', nas_service_id: '' }]
+    expect(toggleScope(scopes, { nas_id: 'nas-a', nas_service_id: 'svc-lobby' })).toEqual([
+      { nas_id: 'nas-a', nas_service_id: 'svc-lobby' },
+    ])
+  })
+
+  // A whole-NAS pick must not swallow another NAS's service scope — that would
+  // silently widen the other NAS from one zone to all of them.
+  it('does not touch another NAS’s scopes', () => {
+    const scopes = [{ nas_id: 'nas-b', nas_service_id: 'svc-x' }]
+    expect(toggleScope(scopes, { nas_id: 'nas-a', nas_service_id: '' })).toEqual([
+      { nas_id: 'nas-b', nas_service_id: 'svc-x' },
+      { nas_id: 'nas-a', nas_service_id: '' },
+    ])
+  })
 })

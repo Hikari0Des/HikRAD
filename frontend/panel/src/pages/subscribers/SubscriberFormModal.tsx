@@ -7,6 +7,7 @@ import type { ManagerView } from '../../api/managers'
 import { SERVICE_TYPES } from '../../api/types'
 import type {
   MacLockMode,
+  NasScope,
   Profile,
   ServiceType,
   Subscriber,
@@ -277,9 +278,8 @@ export function SubscriberFormModal({
           />
         </div>
         <NasScopePicker
-          nasId={form.nasId}
-          nasServiceId={form.nasServiceId}
-          onChange={({ nasId, nasServiceId }) => setForm((f) => ({ ...f, nasId, nasServiceId }))}
+          scopes={form.nasScopes}
+          onChange={(nasScopes) => setForm((f) => ({ ...f, nasScopes }))}
           errors={errors}
         />
       </div>
@@ -352,8 +352,7 @@ interface FormState {
   priceOverride: string
   disabledReason: string
   serviceType: ServiceType
-  nasId: string
-  nasServiceId: string
+  nasScopes: NasScope[]
 }
 
 function initialForm(s?: Subscriber): FormState {
@@ -377,8 +376,7 @@ function initialForm(s?: Subscriber): FormState {
     priceOverride: s?.price_override != null ? String(s.price_override) : '',
     disabledReason: s?.disabled_reason ?? '',
     serviceType: s?.service_type ?? 'pppoe',
-    nasId: s?.nas_id ?? '',
-    nasServiceId: s?.nas_service_id ?? '',
+    nasScopes: s?.nas_scopes ?? [],
   }
 }
 
@@ -399,10 +397,9 @@ function toWrite(f: FormState, editing: boolean): SubscriberWrite {
     disabled_reason: f.status === 'disabled' ? f.disabledReason || null : null,
     service_type: f.serviceType,
     whatsapp_opt_in: f.whatsappOptIn,
-    // '' is the API's explicit "any NAS" (it clears the column); null would be
-    // read as "field omitted" and leave the existing scope in place.
-    nas_id: f.nasId,
-    nas_service_id: f.nasServiceId,
+    // An empty array is the API's explicit "any NAS" (it clears the set);
+    // omitting the field would leave the existing scope in place.
+    nas_scopes: f.nasScopes,
     owner_manager_id: f.ownerId || null,
   }
   if (!editing) body.username = f.username

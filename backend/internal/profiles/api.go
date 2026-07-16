@@ -2,6 +2,7 @@ package profiles
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -36,26 +37,36 @@ type profileInput struct {
 	BurstTime      *string `json:"burst_time"`
 	RatePriority   *string `json:"rate_priority"`
 	MinRate        *string `json:"min_rate"`
-	// NASID/NASServiceID scope this profile's subscribers to a NAS / service
-	// instance (FR-64 / C9). null (or omitted) = any NAS.
-	NASID        *string `json:"nas_id"`
-	NASServiceID *string `json:"nas_service_id"`
+	// NASScopes lists every NAS / service instance this profile's subscribers may
+	// authenticate on (FR-64 / C9). An empty array (or omitted) = any NAS. The
+	// set is replaced wholesale.
+	NASScopes []radius.NASScope `json:"nas_scopes"`
 	// Archived is only honored on update (create always makes an active profile).
 	Archived bool `json:"archived"`
 }
 
-// nasScopeChanged reports whether an update moved the profile's FR-64
-// assignment. It decides whether the cached AuthViews MUST be invalidated even
-// under ?apply=next_renewal — see updateHandler.
+// nasScopeChanged reports whether an update moved the profile's FR-64 scope set.
+// It decides whether the cached AuthViews MUST be invalidated even under
+// ?apply=next_renewal — see updateHandler.
+//
+// Order-insensitive: the scope set is a set, and the panel may send it in any
+// order. Comparing slices positionally would report a spurious change on every
+// save and invalidate every subscriber's view for nothing.
 func nasScopeChanged(before Profile, after Profile) bool {
-	return !samePtr(before.NASID, after.NASID) || !samePtr(before.NASServiceID, after.NASServiceID)
-}
-
-func samePtr(a, b *string) bool {
-	if a == nil || b == nil {
-		return a == b
+	if len(before.NASScopes) != len(after.NASScopes) {
+		return true
 	}
-	return *a == *b
+	seen := make(map[radius.NASScope]int, len(before.NASScopes))
+	for _, s := range before.NASScopes {
+		seen[s]++
+	}
+	for _, s := range after.NASScopes {
+		seen[s]--
+		if seen[s] < 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // validate performs the cross-field checks the struct tags cannot express and
@@ -152,13 +163,57 @@ func (m *Module) createHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	in.Archived = false
-	p, err := insertProfile(r.Context(), m.db, in)
+
+	scopes, fe, err := m.normalizeScopes(r.Context(), in.NASScopes)
+	if err != nil {
+		m.internalError(w, "validate nas scopes", err)
+		return
+	}
+	if len(fe) > 0 {
+		httpapi.Error(w, http.StatusUnprocessableEntity, "validation_failed", "request validation failed", fe...)
+		return
+	}
+
+	// Row + scope set commit together: a profile that landed without its scopes
+	// would authorize its subscribers on every NAS.
+	tx, err := m.db.Begin(r.Context())
+	if err != nil {
+		m.internalError(w, "begin create", err)
+		return
+	}
+	defer func() { _ = tx.Rollback(r.Context()) }()
+
+	p, err := insertProfile(r.Context(), tx, in)
 	if err != nil {
 		m.internalError(w, "create", err)
 		return
 	}
+	if err := radius.ReplaceScopes(r.Context(), tx, radius.ProfileScopes, p.ID, scopes); err != nil {
+		m.internalError(w, "create nas scopes", err)
+		return
+	}
+	if err := tx.Commit(r.Context()); err != nil {
+		m.internalError(w, "commit create", err)
+		return
+	}
+	p.NASScopes = orEmptyScopes(scopes)
 	_ = auth.Audit(r.Context(), "profile.create", "profile", p.ID, nil, p)
 	httpapi.JSON(w, http.StatusCreated, p)
+}
+
+// normalizeScopes dedupes and validates a requested FR-64 scope set. An error is
+// infrastructure failure; the field errors are per-entry.
+func (m *Module) normalizeScopes(ctx context.Context, in []radius.NASScope) ([]radius.NASScope, []httpapi.FieldError, error) {
+	scopes := radius.DedupeScopes(in)
+	bad, err := radius.ValidateScopes(ctx, m.db, scopes)
+	if err != nil {
+		return nil, nil, err
+	}
+	fe := make([]httpapi.FieldError, 0, len(bad))
+	for i, msg := range bad {
+		fe = append(fe, httpapi.FieldError{Field: fmt.Sprintf("nas_scopes.%d", i), Message: msg})
+	}
+	return scopes, fe, nil
 }
 
 // applyResult is the extra payload returned when an edit is applied immediately:
@@ -190,11 +245,37 @@ func (m *Module) updateHandler(w http.ResponseWriter, r *http.Request) {
 		m.internalError(w, "get for update", err)
 		return
 	}
-	after, err := updateProfile(r.Context(), m.db, id, in)
+	scopes, fe, err := m.normalizeScopes(r.Context(), in.NASScopes)
+	if err != nil {
+		m.internalError(w, "validate nas scopes", err)
+		return
+	}
+	if len(fe) > 0 {
+		httpapi.Error(w, http.StatusUnprocessableEntity, "validation_failed", "request validation failed", fe...)
+		return
+	}
+
+	tx, err := m.db.Begin(r.Context())
+	if err != nil {
+		m.internalError(w, "begin update", err)
+		return
+	}
+	defer func() { _ = tx.Rollback(r.Context()) }()
+
+	after, err := updateProfile(r.Context(), tx, id, in)
 	if err != nil {
 		m.internalError(w, "update", err)
 		return
 	}
+	if err := radius.ReplaceScopes(r.Context(), tx, radius.ProfileScopes, id, scopes); err != nil {
+		m.internalError(w, "update nas scopes", err)
+		return
+	}
+	if err := tx.Commit(r.Context()); err != nil {
+		m.internalError(w, "commit update", err)
+		return
+	}
+	after.NASScopes = orEmptyScopes(scopes)
 	_ = auth.Audit(r.Context(), "profile.update", "profile", id, before, after)
 
 	// apply=now (default) pushes the change to existing users immediately:

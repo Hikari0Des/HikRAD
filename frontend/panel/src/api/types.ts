@@ -19,6 +19,19 @@ export type ServiceType = 'pppoe' | 'hotspot' | 'dual'
 /** Every service type, in the order the panel offers them. */
 export const SERVICE_TYPES: ServiceType[] = ['pppoe', 'hotspot', 'dual']
 
+/**
+ * FR-64: one place an account may authenticate. An EMPTY `nas_service_id` means
+ * the whole NAS — every service instance on it. (The backend serializes the
+ * whole-NAS case as `""`, not null.)
+ *
+ * An account carries a SET of these. The set being EMPTY means "any NAS" (the
+ * v1 default that most accounts have), not "nowhere".
+ */
+export interface NasScope {
+  nas_id: string
+  nas_service_id: string
+}
+
 export interface Subscriber {
   id: string
   username: string
@@ -40,9 +53,8 @@ export interface Subscriber {
   /** FR-61: which service(s) this account may use. Replaced v1's allow_hotspot. */
   service_type: ServiceType
   whatsapp_opt_in: boolean
-  /** FR-64 scope: null = any NAS (the default). */
-  nas_id: string | null
-  nas_service_id: string | null
+  /** FR-64 scope: every NAS/service this account may authenticate on. [] = any NAS (the default). */
+  nas_scopes: NasScope[]
   pending_profile_id: string | null
   /** false = deliberately passwordless hotspot login (item 13). */
   has_password: boolean
@@ -70,9 +82,11 @@ export interface SubscriberWrite {
   disabled_reason?: string | null
   service_type?: ServiceType
   whatsapp_opt_in?: boolean
-  /** FR-64 scope; '' or null clears it back to "any NAS". */
-  nas_id?: string | null
-  nas_service_id?: string | null
+  /**
+   * FR-64 scope. An empty array clears it back to "any NAS"; omitting the field
+   * entirely leaves the existing set untouched.
+   */
+  nas_scopes?: NasScope[]
   /** true clears/omits the credential — the NAS then sends password="". */
   no_password?: boolean
 }
@@ -202,9 +216,8 @@ export interface Profile {
   quota_behavior: QuotaBehavior
   hotspot_rate_down_kbps: number | null
   hotspot_rate_up_kbps: number | null
-  /** FR-64 scope inherited by this profile's subscribers; null = any NAS. */
-  nas_id: string | null
-  nas_service_id: string | null
+  /** FR-64 scope inherited by this profile's subscribers; [] = any NAS. */
+  nas_scopes: NasScope[]
   archived: boolean
   created_at: string
   updated_at: string
@@ -227,9 +240,8 @@ export interface ProfileWrite {
   quota_behavior: QuotaBehavior
   hotspot_rate_down_kbps?: number | null
   hotspot_rate_up_kbps?: number | null
-  /** FR-64 scope; null clears it back to "any NAS". */
-  nas_id?: string | null
-  nas_service_id?: string | null
+  /** FR-64 scope; an empty array means "any NAS". */
+  nas_scopes?: NasScope[]
   archived?: boolean
 }
 

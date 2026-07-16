@@ -7,7 +7,7 @@ package subscribers
 
 import (
 	"context"
-	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -17,7 +17,6 @@ import (
 	"github.com/hikrad/hikrad/internal/httpapi"
 	"github.com/hikrad/hikrad/internal/platform/crypto"
 	"github.com/hikrad/hikrad/internal/radius"
-	"github.com/jackc/pgx/v5"
 )
 
 // writeInput is the create/update body. Pointers distinguish "field omitted"
@@ -43,11 +42,11 @@ type writeInput struct {
 	// allow_hotspot bool. Omitted on create defaults to pppoe.
 	ServiceType   *string `json:"service_type"`
 	WhatsappOptIn *bool   `json:"whatsapp_opt_in"`
-	// NASID/NASServiceID scope the account to one NAS / service instance
-	// (FR-64). An explicit empty string clears the scope back to "any NAS";
-	// omitted leaves it unchanged.
-	NASID        *string `json:"nas_id"`
-	NASServiceID *string `json:"nas_service_id"`
+	// NASScopes lists every NAS / service instance the account may authenticate
+	// on (FR-64). An explicit empty array clears the scope back to "any NAS";
+	// omitted (nil) leaves the existing set unchanged. The set is replaced
+	// wholesale — there is no add-one/remove-one verb.
+	NASScopes *[]radius.NASScope `json:"nas_scopes"`
 	// NoPassword (item 13): hotspot subscribers may deliberately have no
 	// password — the NAS then sends password="" and auth compares empty to
 	// empty. true seals an empty credential (and clears any existing one);
@@ -114,6 +113,11 @@ func (m *Module) listHandler(w http.ResponseWriter, r *http.Request) {
 	if len(items) > page.Limit {
 		items = items[:page.Limit]
 		next = httpapi.EncodeCursor(items[len(items)-1].ID)
+	}
+	// Attach after trimming to the page: the +1 lookahead row is discarded.
+	if err := attachScopes(r.Context(), m.db, items); err != nil {
+		m.internalError(w, "list nas scopes", err)
+		return
 	}
 	httpapi.JSON(w, http.StatusOK, httpapi.NewListResponse(items, next))
 }
@@ -184,18 +188,28 @@ func (m *Module) createHandler(w http.ResponseWriter, r *http.Request) {
 		serviceType = *in.ServiceType
 	}
 
-	s, err := scanSubscriber(m.db.QueryRow(r.Context(),
+	// The subscriber and its FR-64 scope set commit together: a subscriber that
+	// landed without its scopes would authenticate on every NAS, which is the
+	// widening this feature exists to prevent.
+	tx, err := m.db.Begin(r.Context())
+	if err != nil {
+		m.internalError(w, "begin create", err)
+		return
+	}
+	defer func() { _ = tx.Rollback(r.Context()) }()
+
+	s, err := scanSubscriber(tx.QueryRow(r.Context(),
 		`INSERT INTO subscribers
 		   (username, password_enc, name, phone, address, notes, status, profile_id,
 		    owner_manager_id, expires_at, mac_lock_mode, static_ip, session_limit_override,
 		    rate_override, price_override, disabled_reason, service_type, whatsapp_opt_in,
-		    nas_id, nas_service_id, has_password, quota_cycle_anchor)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8::uuid,$9::uuid,$10,$11,$12::inet,$13,$14,$15,$16,$17,$18,$19::uuid,$20::uuid,$21, now())
+		    has_password, quota_cycle_anchor)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8::uuid,$9::uuid,$10,$11,$12::inet,$13,$14,$15,$16,$17,$18,$19, now())
 		 RETURNING `+columns,
 		in.Username, enc, in.Name, norm.phonePtr, in.Address, in.Notes, status, in.ProfileID,
 		owner, in.ExpiresAt, macMode, norm.staticIP, in.SessionLimitOverride,
 		in.RateOverride, in.PriceOverride, in.DisabledReason, serviceType,
-		boolOr(in.WhatsappOptIn, false), norm.nasID, norm.nasServiceID, !noPassword))
+		boolOr(in.WhatsappOptIn, false), !noPassword))
 	if err != nil {
 		if isUniqueViolation(err) {
 			httpapi.Error(w, http.StatusConflict, "conflict", "username already exists")
@@ -209,6 +223,15 @@ func (m *Module) createHandler(w http.ResponseWriter, r *http.Request) {
 		m.internalError(w, "create", err)
 		return
 	}
+	if err := radius.ReplaceScopes(r.Context(), tx, radius.SubscriberScopes, s.ID, norm.nasScopes); err != nil {
+		m.internalError(w, "create nas scopes", err)
+		return
+	}
+	if err := tx.Commit(r.Context()); err != nil {
+		m.internalError(w, "commit create", err)
+		return
+	}
+	s.NASScopes = orEmptyScopes(norm.nasScopes)
 	_ = auth.Audit(r.Context(), "subscriber.create", "subscriber", s.ID, nil, s)
 	_ = radius.InvalidatePolicy(s.ID)
 	httpapi.JSON(w, http.StatusCreated, s)
@@ -271,7 +294,15 @@ func (m *Module) updateHandler(w http.ResponseWriter, r *http.Request) {
 		hasPasswordArg = boolPtr(true)
 	}
 
-	after, err := scanSubscriber(m.db.QueryRow(r.Context(),
+	// Row + scope set commit together (see createHandler).
+	tx, err := m.db.Begin(r.Context())
+	if err != nil {
+		m.internalError(w, "begin update", err)
+		return
+	}
+	defer func() { _ = tx.Rollback(r.Context()) }()
+
+	after, err := scanSubscriber(tx.QueryRow(r.Context(),
 		`UPDATE subscribers SET
 		    password_enc          = COALESCE($2, password_enc),
 		    name                  = CASE WHEN $3::bool THEN $4 ELSE name END,
@@ -290,9 +321,7 @@ func (m *Module) updateHandler(w http.ResponseWriter, r *http.Request) {
 		    disabled_reason       = CASE WHEN $27::bool THEN $28 ELSE disabled_reason END,
 		    service_type          = COALESCE($29, service_type),
 		    whatsapp_opt_in       = COALESCE($30, whatsapp_opt_in),
-		    nas_id                = CASE WHEN $31::bool THEN $32::uuid ELSE nas_id END,
-		    nas_service_id        = CASE WHEN $33::bool THEN $34::uuid ELSE nas_service_id END,
-		    has_password          = COALESCE($35, has_password)
+		    has_password          = COALESCE($31, has_password)
 		  WHERE id = $1::uuid
 		 RETURNING `+columns,
 		id, encArg,
@@ -309,8 +338,6 @@ func (m *Module) updateHandler(w http.ResponseWriter, r *http.Request) {
 		in.PriceOverride != nil, in.PriceOverride,
 		in.DisabledReason != nil, in.DisabledReason,
 		nilIfEmpty(in.ServiceType), in.WhatsappOptIn,
-		norm.writeNASScope, norm.nasID,
-		norm.writeNASScope, norm.nasServiceID,
 		hasPasswordArg))
 	if err != nil {
 		if isForeignKeyViolation(err) {
@@ -319,6 +346,21 @@ func (m *Module) updateHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		m.internalError(w, "update", err)
+		return
+	}
+	// A request that never mentioned nas_scopes leaves the set alone; one that
+	// sent an empty array clears it to "any NAS".
+	if norm.writeNASScope {
+		if err := radius.ReplaceScopes(r.Context(), tx, radius.SubscriberScopes, id, norm.nasScopes); err != nil {
+			m.internalError(w, "update nas scopes", err)
+			return
+		}
+		after.NASScopes = orEmptyScopes(norm.nasScopes)
+	} else {
+		after.NASScopes = before.NASScopes
+	}
+	if err := tx.Commit(r.Context()); err != nil {
+		m.internalError(w, "commit update", err)
 		return
 	}
 	_ = auth.Audit(r.Context(), "subscriber.update", "subscriber", id, before, after)
@@ -365,12 +407,10 @@ type normalized struct {
 	staticIP    *string
 	macLockMode *string
 	owner       *string
-	// nasID/nasServiceID are the resolved FR-64 scope; writeNASScope reports
-	// whether the request touched it at all (false = leave both columns alone
-	// on update). nasID is filled in from nas_service_id's parent when only the
-	// service was supplied (C4).
-	nasID         *string
-	nasServiceID  *string
+	// nasScopes is the validated FR-64 scope set; writeNASScope reports whether
+	// the request touched it at all (false = leave the existing set alone on
+	// update). An empty set with writeNASScope true clears to "any NAS".
+	nasScopes     []radius.NASScope
 	writeNASScope bool
 }
 
@@ -448,7 +488,10 @@ func (m *Module) normalizeWrite(ctx context.Context, in *writeInput, excludeID s
 		}
 	}
 
-	if nasFE := m.normalizeNASScope(ctx, in.NASID, in.NASServiceID, &out); nasFE != nil {
+	if nasFE, err := m.normalizeNASScopes(ctx, in.NASScopes, &out); err != nil {
+		m.log.Error("subscribers: nas scope check", "error", err)
+		add("nas_scopes", "could not validate the NAS scope")
+	} else {
 		fe = append(fe, nasFE...)
 	}
 
@@ -458,65 +501,29 @@ func (m *Module) normalizeWrite(ctx context.Context, in *writeInput, excludeID s
 	return out, fe
 }
 
-// normalizeNASScope validates the FR-64 assignment pair and resolves the C4
-// "service without a NAS implies its parent" rule.
+// normalizeNASScopes validates the FR-64 scope set (C4). A nil set means the
+// request did not mention scopes at all, so an update leaves the existing set
+// alone; a present-but-empty array is an explicit "any NAS".
 //
-// It maintains one invariant the AuthView loader depends on: nas_service_id is
-// never set while nas_id is NULL. The loader reads the assignment pair whole,
-// keyed on nas_id — so a service-without-NAS row would have its service scope
-// silently ignored and fall back to the profile's. Both halves therefore always
-// move together.
-//
-// It also refuses a pair whose service belongs to a *different* NAS: that scope
-// is unsatisfiable (no request can match both halves), so it would reject every
-// login the operator meant to permit. Failing at write time turns an invisible
-// outage into a form error.
-func (m *Module) normalizeNASScope(ctx context.Context, nasID, serviceID *string, out *normalized) []httpapi.FieldError {
-	var fe []httpapi.FieldError
-	add := func(f, msg string) { fe = append(fe, httpapi.FieldError{Field: f, Message: msg}) }
-
-	if nasID == nil && serviceID == nil {
-		return fe // untouched: update leaves both columns alone.
+// Validation lives in the radius package because it is the same check for
+// subscribers and profiles against tables neither owns. An error return is
+// infrastructure failure, distinct from the per-entry messages.
+func (m *Module) normalizeNASScopes(ctx context.Context, in *[]radius.NASScope, out *normalized) ([]httpapi.FieldError, error) {
+	if in == nil {
+		return nil, nil
 	}
 	out.writeNASScope = true
-	// An empty string is an explicit "any NAS"; normalize it to a NULL column.
-	if nasID != nil && *nasID != "" {
-		out.nasID = nasID
-	}
-	if serviceID != nil && *serviceID != "" {
-		out.nasServiceID = serviceID
-	}
-	// Clearing the NAS clears the service with it — see the invariant above.
-	if out.nasID == nil && out.nasServiceID == nil {
-		return fe
-	}
+	out.nasScopes = radius.DedupeScopes(*in)
 
-	if out.nasServiceID == nil {
-		// NAS-wide scope, no instance pinned: nothing further to resolve.
-		return fe
-	}
-
-	// Read nas_services directly: it is B's table and exposes no by-id helper,
-	// mirroring how this package already resolves ip_pools names in SQL.
-	var parentNAS string
-	err := m.db.QueryRow(ctx, `SELECT nas_id::text FROM nas_services WHERE id = $1::uuid`, *out.nasServiceID).Scan(&parentNAS)
-	if errors.Is(err, pgx.ErrNoRows) {
-		add("nas_service_id", "unknown NAS service")
-		return fe
-	}
+	bad, err := radius.ValidateScopes(ctx, m.db, out.nasScopes)
 	if err != nil {
-		m.log.Error("subscribers: nas scope check", "error", err)
-		add("nas_service_id", "could not validate NAS service")
-		return fe
+		return nil, err
 	}
-	if out.nasID == nil {
-		out.nasID = &parentNAS // C4: a service without a NAS implies its parent.
-		return fe
+	fe := make([]httpapi.FieldError, 0, len(bad))
+	for i, msg := range bad {
+		fe = append(fe, httpapi.FieldError{Field: fmt.Sprintf("nas_scopes.%d", i), Message: msg})
 	}
-	if *out.nasID != parentNAS {
-		add("nas_service_id", "service does not belong to the selected NAS")
-	}
-	return fe
+	return fe, nil
 }
 
 func boolOr(p *bool, d bool) bool {

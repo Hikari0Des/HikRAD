@@ -20,8 +20,10 @@ Commit in reviewable chunks along these boundaries (schema+model / engine / wiza
 |---|---|
 | `0500_subscriber_service_type` | `subscribers.service_type text NOT NULL DEFAULT 'pppoe' CHECK (service_type IN ('pppoe','hotspot','dual'))`; backfill `allow_hotspot=false→'pppoe'`, `true→'dual'`; **then** `DROP COLUMN allow_hotspot`. |
 | `0501_nas_services` | `nas_services` table (C3); backfill one row per NAS from `nas.type`; **then** `ALTER TABLE nas DROP COLUMN type`. |
-| `0502_nas_scoping` | `subscribers.nas_id/nas_service_id` + `profiles.nas_id/nas_service_id` (nullable, `ON DELETE SET NULL`) + supporting indexes. |
-| `0503`–`0519` | reserved (extra indexes / follow-ups discovered during build). |
+| `0502_nas_scoping` | `subscribers.nas_id/nas_service_id` + `profiles.nas_id/nas_service_id` (nullable, `ON DELETE SET NULL`) + supporting indexes. **Superseded by 0504** — see the C4 amendment. |
+| `0503_sessions_nas_service` | `sessions.nas_service_id` (C7 seam: accounting attributes each session to its instance). |
+| `0504_nas_scope_multi` | `subscriber_nas_scopes` / `profile_nas_scopes` join tables (C4 amendment: the scope is a SET); backfill from 0502's pair; **then** drop those four columns. |
+| `0505`–`0519` | reserved (extra indexes / follow-ups discovered during build). |
 
 The 0500 and 0501 add→backfill→drop sequences are single migrations because all Go reads switch to the new column in the same phase/binary (on-prem single-version deploy; migrations run at the new binary's boot).
 
@@ -60,19 +62,44 @@ CREATE INDEX nas_services_nas_idx ON nas_services (nas_id);
 ```
 Invariant: every NAS has ≥ 1 service row (enforced in CRUD, not schema — delete-last-service is refused by the API). `nasView` JSON drops `type`, adds `services: [{id, service, label, interface_note, ip_pool_id, ros_server_name, enabled}]`.
 
-### C4. Subscriber/profile NAS-assignment columns (FR-64)
-`subscribers` and `profiles` each get `nas_id uuid NULL REFERENCES nas(id) ON DELETE SET NULL` and `nas_service_id uuid NULL REFERENCES nas_services(id) ON DELETE SET NULL`. Nullable pair = **any NAS** (v1 default). `nas_service_id` set without `nas_id` implies its parent NAS.
+### C4. Subscriber/profile NAS scoping (FR-64)
+
+**AMENDED 2026-07-16 (owner-requested): the scope is a SET, not a single pair.**
+
+*Original (0502, shipped then superseded):* `subscribers` and `profiles` each got `nas_id uuid NULL REFERENCES nas(id) ON DELETE SET NULL` and `nas_service_id uuid NULL REFERENCES nas_services(id) ON DELETE SET NULL`; nullable pair = any NAS; `nas_service_id` without `nas_id` implied its parent.
+
+*Why it changed:* one pair can only say "this NAS" or "everywhere". It cannot express the shape operators actually have — a subscriber allowed on two towers, or on two of a router's three hotspot zones. Faced with that, the honest answer was always "everywhere", so the scope went unused and FR-64 bought nothing.
+
+*Amended contract (0504):* two join tables, one row per allowed pair:
+
+```sql
+subscriber_nas_scopes (subscriber_id, nas_id NOT NULL, nas_service_id NULL, created_at)
+profile_nas_scopes    (profile_id,    nas_id NOT NULL, nas_service_id NULL, created_at)
+```
+
+- `nas_service_id NULL` = **the whole NAS** (every service instance on it).
+- **No rows = any NAS** (v1's default, and what every migrated row has). Empty means *anywhere*, never *nowhere* — inverting this locks out the entire subscriber base at once, so it is asserted directly (`TestScopeAllowsEmptySetMeansAnyNAS`).
+- `nas_id ON DELETE CASCADE` (the scope row goes; consistent with 0502's precedent that deleting a NAS must never delete subscribers); `nas_service_id ON DELETE SET NULL` (deleting one zone degrades "only the Lobby zone" to "this NAS" — strictly narrower than dropping the row, which would widen to any NAS).
+- **Not unique** on `(owner, nas_id, nas_service_id)`: the SET NULL above can legitimately collide, and a unique index would turn that into a failed service delete. Writes replace the whole set and dedupe first (`radius.DedupeScopes`), which also collapses a whole-NAS scope over its per-service scopes on the same NAS.
+- 0502's four columns are backfilled and **dropped**, so the pair and the set can never disagree.
 
 ### C5. AuthView deltas (contract C4 amendment)
 ```go
 type AuthView struct {
     // ... all existing fields UNCHANGED ...
     ServiceType       string  `json:"service_type"`         // pppoe|hotspot|dual   (replaces AllowHotspot)
-    AssignedNASID     string  `json:"assigned_nas_id"`      // FR-64 effective (subscriber-over-profile), "" = any
-    AssignedServiceID string  `json:"assigned_service_id"`  // FR-64 effective, "" = any service
+    Scopes            []NASScope `json:"scopes"`            // FR-64 effective (subscriber-over-profile), EMPTY = any NAS
     ServicePoolName   string  `json:"service_pool_name"`    // FR-64.3 fallback pool of the resolved instance (loader fills per-request or engine resolves)
 }
+
+// NASScope is one place an account may authenticate; empty ServiceID = whole NAS.
+type NASScope struct {
+    NASID     string `json:"nas_id"`
+    ServiceID string `json:"nas_service_id"`
+}
 ```
+
+`AssignedNASID`/`AssignedServiceID` (the original C5 fields) are **replaced by `Scopes`** per the C4 amendment above. Precedence is unchanged and still **subscriber-over-profile taken WHOLE**: a subscriber with any scope row of their own uses only their own set, never a union with the profile's.
 - The loader computes the **effective** assignment with subscriber-over-profile precedence: if the subscriber's `nas_id` is set, use the subscriber pair whole; else use the profile pair.
 - `ServicePoolName` note: the resolved *service instance* is only known at auth time (depends on the request), so the engine resolves the instance's pool from `nas_services.ip_pool_id` **after** service-instance resolution (C7), not the loader. The AuthView field is populated by the engine for the reply; the loader leaves it empty. (Implementer may instead pass the resolved `nas_services` row directly into `replyIntents` — either is contract-conformant as long as C6's pool precedence holds.)
 
@@ -99,7 +126,7 @@ NASPortID       string `json:"nas_port_id"`
    | `pppoe` | accept-path | **reject `service_not_allowed`** |
    | `hotspot` | **reject `service_not_allowed`** | accept-path |
    | `dual` | accept-path | accept-path (FR-58 semantics) |
-5. ▶ **NAS scope (FR-64)** — after service-type, before credentials: if `AssignedNASID != ""` and it ≠ the authenticating NAS's id → reject `nas_not_allowed`; if `AssignedServiceID != ""` and it ≠ the resolved instance's id → reject `nas_not_allowed`. Empty = any.
+5. ▶ **NAS scope (FR-64)** — after service-type, before credentials (chain position unchanged): an **empty** `Scopes` accepts (any NAS); otherwise accept if **any** scope row matches — its `NASID` = the authenticating NAS's id **and** (`ServiceID` empty **or** = the resolved instance's id). No match → reject `nas_not_allowed`. (Amended with C4: was a single-pair comparison.)
 6. Credentials — unchanged (skipped for voucher).
 7. Status disabled — unchanged.
 8. Expiry (FR-9) — unchanged (applies to hotspot-only exactly like pppoe).
@@ -132,14 +159,14 @@ ResolveService(q ServiceQuery, candidates []ServiceInstance) (ServiceInstance, b
 `GET /api/v1/nas/{id}/config-snippet?ros=6|7` renders **all enabled `nas_services`** in one snippet: one shared `/radius` + PPPoE AAA block when any pppoe service is enabled + one `/ip hotspot` block per enabled hotspot service (walled-garden from branding, FR-18). `vendor.SnippetInput` gains `Services []ServiceSnippet{Service, Label, ROSServerName, PoolName, Interface}`; the adapter loops. ROS 6/7 tabs preserved. FR-56 auto-setup (`PlanAutoSetup`) plans each service's entries additively.
 
 ### C9. REST/API deltas (frozen shapes)
-- **Subscriber create/update:** `allow_hotspot` (bool) → `service_type` (`"pppoe"|"hotspot"|"dual"`, default `"pppoe"`); add `nas_id`, `nas_service_id` (nullable strings). Detail/list responses expose `service_type` + assignment.
+- **Subscriber create/update:** `allow_hotspot` (bool) → `service_type` (`"pppoe"|"hotspot"|"dual"`, default `"pppoe"`); add `nas_scopes: [{nas_id, nas_service_id}]` (C4 amendment — was `nas_id`/`nas_service_id`). An **empty array clears** the scope to "any NAS"; an **omitted field leaves it unchanged**. Responses always emit an array, never null. Per-entry validation errors are `nas_scopes.<i>`.
 - **Bulk:** action `set_allow_hotspot` → **`set_service_type`** (param `service_type`); audit action string `subscriber.bulk_set_service_type`.
-- **Profile create/update:** add `nas_id`, `nas_service_id` (nullable).
+- **Profile create/update:** add `nas_scopes: [{nas_id, nas_service_id}]` (C4 amendment — was `nas_id`/`nas_service_id`). Same semantics as the subscriber's.
 - **NAS create/update:** drop top-level `type`; add `services: [ {service, label, interface_note, ip_pool_id, ros_server_name, enabled} ]` (≥1 required; delete-last refused). `nasView` returns `services[]`. Optional convenience sub-routes may be added but the embedded array is the frozen contract.
 - **List filters:** `?service_type=pppoe|hotspot|dual` on `GET /subscribers` (and, coordinated, live sessions/reports).
 
 ### C10. Panel UX (FR-63)
-Subscriber form: PPPoE/Hotspot/Both radio (persists `service_type`) + NAS/service assignment pickers (nullable = "Any NAS"). Profile form: NAS/service assignment pickers. NAS page: services sub-list (per-service status + session count) with per-service wizard steps. **Subscriber list stays UNIFIED** (owner-confirmed 2026-07-16): hotspot-only accounts are ordinary subscribers in the one list, discovered via a `service_type` filter chip — there is deliberately no separate "Hotspot users" section (that would re-create the SAS4 split the FR-61 brief set out to remove, and Sara's ≤3-click flow wants one place to search). Live sessions filter by `service_type` the same way. New reject reason `nas_not_allowed` localized in the FR-39 debug reason map. **All new strings in `frontend/shared/locales/{en,ar,ku}/*.json`; `npm run i18n:check` CI-fatal.**
+Subscriber form: PPPoE/Hotspot/Both radio (persists `service_type`) + a **multi-select** NAS/service scope picker (amended 2026-07-16 with C4, owner-requested — was two linked single-selects). Profile form: the same picker. The picker lists every NAS ("— every service") with its service instances beneath it, renders the selection as removable chips, and **states the empty case in words** ("Any NAS — logins are allowed everywhere") rather than leaving a blank list to be read as "nowhere". Selecting a whole NAS collapses that NAS's per-service picks, matching `radius.DedupeScopes` so what the operator sees is what is saved. NAS page: services sub-list (per-service status + session count) with per-service wizard steps. **Subscriber list stays UNIFIED** (owner-confirmed 2026-07-16): hotspot-only accounts are ordinary subscribers in the one list, discovered via a `service_type` filter chip — there is deliberately no separate "Hotspot users" section (that would re-create the SAS4 split the FR-61 brief set out to remove, and Sara's ≤3-click flow wants one place to search). Live sessions filter by `service_type` the same way. New reject reason `nas_not_allowed` localized in the FR-39 debug reason map. **All new strings in `frontend/shared/locales/{en,ar,ku}/*.json`; `npm run i18n:check` CI-fatal.**
 
 ### C11. Cache invalidation fan-out (FR-64.4)
 `radius.InvalidatePolicy(subscriberID)` fires on subscriber `service_type`/assignment change (existing per-mutation call covers it). A **profile** assignment change must fan out to that profile's subscribers — add a `radius.InvalidatePolicyByProfile(profileID)` (or loop subscriber ids) invoked from the profile-update path. Frozen: a profile assignment change invalidates every affected cached AuthView.

@@ -37,7 +37,13 @@ import (
 const lastV1Migration = 412
 
 // headMigration is the highest migration this phase adds.
-const headMigration = 503
+const headMigration = 504
+
+// preScopeSetMigration is 0503 — the last version at which the FR-64 scope was
+// still the single (nas_id, nas_service_id) pair on the row, before 0504 moved
+// it to a set. TestNASScopeSetMigrationLossless migrates to exactly this, writes
+// pair-shaped rows, then upgrades.
+const preScopeSetMigration = 503
 
 // migrateURL rewrites a postgres:// URL to the pgx5:// scheme golang-migrate's
 // driver registers under, mirroring platform.Migrate.
@@ -259,15 +265,159 @@ func TestServiceTypeMigrationLossless(t *testing.T) {
 		t.Error("nas.type still exists after 0501")
 	}
 
-	// 4f. FR-64 scope defaults to "any NAS" for every migrated row: nullable,
-	// no backfill, which is exactly v1's behaviour.
+	// 4f. FR-64 scope defaults to "any NAS" for every migrated row: no v1 row had
+	// a scope, so none may come out with one. A migrated subscriber that landed
+	// scoped would silently stop authenticating everywhere they used to.
 	var scoped int
-	if err := pool.QueryRow(ctx,
-		`SELECT count(*) FROM subscribers WHERE nas_id IS NOT NULL OR nas_service_id IS NOT NULL`).
-		Scan(&scoped); err != nil {
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM subscriber_nas_scopes`).Scan(&scoped); err != nil {
 		t.Fatal(err)
 	}
 	if scoped != 0 {
 		t.Errorf("%d migrated subscribers came out NAS-scoped; every v1 row must stay any-NAS", scoped)
 	}
+}
+
+// TestNASScopeSetMigrationLossless covers 0504, which has the same
+// unrecoverable shape as 0500/0501: it backfills the single (nas_id,
+// nas_service_id) pair into the scope table and then DROPS the columns. A
+// mistake silently widens a deliberately-restricted account to every NAS on the
+// operator's network, which nothing later can detect — the old value is gone.
+func TestNASScopeSetMigrationLossless(t *testing.T) {
+	dbURL := withScratchDB(t)
+	ctx := context.Background()
+
+	// 1. Stop at 0503, where the scope is still a pair of columns.
+	m := migrator(t, dbURL)
+	if err := m.Migrate(preScopeSetMigration); err != nil {
+		t.Fatalf("migrate to %d: %v", preScopeSetMigration, err)
+	}
+	if srcErr, dbErr := m.Close(); srcErr != nil || dbErr != nil {
+		t.Fatalf("close migrator: %v / %v", srcErr, dbErr)
+	}
+
+	pool, err := pgxpool.New(ctx, dbURL)
+	if err != nil {
+		t.Fatalf("connect scratch: %v", err)
+	}
+	defer pool.Close()
+
+	// 2. A NAS with two service instances, and subscribers scoped three ways:
+	// unscoped, NAS-wide, and pinned to one instance.
+	var nasID, svcA, svcB string
+	if err := pool.QueryRow(ctx,
+		`INSERT INTO nas (name, ip, secret_enc) VALUES ('scope-nas', '10.78.0.1'::inet, '\x01'::bytea) RETURNING id::text`).
+		Scan(&nasID); err != nil {
+		t.Fatalf("insert nas: %v", err)
+	}
+	for _, s := range []struct {
+		name string
+		out  *string
+	}{{"lobby", &svcA}, {"cafe", &svcB}} {
+		if err := pool.QueryRow(ctx,
+			`INSERT INTO nas_services (nas_id, service, ros_server_name, enabled)
+			 VALUES ($1::uuid, 'hotspot', $2, true) RETURNING id::text`, nasID, s.name).Scan(s.out); err != nil {
+			t.Fatalf("insert service %s: %v", s.name, err)
+		}
+	}
+
+	type want struct {
+		nasID, serviceID string
+	}
+	subs := []struct {
+		username string
+		nasID    *string
+		svcID    *string
+		want     []want // the scope rows expected after the migration
+	}{
+		{"scope_any", nil, nil, nil},
+		{"scope_nas_wide", &nasID, nil, []want{{nasID, ""}}},
+		{"scope_pinned", &nasID, &svcA, []want{{nasID, svcA}}},
+	}
+	for _, s := range subs {
+		if _, err := pool.Exec(ctx,
+			`INSERT INTO subscribers (username, password_enc, status, nas_id, nas_service_id)
+			 VALUES ($1, '\x0102'::bytea, 'active', $2::uuid, $3::uuid)`,
+			s.username, s.nasID, s.svcID); err != nil {
+			t.Fatalf("insert %s: %v", s.username, err)
+		}
+	}
+
+	// 3. Upgrade.
+	m2 := migrator(t, dbURL)
+	if err := m2.Migrate(headMigration); err != nil {
+		t.Fatalf("migrate to %d: %v", headMigration, err)
+	}
+	if srcErr, dbErr := m2.Close(); srcErr != nil || dbErr != nil {
+		t.Fatalf("close migrator: %v / %v", srcErr, dbErr)
+	}
+
+	// 4a. Every pair became exactly its scope row — and the unscoped subscriber
+	// got none, staying "any NAS" rather than being pinned to something.
+	for _, s := range subs {
+		rows, err := pool.Query(ctx,
+			`SELECT sc.nas_id::text, COALESCE(sc.nas_service_id::text, '')
+			   FROM subscriber_nas_scopes sc
+			   JOIN subscribers s ON s.id = sc.subscriber_id
+			  WHERE s.username = $1`, s.username)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var got []want
+		for rows.Next() {
+			var w want
+			if err := rows.Scan(&w.nasID, &w.serviceID); err != nil {
+				t.Fatal(err)
+			}
+			got = append(got, w)
+		}
+		rows.Close()
+		if len(got) != len(s.want) {
+			t.Errorf("%s: %d scope rows after migration, want %d (%+v)", s.username, len(got), len(s.want), got)
+			continue
+		}
+		for i := range got {
+			if got[i] != s.want[i] {
+				t.Errorf("%s: scope %d = %+v, want %+v", s.username, i, got[i], s.want[i])
+			}
+		}
+	}
+
+	// 4b. The pair columns are gone on both tables (the drop half of 0504), so
+	// they cannot drift out of sync with the scope table.
+	for _, tbl := range []string{"subscribers", "profiles"} {
+		for _, col := range []string{"nas_id", "nas_service_id"} {
+			var exists bool
+			if err := pool.QueryRow(ctx,
+				`SELECT EXISTS (SELECT 1 FROM information_schema.columns
+				                 WHERE table_name=$1 AND column_name=$2)`, tbl, col).Scan(&exists); err != nil {
+				t.Fatal(err)
+			}
+			if exists {
+				t.Errorf("%s.%s still exists after 0504", tbl, col)
+			}
+		}
+	}
+
+	// 4c. Deleting a service instance must degrade "only the Lobby zone" to
+	// "this NAS", NOT to "any NAS". Dropping the row instead of SET NULL would
+	// silently widen the account — the failure this whole feature prevents.
+	if _, err := pool.Exec(ctx, `DELETE FROM nas_services WHERE id = $1::uuid`, svcA); err != nil {
+		t.Fatalf("delete service: %v", err)
+	}
+	var nasIDAfter string
+	var svcAfter *string
+	if err := pool.QueryRow(ctx,
+		`SELECT sc.nas_id::text, sc.nas_service_id::text
+		   FROM subscriber_nas_scopes sc
+		   JOIN subscribers s ON s.id = sc.subscriber_id
+		  WHERE s.username = 'scope_pinned'`).Scan(&nasIDAfter, &svcAfter); err != nil {
+		t.Fatalf("the pinned subscriber's scope vanished when its service was deleted: %v", err)
+	}
+	if nasIDAfter != nasID {
+		t.Errorf("scope moved to NAS %s after the service was deleted, want %s", nasIDAfter, nasID)
+	}
+	if svcAfter != nil {
+		t.Errorf("nas_service_id = %v after its service was deleted, want NULL (whole-NAS)", *svcAfter)
+	}
+	_ = svcB
 }

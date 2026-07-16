@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/hikrad/hikrad/internal/auth"
+	"github.com/hikrad/hikrad/internal/radius"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -40,11 +41,12 @@ type Subscriber struct {
 	// allow_hotspot bool, which could not express a hotspot-only account.
 	ServiceType   string `json:"service_type"`
 	WhatsappOptIn bool   `json:"whatsapp_opt_in"`
-	// NASID/NASServiceID scope the account to one NAS / one service instance
-	// (FR-64), enforced at auth. Both nil = any NAS, the v1 behaviour.
-	NASID            *string `json:"nas_id"`
-	NASServiceID     *string `json:"nas_service_id"`
-	PendingProfileID *string `json:"pending_profile_id"`
+	// NASScopes lists every NAS / service instance the account may authenticate
+	// on (FR-64), enforced at auth. EMPTY = any NAS, the v1 behaviour and the
+	// default. Never nil in a response: an empty JSON array says "anywhere"
+	// unambiguously, where null invites a client to read it as "nowhere".
+	NASScopes        []radius.NASScope `json:"nas_scopes"`
+	PendingProfileID *string           `json:"pending_profile_id"`
 	// HasPassword is false for passwordless hotspot logins (item 13) — the
 	// credential column then seals an empty string and the portal refuses
 	// password login for the account.
@@ -58,7 +60,7 @@ type Subscriber struct {
 const columns = `id::text, username::text, name, phone, address, notes, status,
 	profile_id::text, owner_manager_id::text, expires_at, mac_lock_mode, learned_mac,
 	host(static_ip), session_limit_override, rate_override, price_override, disabled_reason,
-	service_type, whatsapp_opt_in, nas_id::text, nas_service_id::text,
+	service_type, whatsapp_opt_in,
 	pending_profile_id::text, has_password, created_at, updated_at`
 
 func scanSubscriber(row pgx.Row) (Subscriber, error) {
@@ -66,11 +68,15 @@ func scanSubscriber(row pgx.Row) (Subscriber, error) {
 	err := row.Scan(&s.ID, &s.Username, &s.Name, &s.Phone, &s.Address, &s.Notes, &s.Status,
 		&s.ProfileID, &s.OwnerManagerID, &s.ExpiresAt, &s.MacLockMode, &s.LearnedMac,
 		&s.StaticIP, &s.SessionLimitOverride, &s.RateOverride, &s.PriceOverride, &s.DisabledReason,
-		&s.ServiceType, &s.WhatsappOptIn, &s.NASID, &s.NASServiceID,
+		&s.ServiceType, &s.WhatsappOptIn,
 		&s.PendingProfileID, &s.HasPassword, &s.CreatedAt, &s.UpdatedAt)
 	if err != nil {
 		return Subscriber{}, err
 	}
+	// Scopes live in their own table and are attached by the caller; default to
+	// an empty set rather than nil so a row that is never enriched still
+	// serializes as "any NAS" instead of null.
+	s.NASScopes = []radius.NASScope{}
 	s.CreatedAt = s.CreatedAt.UTC()
 	s.UpdatedAt = s.UpdatedAt.UTC()
 	if s.ExpiresAt != nil {
@@ -97,8 +103,46 @@ func getByID(ctx context.Context, db *pgxpool.Pool, id string, scope *auth.Manag
 	if arg != nil {
 		args = append(args, arg)
 	}
-	return scanSubscriber(db.QueryRow(ctx,
+	s, err := scanSubscriber(db.QueryRow(ctx,
 		`SELECT `+columns+` FROM subscribers WHERE id = $1::uuid`+clause, args...))
+	if err != nil {
+		return Subscriber{}, err
+	}
+	scopes, err := radius.LoadScopes(ctx, db, radius.SubscriberScopes, s.ID)
+	if err != nil {
+		return Subscriber{}, err
+	}
+	s.NASScopes = orEmptyScopes(scopes)
+	return s, nil
+}
+
+// orEmptyScopes normalizes nil to an empty set. The panel reads "no scopes" as
+// "any NAS" (FR-64's default), and null would leave that to a client's guess.
+func orEmptyScopes(in []radius.NASScope) []radius.NASScope {
+	if in == nil {
+		return []radius.NASScope{}
+	}
+	return in
+}
+
+// attachScopes fills the NASScopes of a whole page in one query rather than one
+// per row — the list endpoints are the hot read path for a panel operator.
+func attachScopes(ctx context.Context, db *pgxpool.Pool, items []Subscriber) error {
+	if len(items) == 0 {
+		return nil
+	}
+	ids := make([]string, 0, len(items))
+	for _, s := range items {
+		ids = append(ids, s.ID)
+	}
+	byOwner, err := radius.LoadScopesFor(ctx, db, radius.SubscriberScopes, ids)
+	if err != nil {
+		return err
+	}
+	for i := range items {
+		items[i].NASScopes = orEmptyScopes(byOwner[items[i].ID])
+	}
+	return nil
 }
 
 // existsStaticIP reports whether any OTHER subscriber already holds ip (the

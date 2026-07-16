@@ -14,7 +14,9 @@ package subscribers
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"strconv"
 	"time"
 
@@ -61,9 +63,9 @@ func (p *policyProvider) GetAuthView(ctx context.Context, username string) (radi
 		burstTime    *string
 		ratePriority *string
 		minRate      *string
-		// FR-64 effective NAS scope (nil = any NAS).
-		assignedNAS     *string
-		assignedService *string
+		// FR-64 effective NAS scope, as the jsonb array the query below builds
+		// (empty array = any NAS).
+		scopesJSON []byte
 	)
 	err := p.db.QueryRow(ctx,
 		`SELECT s.id::text, s.password_enc, s.status, s.expires_at,
@@ -75,12 +77,22 @@ func (p *policyProvider) GetAuthView(ctx context.Context, username string) (radi
 		        (SELECT name FROM ip_pools WHERE id = p.pool_id),
 		        (SELECT name FROM ip_pools WHERE purpose = 'expired' ORDER BY name LIMIT 1),
 		        p.burst_rate, p.burst_threshold, p.burst_time, p.rate_priority, p.min_rate,
-		        -- FR-64 effective scope, subscriber-over-profile: the subscriber's
-		        -- pair is taken WHOLE when its nas_id is set, so a subscriber that
-		        -- narrows to a NAS never silently inherits the profile's service
-		        -- pin. COALESCE per-column would mix the two halves.
-		        CASE WHEN s.nas_id IS NOT NULL THEN s.nas_id ELSE p.nas_id END::text,
-		        CASE WHEN s.nas_id IS NOT NULL THEN s.nas_service_id ELSE p.nas_service_id END::text
+		        -- FR-64 effective scope, subscriber-over-profile taken WHOLE: a
+		        -- subscriber with ANY scope row of their own uses only their own
+		        -- set, never a union with the profile's. jsonb_agg is NULL (not an
+		        -- empty array) when a side has no rows, which is exactly what makes
+		        -- this COALESCE chain express "the subscriber's set if they have
+		        -- one, else the profile's, else any NAS".
+		        COALESCE(
+		          (SELECT jsonb_agg(jsonb_build_object(
+		                    'nas_id', sc.nas_id::text,
+		                    'nas_service_id', COALESCE(sc.nas_service_id::text, '')))
+		             FROM subscriber_nas_scopes sc WHERE sc.subscriber_id = s.id),
+		          (SELECT jsonb_agg(jsonb_build_object(
+		                    'nas_id', pc.nas_id::text,
+		                    'nas_service_id', COALESCE(pc.nas_service_id::text, '')))
+		             FROM profile_nas_scopes pc WHERE pc.profile_id = p.id),
+		          '[]'::jsonb)
 		   FROM subscribers s
 		   LEFT JOIN profiles p ON p.id = s.profile_id
 		  WHERE s.username = $1`, username).Scan(
@@ -90,7 +102,7 @@ func (p *policyProvider) GetAuthView(ctx context.Context, username string) (radi
 		&sessOverride, &rateOverride, &v.MacLockMode, &learnedMac,
 		&staticIP, &v.ServiceType, &poolName, &expiredPool,
 		&burstRate, &burstThresh, &burstTime, &ratePriority, &minRate,
-		&assignedNAS, &assignedService)
+		&scopesJSON)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return radius.AuthView{}, radius.ErrNoSubscriber
 	}
@@ -113,8 +125,15 @@ func (p *policyProvider) GetAuthView(ctx context.Context, username string) (radi
 	v.BurstTime = strOr(burstTime, "")
 	v.RatePriority = strOr(ratePriority, "")
 	v.MinRate = strOr(minRate, "")
-	v.AssignedNASID = strOr(assignedNAS, "")
-	v.AssignedServiceID = strOr(assignedService, "")
+	// A scope set that fails to decode must not silently become "any NAS" — that
+	// would widen an operator's deliberate restriction on a corrupt read. Fail
+	// the load instead; the engine turns the error into a 500 and FreeRADIUS
+	// rejects, which is the safe direction for a scoped account.
+	if len(scopesJSON) > 0 {
+		if err := json.Unmarshal(scopesJSON, &v.Scopes); err != nil {
+			return radius.AuthView{}, fmt.Errorf("subscribers: decode nas scopes for %q: %w", username, err)
+		}
+	}
 
 	// Session limit: per-user override else profile default else 1.
 	switch {

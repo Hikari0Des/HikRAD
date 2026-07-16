@@ -26,6 +26,14 @@ func papReqOnNAS(user, pass, nasIP string) authorizeRequest {
 	return r
 }
 
+// hotspotReqOnNAS names both halves — which router, and which of its hotspot
+// servers — for the scope tests that span more than one NAS.
+func hotspotReqOnNAS(user, pass, calledStation, nasIP string) authorizeRequest {
+	r := hotspotReqOn(user, pass, calledStation)
+	r.NasIP = nasIP
+	return r
+}
+
 // --- Gate item 3: the FR-61 service-type matrix ----------------------------
 
 func TestServiceTypeMatrix(t *testing.T) {
@@ -199,7 +207,7 @@ func TestNASScoping(t *testing.T) {
 	env := newTestEnv(t, "10.0.0.1", "10.0.0.2")
 
 	v := baseView("s1", "pw")
-	v.AssignedNASID = testNASID("10.0.0.1")
+	v.Scopes = []NASScope{{NASID: testNASID("10.0.0.1")}}
 	env.add("u", v)
 
 	// Accepts on the assigned NAS...
@@ -227,8 +235,7 @@ func TestNASScopingServiceInstance(t *testing.T) {
 	}
 	v := baseView("s1", "pw")
 	v.ServiceType = "hotspot"
-	v.AssignedNASID = nas
-	v.AssignedServiceID = "svc-lobby"
+	v.Scopes = []NASScope{{NASID: nas, ServiceID: "svc-lobby"}}
 	env.add("u", v)
 
 	assertAccept(t, mustDecide(t, env, hotspotReqOn("u", "pw", "lobby")))
@@ -243,9 +250,78 @@ func TestNASScopingServiceInstance(t *testing.T) {
 func TestNASScopingRejectsBeforeCredentials(t *testing.T) {
 	env := newTestEnv(t, "10.0.0.1", "10.0.0.2")
 	v := baseView("s1", "pw")
-	v.AssignedNASID = testNASID("10.0.0.1")
+	v.Scopes = []NASScope{{NASID: testNASID("10.0.0.1")}}
 	env.add("u", v)
 	assertReject(t, mustDecide(t, env, papReqOnNAS("u", "WRONG", "10.0.0.2")), ReasonNASNotAllowed)
+}
+
+// The point of a scope SET: an account allowed on two towers and nowhere else.
+// The single (nas_id, nas_service_id) pair this replaced could not express it,
+// so operators had to choose between one NAS and everywhere — and chose
+// everywhere, leaving the feature unused.
+func TestNASScopingAllowsAnyOfSeveralNAS(t *testing.T) {
+	env := newTestEnv(t, "10.0.0.1", "10.0.0.2", "10.0.0.3")
+	v := baseView("s1", "pw")
+	v.Scopes = []NASScope{{NASID: testNASID("10.0.0.1")}, {NASID: testNASID("10.0.0.2")}}
+	env.add("u", v)
+
+	assertAccept(t, mustDecide(t, env, papReqOnNAS("u", "pw", "10.0.0.1")))
+	assertAccept(t, mustDecide(t, env, papReqOnNAS("u", "pw", "10.0.0.2")))
+	assertReject(t, mustDecide(t, env, papReqOnNAS("u", "pw", "10.0.0.3")), ReasonNASNotAllowed)
+}
+
+// Two zones of a three-zone router — the everyday shape of a multi-select.
+func TestNASScopingAllowsSeveralServicesOnOneNAS(t *testing.T) {
+	env := newTestEnv(t, "10.0.0.1")
+	nas := testNASID("10.0.0.1")
+	env.services[nas] = []serviceRow{
+		{ID: "svc-lobby", NASID: nas, Service: "hotspot", Enabled: true, ROSServerName: "lobby"},
+		{ID: "svc-cafe", NASID: nas, Service: "hotspot", Enabled: true, ROSServerName: "cafe"},
+		{ID: "svc-staff", NASID: nas, Service: "hotspot", Enabled: true, ROSServerName: "staff"},
+	}
+	v := baseView("s1", "pw")
+	v.ServiceType = "hotspot"
+	v.Scopes = []NASScope{{NASID: nas, ServiceID: "svc-lobby"}, {NASID: nas, ServiceID: "svc-cafe"}}
+	env.add("u", v)
+
+	assertAccept(t, mustDecide(t, env, hotspotReqOn("u", "pw", "lobby")))
+	assertAccept(t, mustDecide(t, env, hotspotReqOn("u", "pw", "cafe")))
+	assertReject(t, mustDecide(t, env, hotspotReqOn("u", "pw", "staff")), ReasonNASNotAllowed)
+}
+
+// A whole-NAS scope mixed with a per-service scope on ANOTHER NAS: every zone of
+// the first, only one zone of the second.
+func TestNASScopingMixesWholeNASAndServiceScopes(t *testing.T) {
+	env := newTestEnv(t, "10.0.0.1", "10.0.0.2")
+	nas2 := testNASID("10.0.0.2")
+	env.services[nas2] = []serviceRow{
+		{ID: "svc-lobby", NASID: nas2, Service: "hotspot", Enabled: true, ROSServerName: "lobby"},
+		{ID: "svc-cafe", NASID: nas2, Service: "hotspot", Enabled: true, ROSServerName: "cafe"},
+	}
+	v := baseView("s1", "pw")
+	v.ServiceType = "dual"
+	v.Scopes = []NASScope{
+		{NASID: testNASID("10.0.0.1")},        // the whole first NAS
+		{NASID: nas2, ServiceID: "svc-lobby"}, // only one zone of the second
+	}
+	env.add("u", v)
+
+	assertAccept(t, mustDecide(t, env, papReqOnNAS("u", "pw", "10.0.0.1")))
+	assertAccept(t, mustDecide(t, env, hotspotReqOnNAS("u", "pw", "lobby", "10.0.0.2")))
+	assertReject(t, mustDecide(t, env, hotspotReqOnNAS("u", "pw", "cafe", "10.0.0.2")), ReasonNASNotAllowed)
+}
+
+// scopeAllows' empty case is the one that must never regress: an empty set is
+// "any NAS" (v1's behaviour and every migrated row's default), NOT "nowhere".
+// Getting this backwards would lock out every subscriber in the database at
+// once, so it is asserted directly rather than only through the engine.
+func TestScopeAllowsEmptySetMeansAnyNAS(t *testing.T) {
+	if !scopeAllows(nil, "nas-1", "svc-1") {
+		t.Error("a nil scope set denied; it must mean any NAS")
+	}
+	if !scopeAllows([]NASScope{}, "nas-1", "svc-1") {
+		t.Error("an empty scope set denied; it must mean any NAS")
+	}
 }
 
 // A voucher is not scoped to a NAS: it bypasses the FR-64 check as it does the
@@ -254,7 +330,7 @@ func TestNASScopingVoucherBypasses(t *testing.T) {
 	env := newTestEnv(t, "10.0.0.1")
 	fv := &fakeVoucherAuth{code: "GOLD-1111", view: AuthView{
 		SubscriberID: "vsub", Status: "active", ServiceType: "dual", RateLimit: "5M/5M",
-		AssignedNASID: "some-other-nas",
+		Scopes: []NASScope{{NASID: "some-other-nas"}},
 	}}
 	SetVoucherAuthenticator(fv)
 	t.Cleanup(func() { SetVoucherAuthenticator(nil) })

@@ -6,6 +6,7 @@ import { archiveProfile, createProfile, listProfiles, updateProfile } from '../.
 import { ApiError } from '../../api/client'
 import type {
   ExpiryBehavior,
+  NasScope,
   Profile,
   ProfileWrite,
   QuotaBehavior,
@@ -315,9 +316,8 @@ function ProfileFormModal({
         {/* FR-64: every subscriber on this profile inherits this scope, unless
             their own is set (subscriber-over-profile). */}
         <NasScopePicker
-          nasId={f.nasId}
-          nasServiceId={f.nasServiceId}
-          onChange={({ nasId, nasServiceId }) => setF((prev) => ({ ...prev, nasId, nasServiceId }))}
+          scopes={f.nasScopes}
+          onChange={(nasScopes) => setF((prev) => ({ ...prev, nasScopes }))}
           errors={errors}
         />
 
@@ -439,8 +439,7 @@ interface ProfileForm {
   expiryBehavior: ExpiryBehavior
   quotaBehavior: QuotaBehavior
   throttleRate: string
-  nasId: string
-  nasServiceId: string
+  nasScopes: NasScope[]
 }
 
 function initial(p?: Profile): ProfileForm {
@@ -460,8 +459,7 @@ function initial(p?: Profile): ProfileForm {
     expiryBehavior: p?.expiry_behavior ?? 'block',
     quotaBehavior: p?.quota_behavior ?? 'block',
     throttleRate: p?.throttle_rate ?? '',
-    nasId: p?.nas_id ?? '',
-    nasServiceId: p?.nas_service_id ?? '',
+    nasScopes: p?.nas_scopes ?? [],
   }
 }
 
@@ -487,8 +485,8 @@ function toWrite(f: ProfileForm): ProfileWrite {
     expiry_behavior: f.expiryBehavior,
     quota_behavior: f.quotaBehavior,
     throttle_rate: f.quotaBehavior === 'throttle' ? f.throttleRate || null : null,
-    // null = any NAS (FR-64); the picker yields '' for that.
-    nas_id: f.nasId || null,
-    nas_service_id: f.nasServiceId || null,
+    // An empty set = any NAS (FR-64), which is what the picker yields when the
+    // operator selects nothing.
+    nas_scopes: f.nasScopes,
   }
 }
