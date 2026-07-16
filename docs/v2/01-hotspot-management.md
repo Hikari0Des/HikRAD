@@ -30,6 +30,13 @@ v1's model is PPPoE-first: every subscriber is a PPPoE account, and Hotspot is a
 - NAS page: services sub-list with per-service status/session counts; wizard steps per service.
 - Filters (`service_type`) on user lists, live sessions, reports.
 
+### FR-64 — Subscriber/profile NAS scoping (owner request 2026-07-16, items 2/23/24)
+- Subscribers and/or profiles can be **assigned to specific NAS devices and service instances** (nullable = any NAS, the v1 behavior). Assignment UI: NAS + service selectors on the subscriber form, profile form, and the hotspot-account flows.
+- **Enforced at RADIUS auth time** (user decision 2026-07-16): an assigned subscriber authenticating through a non-assigned NAS/service is rejected with a new reason `nas_not_allowed` (debug tail + panel localization included).
+- Precedence: subscriber assignment overrides profile assignment; both empty = any.
+- IP pools follow the service instance (FR-62). **When no HikRAD pool is set anywhere** (subscriber → profile → service), the authorize reply simply omits the `address_pool` intent so the MikroTik falls back to its own locally-configured pool (item 24) — verify this is true today and lock it with a test + document it on the pools screen.
+- AuthView/policy cache carries the assignment; `radius.InvalidatePolicy` fires on assignment changes.
+
 ## 3. Impact map (why this is v2)
 
 | Touched | Built in | Change |
@@ -51,16 +58,18 @@ Nothing here invalidates v1 correctness — v1 ships with the documented PPPoE-f
 
 ## 5. AI kickoff prompt (paste into a fresh Claude Code session at repo root)
 
+> Execution model (owner decision 2026-07-16, docs/v2/phases/00-v2-execution-plan.md): **one agent, working solo and sequentially** — no parallel agent teams in v2. The role split below (B/D/E) survives only as work-ordering inside the single session.
+
 ```text
-You are working in the HikRAD repo. v1 is complete and piloted; we are starting v2 feature 01: Hotspot Management.
+You are working in the HikRAD repo. v1 is complete and piloted; we are starting v2 phase 1: Hotspot Management + NAS scoping. You work SOLO — do not spawn parallel agents; execute the work areas sequentially in this session (backend model → RADIUS engine → panel UI), committing in reviewable chunks.
 
-Read, in this order and nothing else yet: CLAUDE.md, docs/v2/01-hotspot-management.md (the brief for this feature), docs/PRD.md §6.1/§6.3 + Decisions 19/21/24, docs/prd/04-subscribers-profiles.md FR-58 section, docs/prd/02-radius-nas-aaa.md.
+Read, in this order and nothing else yet: CLAUDE.md, docs/v2/phases/00-v2-execution-plan.md, docs/v2/01-hotspot-management.md (the brief for this feature), docs/PRD.md §6.1/§6.3 + Decisions 19/21/24, docs/prd/04-subscribers-profiles.md FR-58 section, docs/prd/02-radius-nas-aaa.md.
 
-Step 1 — Amend the docs (single commit): add FR-61/62/63 to docs/PRD.md §6 exactly per the brief (renumber if FR numbers moved), a new Decisions Log row, update sub-PRDs 04 and 02 (ownership: FR-61/63 data+UI rules → 04, FR-62 + auth-time enforcement → 02), and update docs/prd/00-index.md coverage. Do not contradict Decisions 19 or 21.
+Step 1 — Amend the docs (single commit): add FR-61/62/63/64 to docs/PRD.md §6 exactly per the brief (renumber if FR numbers moved), a new Decisions Log row, update sub-PRDs 04 and 02 (ownership: FR-61/63 data+UI rules → 04, FR-62/64 + auth-time enforcement → 02), and update docs/prd/00-index.md coverage. Do not contradict Decisions 19 or 21.
 
-Step 2 — Plan the execution: create docs/phases/phase-6-hotspot-management/ with 00-phase.md (frozen contracts: subscriber service_type enum + migration mapping, nas_services schema, authorize request/response deltas, wizard snippet shape; migration range 0500–0519 partitioned B/D; integration gate incl. harness-driven multi-service + hotspot-only auth matrix and a lossless allow_hotspot→service_type migration test) and task files agent-B-radius-nas.md, agent-D-backend-business.md, agent-E-frontend-panel.md following the exact structure of existing phase task files. Respect the execution-efficiency protocol in docs/phases/00-team.md (agents read only their task file + cited contracts; scriptable gate items go into scripts/gate-phase-6.sh).
+Step 2 — Plan the execution: create docs/v2/phases/phase-v2-1-hotspot-management/00-phase.md (frozen contracts: subscriber service_type enum + migration mapping, nas_services schema, subscriber/profile NAS-assignment columns, authorize request/response deltas incl. the new nas_not_allowed reject reason, wizard snippet shape; migration range 0500–0519; integration gate incl. harness-driven multi-service + hotspot-only + nas-scoping auth matrix and a lossless allow_hotspot→service_type migration test). One phase file — no per-agent task files. Scriptable gate items go into scripts/gate-v2-phase-1.sh.
 
-Step 3 — Stop and present the phase brief for my confirmation before spawning any coding agents.
+Step 3 — Stop and present the phase brief for my confirmation before writing feature code.
 
-Constraints: vendor neutrality (FR-17) — service-instance resolution from RADIUS attributes lives in internal/radius/vendor/ only; CI greps for violations. All existing Phase-2 policy tests must keep passing for pppoe/dual semantics. Panel strings trilingual (i18n:check is CI-fatal).
+Constraints: vendor neutrality (FR-17) — service-instance resolution from RADIUS attributes lives in internal/radius/vendor/ only; CI greps for violations. All existing Phase-2 policy tests must keep passing for pppoe/dual semantics. Panel strings trilingual (i18n:check is CI-fatal). Update every doc your changes invalidate in the same effort, and record any bug you find+fix in docs/ops/known-issues.md.
 ```

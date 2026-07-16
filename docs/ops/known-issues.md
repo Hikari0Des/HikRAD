@@ -1,0 +1,40 @@
+# Known issues & fixed-bug log
+
+> Purpose (owner request 2026-07-16, item 11): every bug found in HikRAD — fixed or still open — gets a row here with its root cause, so future work (human or AI) never has to guess at symptoms that were already diagnosed. **Append-only discipline: add rows, update Status, never delete.** v2 phases are required to maintain this file (docs/v2/phases/00-v2-execution-plan.md rule 3).
+
+Format: newest first inside each section. Cite the fixing commit once pushed; deeper war stories live in the phase gate results linked below.
+
+## Open / by-design limitations
+
+| Found | Area | Issue | Root cause | Status / workaround |
+|---|---|---|---|---|
+| 2026-07-16 | NAS discovery | MNDP broadcast discovery cannot work under Docker Desktop (dev machines) and requires the HikRAD host to share the routers' L2 segment even in production. | MNDP is a LAN broadcast to UDP 5678; Docker Desktop's VM never receives host-LAN broadcasts, and routed/VLAN-separated routers never reach the server's segment at all. | By design. Production: UDP 5678 is now published (see fix below) and same-L2 works. Otherwise use the panel's IP-range scan, which works everywhere. |
+| 2026-07-16 | Portal | A subscriber with `has_password=false` (passwordless hotspot login, item 13) cannot log into the portal with a password. | Deliberate: letting "" match "" would open every passwordless account to anyone knowing a username. | By design; portal login for such accounts needs a future credential (e.g. OTP via WhatsApp — candidate v2+ item). |
+| 2026-07-16 | Update | Panel "update" is guided-only: it shows the version and the exact host command, but cannot run the update itself. | The panel container cannot restart the stack containing itself; a privileged host daemon is required. | Planned: v2 phase 5 (docs/v2/07-one-click-updater.md). |
+| 2026-07-16 | Repo history | The git history contains a ~75 MB `go1.24.0.linux-amd64.tar.gz` and a compiled `harness.exe` from an accidental commit (removed from the tree 2026-07-16). | Committed by a bulk `git add` during Phase-5 gate work on Windows/WSL2. | Tree is clean; history rewrite deliberately NOT done (would break every clone). Revisit only if repo size becomes a real problem — coordinate with all clones. |
+| 2026-07-16 | Restore/update | `hikrad restore` full round-trip and `hikrad update` rollback have never been exercised on live hardware (documented-pending from the Phase-5 gate). | Gate ran out of pilot-hardware time; scripted equivalents pass. | Open — exercise during the pilot (docs/phases/phase-5-v1-reports-install-license/gate-result.md item 3). |
+
+## Fixed — v1.1 maintenance (2026-07-16, owner's 26-item review)
+
+| Area | Symptom | Root cause | Fix |
+|---|---|---|---|
+| Vouchers/portal | Every scratch/voucher code entered in the portal said "That code doesn't look right." (item 21) | Printed codes are typed with grouping separators ("ABCD-1234", spaces) — the portal placeholder even suggests a dash — but `hashCode` only upper-cased + trimmed outer whitespace, so any separator produced a different sha256 than the stored one. Compounded by the frontend mapping **any** 422 (including `no_profile` and cooldown edge cases) to the same "invalid code" message, masking the real error. | `normalizeCode` strips every non-[A-Z0-9] char before hashing (generation + redemption); redemption also probes the legacy hash so already-printed stock stays valid (`backend/internal/billing/voucher.go`). Frontend now maps error codes distinctly (`no_profile`, `voucher_void`, generic server error vs network) in both portal panels. |
+| Panel | Managers saw "Something went wrong" on pages their role can't access (item 14) | Routes were unguarded — the page mounted, every fetch 403'd, and the generic ErrorState rendered. The Live Sessions nav item wasn't permission-gated at all. | Route-level `RequirePerm` guard rendering a localized no-access page (`frontend/panel/src/auth/RequirePerm.tsx`); every route wired to the same permission the sidebar uses; sessions nav gated on `live.view`. |
+| Panel | Header balance only updated on full page reload (item 7) | `BalanceWidget` fetched once per manager id; nothing invalidated it. | `BALANCE_CHANGED_EVENT` fired by every balance-touching API call (renew/refund/topup/voucher create/void/redeem) + refetch on window focus/visibility + 60 s backstop poll. |
+| NAS discovery | Auto-discovery without a CIDR never found anything (item 9) | MNDP announcements are LAN broadcasts to UDP 5678; `hikrad-api` sits on the compose bridge network with no published UDP port, so broadcasts never reached the in-app listener. | `deploy/compose.yml` publishes `5678:5678/udp` on hikrad-api (host netfilter DNATs the datagrams through); discovery modal explains the same-L2 requirement when zero results (see open-limitations row for Docker Desktop). |
+| NAS | `ros_version` was manual and usually stale/empty (item 8) | No probe existed; version was a free-text field. | `POST /api/v1/nas/{id}/probe` reads version/board/identity over the RouterOS API (read-only, saved credentials) and stores `ros_version`; "Detect" button on the NAS card. |
+| Settings | Panel had no version/update visibility; `/system/version` always reported "dev" (item 1) | `appVersion` ldflag was never passed by the Docker build. | `HIKRAD_VERSION` build-arg wired through api.Dockerfile + compose + `scripts/hikrad` (reads repo-root `VERSION` file); new Settings > System screen with guided `hikrad update` walkthrough. |
+| Subscribers | No way to create passwordless hotspot users (item 13) | Password was unconditionally required at create; empty credential had no representation. | `no_password` flag on create/update seals an empty credential + `has_password` column (migration 0412); RADIUS auth already compares empty==empty; portal password login explicitly refuses passwordless accounts. |
+| Ops | No uninstall path existed (item 12) | Never built. | `hikrad uninstall [--yes|--keep-data|--purge]` (final backup, stack+images removal, cron + CLI cleanup, keeps backups+.env unless --purge) + `scripts/uninstall.sh` wrapper. |
+
+## Fixed — during v1 phases (details in the linked gate results)
+
+| Found | Area | Issue → fix | Reference |
+|---|---|---|---|
+| 2026-07-16 (P5 gate) | Install | Repo-wide missing executable bits: every shebang'd script stored non-executable in git, breaking FreeRADIUS scripts + install.sh on a fresh clone → bits restored, CI check added | docs/phases/phase-5-v1-reports-install-license/gate-result.md |
+| 2026-07-16 (P5 gate) | hikrad-api | Crashed outright on a slow first-boot DB/Redis connection instead of retrying → boot-time retry loop | same gate result |
+| 2026-07-15 (P5) | hikrad-acct | Crash-loop: `deploy/data/acct-spill` bind-mount auto-created root-owned → install.sh chowns pre-`compose up` | scripts/install.sh |
+| 2026-07-14 (P5) | hikrad-acct | 5 pipeline bugs: PEL stranding, consumer identity, counter durability, etc. → fixed; Redis `appendfsync=always` decision | docs/evidence/redis-durability-decision.md, memory: phase5-agent2-status |
+| 2026-07-12 (P4) | FreeRADIUS | Panel-added NAS timed out forever: FreeRADIUS loads clients only at startup; reload can't add them → hikrad-run.sh supervisor restarts on clients-file change | deploy/freeradius/hikrad-run.sh, docs comments in compose.yml |
+| 2026-07-11 (P3 gate) | Billing/tests | Test-isolation race + enforcement audit dropped under CoA timeout → both fixed at root | docs/phases/phase-3-billing-security-monitoring/gate-result.md |
+| 2026-07-11 (P3) | Platform | Deadlock class: reading `platform.Settings` (pool query) inside an open pgx transaction exhausts the pool under concurrency → rule: resolve settings BEFORE `db.Begin` (see `renewParams.fillSettings`) | code comments in internal/billing/renew.go |

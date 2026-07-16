@@ -33,7 +33,7 @@ Everything else already exists from Phase 4: intent lifecycle/state machine, ide
 ## 3. AI kickoff prompt (paste into a fresh Claude Code session at repo root; run once per gateway)
 
 ```text
-You are working in the HikRAD repo. v1 is complete. Implement a new payment gateway adapter: <AsiaHawala | Areeba>.
+You are working in the HikRAD repo. v1 is complete. Implement a new payment gateway adapter: <AsiaHawala | Areeba>. You work SOLO — no parallel agents (docs/v2/phases/00-v2-execution-plan.md); this is v2 phase 7 and may run once per gateway.
 
 Read only: CLAUDE.md, docs/v2/02-payment-gateways-asiahawala-areeba.md, docs/prd/05-billing-payments-vouchers.md FR-23 section, docs/phases/phase-4-portal-payments-pwa/00-phase.md contract C3, backend/internal/billing/gateways/mock/ (the reference implementation) and one shipped live adapter if present (e.g. zaincash).
 
