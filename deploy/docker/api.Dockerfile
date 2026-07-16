@@ -9,7 +9,13 @@ WORKDIR /src
 COPY backend/go.* ./
 RUN go mod download
 COPY backend/ ./
-RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/hikrad-api ./cmd/hikrad-api
+# HIKRAD_VERSION feeds GET /api/v1/system/version (FR-52.4) and the panel's
+# Settings > System screen; compose passes it from the VERSION file via the
+# hikrad CLI (scripts/hikrad). "dev" for local/unversioned builds.
+ARG HIKRAD_VERSION=dev
+RUN CGO_ENABLED=0 go build -trimpath \
+    -ldflags="-s -w -X github.com/hikrad/hikrad/internal/platform/setupapi.appVersion=${HIKRAD_VERSION}" \
+    -o /out/hikrad-api ./cmd/hikrad-api
 # Compose healthcheck probe (stdlib-only, own throwaway module — it is not
 # part of backend/go.mod, which Agent D owns).
 COPY deploy/docker/healthcheck.go /healthcheck/main.go

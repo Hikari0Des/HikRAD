@@ -5,6 +5,12 @@ hikrad update                    # online: pulls/builds latest, from a git check
 hikrad update --bundle release.tar   # offline: loads images from a bundle first
 ```
 
+The panel mirrors this runbook at **Settings > System** (v1.1): it shows the
+installed version (from the repo-root `VERSION` file via the `HIKRAD_VERSION`
+build arg) and walks the operator through these exact commands. A one-click
+panel-triggered update is planned as v2 phase 5
+(`docs/v2/07-one-click-updater.md`).
+
 ## What happens
 
 1. **Automatic pre-update backup** (`hikrad backup now`, tagged `pre_update`

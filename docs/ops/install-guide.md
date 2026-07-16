@@ -143,5 +143,30 @@ TOKEN=$(curl -s -X POST $API/auth/login -H 'Content-Type: application/json' \
   | grep -o '"access_token":"[^"]*"' | cut -d'"' -f4)
 ```
 
+## Firewall / ports the stack uses
+
+Host-published by `deploy/compose.yml`: **80/443 tcp** (panel/portal via
+Caddy), **1812/1813 udp** (RADIUS auth/accounting), **3799 udp** (CoA), and
+**5678 udp** (MikroTik MNDP neighbor discovery, v1.1 — broadcast discovery
+only works when this server shares the routers' L2 segment; the panel's
+IP-range scan works regardless). Nothing else is reachable from outside the
+compose network.
+
+## Uninstalling
+
+```sh
+sudo hikrad uninstall              # interactive: type 'uninstall hikrad' to confirm
+sudo hikrad uninstall --keep-data  # remove the app but keep the data directory
+sudo hikrad uninstall --purge      # remove EVERYTHING including backups + .env
+```
+
+Takes a final backup first (unless `--purge`), stops and deletes the
+containers and images, removes the nightly-backup cron entry and the CLI
+wrapper. Backups and `.env` are kept by default — the `.env` holds the backup
+passphrase, without which kept backups can never be decrypted. Docker Engine
+itself is never removed. `scripts/uninstall.sh` in a checkout does the same
+when the CLI was never installed.
+
 See also: [admin-guide.md](admin-guide.md), [pilot-checklist.md](pilot-checklist.md),
-[backup-restore.md](backup-restore.md), [update.md](update.md).
+[backup-restore.md](backup-restore.md), [update.md](update.md),
+[known-issues.md](known-issues.md).

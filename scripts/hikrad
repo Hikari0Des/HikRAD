@@ -22,6 +22,11 @@ log()  { printf '[hikrad] %s\n' "$*"; }
 die()  { printf '[hikrad] ERROR: %s\n' "$*" >&2; exit 1; }
 
 compose() {
+    # Surface the release version to image builds (Settings > System, FR-52.4).
+    if [ -z "${HIKRAD_VERSION:-}" ] && [ -r "${HIKRAD_CHECKOUT:-}/VERSION" ]; then
+        HIKRAD_VERSION="$(tr -d '[:space:]' < "$HIKRAD_CHECKOUT/VERSION")"
+        export HIKRAD_VERSION
+    fi
     docker compose --env-file "$HIKRAD_ENV_FILE" -f "$HIKRAD_COMPOSE_FILE" "$@"
 }
 
@@ -375,6 +380,94 @@ cmd_tunnel() {
     esac
 }
 
+# --- uninstall (item 12) -----------------------------------------------------
+# Reverses everything install.sh set up: stack + images, cron entry, CLI
+# wrapper, and (after explicit consent) the data directory. Backups are KEPT
+# unless --purge. Docker Engine itself is never removed — it may serve other
+# workloads; the closing message says how to remove it manually.
+cmd_uninstall() {
+    local yes=0 purge=0 keep_data=0
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --yes) yes=1; shift ;;
+            --purge) purge=1; shift ;;
+            --keep-data) keep_data=1; shift ;;
+            *) die "unknown uninstall argument: $1 (usage: hikrad uninstall [--yes] [--keep-data] [--purge])" ;;
+        esac
+    done
+    [ "$purge" = 1 ] && [ "$keep_data" = 1 ] && die "--purge and --keep-data contradict each other"
+
+    local root
+    root="$(dirname "$HIKRAD_ENV_FILE")"
+
+    if [ "$yes" != 1 ]; then
+        [ -t 0 ] || die "refusing to uninstall non-interactively without --yes"
+        cat <<EOF
+This will REMOVE the HikRAD installation at $root:
+  - stop and delete all HikRAD containers and their images
+  - remove the nightly backup cron entry and /usr/local/bin/hikrad
+$( [ "$keep_data" = 1 ] \
+    && echo "  - data directory is KEPT (--keep-data)" \
+    || echo "  - DELETE the data directory (database, sessions, usage history)" )
+$( [ "$purge" = 1 ] \
+    && echo "  - DELETE backups too (--purge): after this NOTHING is recoverable" \
+    || echo "  - backups under $(backup_dir) are kept" )
+
+Type exactly 'uninstall hikrad' to continue:
+EOF
+        local answer
+        read -r answer
+        [ "$answer" = "uninstall hikrad" ] || { log "Aborted. Nothing changed."; exit 0; }
+    fi
+
+    # One last safety net before the data dir goes (skippable only via --purge,
+    # which states the intent to keep nothing).
+    if [ "$keep_data" != 1 ] && [ "$purge" != 1 ]; then
+        log "Taking a final backup before removal (kept in $(backup_dir))…"
+        cmd_backup_now pre_uninstall || log "WARNING: final backup failed — continuing (data dir is about to be removed!)"
+    fi
+
+    log "Stopping the stack and removing containers + images…"
+    compose_tunnel down --remove-orphans --rmi local 2>/dev/null \
+        || compose down --remove-orphans --rmi local 2>/dev/null || true
+
+    if command -v crontab >/dev/null 2>&1; then
+        local mark="# hikrad nightly backup (FR-51.1, installed by install.sh)"
+        if crontab -l 2>/dev/null | grep -qF "$mark"; then
+            crontab -l 2>/dev/null | grep -vF "$mark" | grep -vF "/usr/local/bin/hikrad backup now" | crontab -
+            log "Removed the nightly backup cron entry."
+        fi
+    fi
+
+    if [ "$keep_data" != 1 ]; then
+        local d; d="$(data_dir)"
+        if [ -d "$d" ]; then
+            log "Deleting data directory $d…"
+            rm -rf "$d"
+        fi
+    else
+        log "Keeping data directory $(data_dir) (--keep-data)."
+    fi
+
+    if [ "$purge" = 1 ]; then
+        log "Purging backups and the install root $root…"
+        rm -rf "$root"
+    else
+        # Keep backups + .env (the .env holds the backup passphrase, without
+        # which the kept backups can never be decrypted again).
+        find "$root" -mindepth 1 -maxdepth 1 \
+            ! -name backups ! -name .env ! -name backup.log -exec rm -rf {} + 2>/dev/null || true
+        log "Kept: $(backup_dir) and $root/.env (needed to decrypt the backups)."
+    fi
+
+    rm -f /usr/local/bin/hikrad 2>/dev/null \
+        || log "NOTE: could not remove /usr/local/bin/hikrad (not root?) — remove it manually."
+
+    log "HikRAD is uninstalled."
+    log "Docker Engine was NOT removed (it may run other workloads);"
+    log "to remove it too: apt-get purge docker-ce docker-ce-cli containerd.io"
+}
+
 usage() {
     cat <<'EOF'
 Usage: hikrad <command>
@@ -391,6 +484,10 @@ Usage: hikrad <command>
   update [--bundle F] pre-backup, update images, migrate, rollback on failure
 
   tunnel enable|disable   start/stop the optional Cloudflare tunnel (FR-57)
+
+  uninstall [--yes] [--keep-data] [--purge]
+              remove HikRAD completely: stack, images, cron, CLI. Takes a
+              final backup and keeps backups + .env unless --purge.
 EOF
 }
 
@@ -410,6 +507,7 @@ case "${1:-}" in
     restore)  shift; cmd_restore "${1:-}" ;;
     update)   shift; cmd_update "$@" ;;
     tunnel)   shift; cmd_tunnel "${1:-}" ;;
+    uninstall) shift; cmd_uninstall "$@" ;;
     -h|--help|help|"") usage ;;
     *)
         echo "hikrad: unknown command '$1'" >&2

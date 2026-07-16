@@ -11,6 +11,7 @@ import { GatewaySettings } from './GatewaySettings'
 import { LocaleSettings } from './LocaleSettings'
 import { NotificationsSettings } from './NotificationsSettings'
 import { RemoteAccessSettings } from './RemoteAccessSettings'
+import { SystemSettings } from './SystemSettings'
 
 const TABS = [
   { to: 'locale', key: 'settings.tab.locale' },
@@ -21,6 +22,7 @@ const TABS = [
   { to: 'backups', key: 'settings.tab.backups' },
   { to: 'data-retention', key: 'settings.tab.dataRetention' },
   { to: 'remote-access', key: 'settings.tab.remoteAccess' },
+  { to: 'system', key: 'settings.tab.system' },
 ]
 
 /** Settings (FR-53): grouped screens, admin-permission-gated. */
@@ -58,6 +60,7 @@ export function SettingsPage() {
             <Route path="backups" element={<BackupsSettings />} />
             <Route path="data-retention" element={<DataRetentionSettings />} />
             <Route path="remote-access" element={<RemoteAccessSettings />} />
+            <Route path="system" element={<SystemSettings />} />
           </Routes>
         </div>
       </div>
