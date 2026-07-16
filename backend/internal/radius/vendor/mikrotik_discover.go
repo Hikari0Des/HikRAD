@@ -109,7 +109,8 @@ func (mikrotikAdapter) CheckHealth(conn ROSConn) ([]HealthFinding, error) {
 			Detail: fmt.Sprintf(
 				"the default hotspot user profile assigns address-pool %q, which does not exist on this router; "+
 					"every HikRAD hotspot login fails with \"no address from ip pool\" even though RADIUS accepts", pool),
-			Fix: "/ip hotspot user profile set [find default=yes] address-pool=none",
+			Fix:     "/ip hotspot user profile set [find default=yes] address-pool=none",
+			Fixable: true,
 		})
 	default:
 		out = append(out, HealthFinding{
@@ -117,10 +118,36 @@ func (mikrotikAdapter) CheckHealth(conn ROSConn) ([]HealthFinding, error) {
 			Detail: fmt.Sprintf(
 				"the default hotspot user profile re-assigns addresses from pool %q at login, overriding each hotspot's own address-pool; "+
 					"logins fail if it ever empties or is deleted", pool),
-			Fix: "/ip hotspot user profile set [find default=yes] address-pool=none",
+			Fix:     "/ip hotspot user profile set [find default=yes] address-pool=none",
+			Fixable: true,
 		})
 	}
 	return out, nil
+}
+
+// ApplyHealthFix implements Adapter.ApplyHealthFix for MikroTik. The switch is
+// the entire set of writes this path can ever make.
+func (a mikrotikAdapter) ApplyHealthFix(conn ROSConn, code string) error {
+	switch code {
+	case HealthHotspotUserProfilePool, HealthHotspotUserProfilePoolMissing:
+		// Clearing the pool on the default hotspot user profile. This is the one
+		// fix an operator cannot perform from the GUI: Winbox resolves a pool id
+		// to a name, so a dangling id renders as an empty "none" — checking it
+		// reports everything is fine while every login fails.
+		item, err := a.planHotspotUserProfilePool(conn)
+		if err != nil {
+			return err
+		}
+		if item == nil {
+			return fmt.Errorf("mikrotik: the default hotspot user profile already assigns no pool")
+		}
+		if _, err := conn.Write(item.Sentence...); err != nil {
+			return fmt.Errorf("mikrotik: %s: %w", item.Command, err)
+		}
+		return nil
+	default:
+		return fmt.Errorf("mikrotik: no automatic fix for %q", code)
+	}
 }
 
 // defaultHotspotUserProfilePool reads the address-pool of the router's DEFAULT

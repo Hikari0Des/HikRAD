@@ -60,14 +60,22 @@ export function getBulkJob(id: string): Promise<BulkJob> {
  * CSV export (FR-4, export-gated). The endpoint streams `text/csv`, not JSON,
  * so we fetch the blob directly and hand back a saveable object URL + filename.
  */
-export async function exportCsv(filter: BulkFilter): Promise<{ url: string; filename: string }> {
+/** Exports the ticked rows when ids are given, else the whole filter match. */
+export async function exportCsv(
+  filter: BulkFilter,
+  subscriberIds?: string[],
+): Promise<{ url: string; filename: string }> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
   const token = tokenStore.getAccessToken()
   if (token) headers['Authorization'] = `Bearer ${token}`
   const res = await fetch(`${API_BASE}/subscribers/bulk`, {
     method: 'POST',
     headers,
-    body: JSON.stringify({ filter, action: 'export' }),
+    body: JSON.stringify({
+      filter,
+      subscriber_ids: subscriberIds?.length ? subscriberIds : undefined,
+      action: 'export',
+    }),
   })
   if (!res.ok) {
     throw new Error(`export failed (HTTP ${res.status})`)

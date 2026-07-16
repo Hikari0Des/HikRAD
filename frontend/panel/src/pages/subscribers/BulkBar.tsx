@@ -14,18 +14,31 @@ import { Field, Select, TextInput } from '../../components/form'
 import { useToast } from '../../components/Toast'
 
 /**
- * Bulk-action bar (FR-4). Actions run against the *server-side filter* (never
- * just the visible page) via D's async bulk endpoint: we submit the current
- * filter, then poll the job for progress and render per-row failures. Export is
- * synchronous (a CSV download) and needs the `export` permission.
+ * Bulk-action bar (FR-4).
+ *
+ * Two target modes, and the bar always says which one is live:
+ *
+ *  - Rows ticked → the action runs against exactly those ids.
+ *  - Nothing ticked → it runs against the *server-side filter*, which is the
+ *    whole match set, not just the visible page.
+ *
+ * The distinction matters enough to state in words above the buttons: "disable"
+ * meaning three rows and "disable" meaning every expired subscriber look
+ * identical once clicked, and only one of them is undoable by hand.
+ *
+ * Mutations go through D's async job endpoint (poll for progress + per-row
+ * failures); export is a synchronous CSV download needing the `export`
+ * permission.
  */
 export function BulkBar({
   filter,
+  selectedIds,
   profiles,
   managers,
   onDone,
 }: {
   filter: BulkFilter
+  selectedIds: string[]
   profiles: Profile[]
   managers: ManagerView[]
   onDone: () => void
@@ -34,6 +47,8 @@ export function BulkBar({
   const { can } = useAuth()
   const { toast } = useToast()
   const canEdit = can('subscribers.edit')
+  const canDelete = can('subscribers.delete')
+  const hasSelection = selectedIds.length > 0
 
   const [job, setJob] = useState<BulkJob | null>(null)
   const [prompt, setPrompt] = useState<BulkAction | null>(null)
@@ -51,7 +66,14 @@ export function BulkBar({
   async function run(action: BulkAction, params?: Record<string, unknown>) {
     setPrompt(null)
     try {
-      const initial = await startBulk({ filter, action, params })
+      // Send the selection when there is one; the backend then ignores the
+      // filter entirely.
+      const initial = await startBulk({
+        filter,
+        subscriber_ids: hasSelection ? selectedIds : undefined,
+        action,
+        params,
+      })
       setJob(initial)
       stopPolling()
       pollRef.current = setInterval(async () => {
@@ -77,7 +99,7 @@ export function BulkBar({
 
   async function doExport() {
     try {
-      const { url, filename } = await exportCsv(filter)
+      const { url, filename } = await exportCsv(filter, hasSelection ? selectedIds : undefined)
       const a = document.createElement('a')
       a.href = url
       a.download = filename
@@ -93,7 +115,13 @@ export function BulkBar({
 
   return (
     <div className="rounded-md border border-surface-sunken bg-surface-raised p-3">
-      <p className="mb-2 text-xs text-ink-muted">{t('bulk.scopeHint')}</p>
+      {/* Always say what the buttons will hit. "Disable" over 3 ticked rows and
+          "Disable" over every expired subscriber are one click apart. */}
+      <p className="mb-2 text-xs text-ink-muted">
+        {hasSelection
+          ? t('bulk.scopeSelected', { count: selectedIds.length })
+          : t('bulk.scopeHint')}
+      </p>
       <div className="flex flex-wrap gap-2">
         {canEdit && (
           <>
@@ -122,6 +150,11 @@ export function BulkBar({
         {can(PERM_EXPORT) && (
           <Button size="sm" variant="secondary" onClick={doExport}>
             {t('bulk.export')}
+          </Button>
+        )}
+        {canDelete && (
+          <Button size="sm" variant="danger" onClick={() => setPrompt('delete')}>
+            {t('bulk.delete')}
           </Button>
         )}
       </div>
@@ -197,10 +230,14 @@ function BulkPrompt({
     extend_expiry: t('bulk.extendExpiry'),
     move_owner: t('bulk.moveOwner'),
     set_service_type: t('bulk.setServiceType'),
+    delete: t('bulk.delete'),
   }
 
   function submit() {
     switch (action) {
+      case 'delete':
+        onSubmit('delete', {})
+        break
       case 'disable':
         onSubmit('disable', { disabled_reason: reason })
         break
@@ -222,6 +259,16 @@ function BulkPrompt({
   return (
     <Modal open onOpenChange={(o) => !o && onCancel()} title={titles[action] ?? ''}>
       <div className="space-y-3">
+        {action === 'delete' && (
+          // Deletion is the one bulk action nothing undoes, so it says so and
+          // offers no parameters to distract from the decision. The backend
+          // refuses any subscriber with billing history and reports them as
+          // per-row failures, which is stated here rather than discovered.
+          <div className="space-y-2 text-sm">
+            <p className="font-medium text-danger">{t('bulk.deleteWarning')}</p>
+            <p className="text-ink-muted">{t('bulk.deleteBillingNote')}</p>
+          </div>
+        )}
         {action === 'disable' && (
           <Field label={t('bulk.disabledReason')}>
             <TextInput value={reason} onChange={(e) => setReason(e.target.value)} />

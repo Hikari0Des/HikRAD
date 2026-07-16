@@ -33,6 +33,12 @@ type sessionView struct {
 	Stale         bool       `json:"stale"`
 	Reaped        bool       `json:"reaped"`
 	Service       string     `json:"service"`
+	// NASServiceID / ServiceName name WHICH instance the session ran on (FR-62).
+	// "hotspot" alone does not tell an operator which of three zones a user is
+	// on. Empty when the session could not be attributed to an instance — which
+	// is recorded, never dropped (M2).
+	NASServiceID string `json:"nas_service_id"`
+	ServiceName  string `json:"service_name"`
 }
 
 func (m *Module) listSessions(w http.ResponseWriter, r *http.Request) {
@@ -66,17 +72,21 @@ func (m *Module) listSessions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rows, err := pkgDB.Query(ctx,
-		`SELECT id::text, COALESCE(nas_id::text,''), acct_session_id,
-		        COALESCE(subscriber_id::text,''), username, COALESCE(host(ip),''), mac,
-		        started_at, stopped_at, last_interim_at, terminate_cause,
-		        bytes_in, bytes_out, stale, reaped, service,
-		        COALESCE(started_at, created_at) AS sort_ts
-		   FROM sessions
-		  WHERE ($1::uuid IS NULL OR subscriber_id = $1::uuid)
-		    AND ($2::boolean OR subscriber_id = ANY($3::uuid[]))
+		`SELECT s.id::text, COALESCE(s.nas_id::text,''), s.acct_session_id,
+		        COALESCE(s.subscriber_id::text,''), s.username, COALESCE(host(s.ip),''), s.mac,
+		        s.started_at, s.stopped_at, s.last_interim_at, s.terminate_cause,
+		        s.bytes_in, s.bytes_out, s.stale, s.reaped, s.service,
+		        COALESCE(s.nas_service_id::text,''),
+		        -- The operator's label, else the router's own server name (FR-62).
+		        COALESCE(NULLIF(ns.label,''), ns.ros_server_name, '') AS service_name,
+		        COALESCE(s.started_at, s.created_at) AS sort_ts
+		   FROM sessions s
+		   LEFT JOIN nas_services ns ON ns.id = s.nas_service_id
+		  WHERE ($1::uuid IS NULL OR s.subscriber_id = $1::uuid)
+		    AND ($2::boolean OR s.subscriber_id = ANY($3::uuid[]))
 		    AND ($4::timestamptz IS NULL
-		         OR (COALESCE(started_at, created_at), id) < ($4::timestamptz, $5::uuid))
-		  ORDER BY sort_ts DESC, id DESC
+		         OR (COALESCE(s.started_at, s.created_at), s.id) < ($4::timestamptz, $5::uuid))
+		  ORDER BY sort_ts DESC, s.id DESC
 		  LIMIT $6`,
 		subFilter, unscoped, allowed, cursorTS, cursorID, page.Limit+1)
 	if err != nil {
@@ -92,7 +102,8 @@ func (m *Module) listSessions(w http.ResponseWriter, r *http.Request) {
 		var sortTS time.Time
 		if err := rows.Scan(&s.ID, &s.NASID, &s.AcctSessionID, &s.SubscriberID, &s.Username, &s.IP, &s.MAC,
 			&s.StartedAt, &s.StoppedAt, &s.LastInterimAt, &s.TerminateCause,
-			&s.BytesIn, &s.BytesOut, &s.Stale, &s.Reaped, &s.Service, &sortTS); err != nil {
+			&s.BytesIn, &s.BytesOut, &s.Stale, &s.Reaped, &s.Service,
+			&s.NASServiceID, &s.ServiceName, &sortTS); err != nil {
 			m.internal(w, "sessions scan", err)
 			return
 		}

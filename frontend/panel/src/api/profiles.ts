@@ -32,3 +32,12 @@ export function updateProfile(
 export function archiveProfile(id: string): Promise<Profile> {
   return request<Profile>(`/profiles/${id}/archive`, { method: 'POST' })
 }
+
+/**
+ * Delete a plan. Only succeeds for one nothing has ever used — the backend
+ * refuses anything sold with 409 `profile_in_use`, because its price/speeds are
+ * what past renewals were sold at. Archive is the answer there.
+ */
+export function deleteProfile(id: string): Promise<void> {
+  return request<void>(`/profiles/${id}`, { method: 'DELETE' })
+}

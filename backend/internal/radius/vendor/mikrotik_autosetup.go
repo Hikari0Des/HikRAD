@@ -314,6 +314,50 @@ func (mikrotikAdapter) planHotspotProfile(conn ROSConn, in SnippetInput) (*PlanI
 	return &PlanItem{Action: "set", Path: "/ip/hotspot/profile", Command: cmd, CurrentState: current, Sentence: sentence}, nil, nil
 }
 
+// --- /ip/hotspot/user/profile (the login-time address source) ---------------
+
+// planHotspotUserProfilePool clears the address-pool on the DEFAULT hotspot user
+// profile, which is where every RADIUS-authenticated hotspot user lands (HikRAD
+// sends no Mikrotik-Group).
+//
+// That profile's address-pool OVERRIDES the hotspot server's own, so whatever it
+// names is what the router tries to allocate at login. If it names a pool that
+// no longer exists, EVERY HikRAD hotspot login on the router fails with "no
+// address from ip pool" while RADIUS reports a clean accept — the 2026-07-16
+// pilot outage (docs/ops/known-issues.md).
+//
+// This is an exception to FR-56.2's "never modify an existing value", and a
+// deliberate one: the existing value is precisely the fault, the operator sees
+// it in the preview before anything is written, and it cannot be fixed from the
+// GUI — Winbox resolves a pool id to a name, so a DANGLING id renders as an
+// empty "none" and an operator who checks it is told everything is fine.
+// Requiring them to hand-type a CLI command to escape a trap they cannot see is
+// not a fix.
+//
+// none is correct either way: with no HikRAD pool the client keeps the address
+// the hotspot server already gave it; with one, Framed-Pool wins regardless.
+func (mikrotikAdapter) planHotspotUserProfilePool(conn ROSConn) (*PlanItem, error) {
+	pool, exists, err := defaultHotspotUserProfilePool(conn)
+	if err != nil {
+		// No /ip hotspot on this box; nothing to plan.
+		return nil, nil
+	}
+	if pool == "" {
+		return nil, nil // already none — the healthy state.
+	}
+	current := fmt.Sprintf("address-pool=%s", pool)
+	if !exists {
+		current += " (this pool does not exist — every hotspot login is failing)"
+	}
+	return &PlanItem{
+		Action:       "set",
+		Path:         "/ip/hotspot/user/profile",
+		Command:      "/ip hotspot user profile set [find default=yes] address-pool=none",
+		CurrentState: current,
+		Sentence:     []string{"/ip/hotspot/user/profile/set", "=.id=*0", "=address-pool=none"},
+	}, nil
+}
+
 // --- /ip/hotspot/walled-garden (per-host additive entries) -----------------
 
 func (mikrotikAdapter) planWalledGarden(conn ROSConn, in SnippetInput) ([]PlanItem, error) {

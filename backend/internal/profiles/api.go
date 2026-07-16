@@ -365,3 +365,43 @@ func (m *Module) archiveHandler(w http.ResponseWriter, r *http.Request) {
 	_ = auth.Audit(r.Context(), "profile.archive", "profile", id, before, after)
 	httpapi.JSON(w, http.StatusOK, after)
 }
+
+// deleteHandler removes a plan NOTHING has ever used (FR-7.4).
+//
+// Archive already exists and is the right answer for a plan in service: its
+// price and speeds are what past renewals were sold at, and vouchers/ledger
+// rows point at it, so deleting it would rewrite history. The DB agrees — the
+// subscribers and vouchers FKs are ON DELETE RESTRICT — but a raw FK error is
+// not an explanation. This refuses with the reason and the alternative.
+//
+// What is left is the case archive handles badly: a plan created by mistake,
+// never sold, cluttering every picker forever because "archived" still isn't
+// "gone".
+func (m *Module) deleteHandler(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	before, err := getProfile(r.Context(), m.db, id)
+	if isNotFound(err) {
+		httpapi.Error(w, http.StatusNotFound, "not_found", "profile not found")
+		return
+	}
+	if err != nil {
+		m.internalError(w, "get for delete", err)
+		return
+	}
+	inUse, err := profileInUse(r.Context(), m.db, id)
+	if err != nil {
+		m.internalError(w, "check profile use", err)
+		return
+	}
+	if inUse {
+		httpapi.Error(w, http.StatusConflict, "profile_in_use",
+			"this plan is in use by subscribers, vouchers or payment history and cannot be deleted; archive it instead so it stays off the pickers without rewriting what was already sold")
+		return
+	}
+	if err := deleteProfile(r.Context(), m.db, id); err != nil {
+		m.internalError(w, "delete profile", err)
+		return
+	}
+	_ = auth.Audit(r.Context(), "profile.delete", "profile", id, before, nil)
+	w.WriteHeader(http.StatusNoContent)
+}

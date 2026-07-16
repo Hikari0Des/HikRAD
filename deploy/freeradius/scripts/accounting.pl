@@ -36,6 +36,14 @@ sub num {
     return ($v =~ /^\d+$/) ? $v + 0 : 0;
 }
 
+# Coarse pppoe|hotspot hint from Service-Type, or '' when the NAS did not send
+# one. Returning '' rather than guessing is deliberate — see the call site.
+sub service_hint {
+    my $v = unwrap(shift);
+    return '' if $v eq '';
+    return ($v =~ /login/i) ? 'hotspot' : 'pppoe';
+}
+
 # Acct-Status-Type -> C6 record_type. 1=Start, 2=Stop, 3=Interim-Update.
 my %status_map = (
     'Start'          => 'start',
@@ -67,7 +75,13 @@ my $body = eval {
         called_station_id  => unwrap($ENV{CALLED_STATION_ID}),
         nas_port_type      => unwrap($ENV{NAS_PORT_TYPE}),
         nas_port_id        => unwrap($ENV{NAS_PORT_ID}),
-        service_type       => (unwrap($ENV{SERVICE_TYPE}) =~ /login/i) ? "hotspot" : "pppoe",
+        # Coarse kind, and ONLY when the NAS actually told us. A MikroTik sends
+        # Service-Type=Login-User on a hotspot Access-Request but omits it from
+        # Accounting-Requests, so defaulting a missing value to "pppoe" was a
+        # confident lie that filed every hotspot session as pppoe. Empty means
+        # "unknown" and the backend identifies the instance from the attributes
+        # below instead (docs/ops/known-issues.md, 2026-07-16).
+        service_type       => service_hint($ENV{SERVICE_TYPE}),
         session_time       => num($ENV{ACCT_SESSION_TIME}),
         bytes_in           => num($ENV{ACCT_INPUT_OCTETS}),
         bytes_out          => num($ENV{ACCT_OUTPUT_OCTETS}),

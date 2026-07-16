@@ -325,6 +325,22 @@ type jobResult struct {
 	} `json:"failures"`
 }
 
+// getSubscriberStatus reads one subscriber's status through the API.
+func (e testEnv) getSubscriberStatus(t *testing.T, id string) string {
+	t.Helper()
+	r := e.do(t, "GET", "/api/v1/subscribers/"+id, nil)
+	if r.status != http.StatusOK {
+		t.Fatalf("get %s = %d: %s", id, r.status, r.body)
+	}
+	var s struct {
+		Subscriber struct {
+			Status string `json:"status"`
+		} `json:"subscriber"`
+	}
+	r.into(t, &s)
+	return s.Subscriber.Status
+}
+
 func (e testEnv) pollJob(t *testing.T, id string) jobResult {
 	t.Helper()
 	deadline := time.Now().Add(15 * time.Second)
@@ -358,3 +374,101 @@ func indexOf(s, sub string) int {
 }
 
 func containsID(body []byte, id string) bool { return indexOf(string(body), id) >= 0 }
+
+// --- selection-based bulk + delete (owner-requested 2026-07-16) ------------
+
+// A selection means THOSE rows, and nothing else. Filter-only bulk could not
+// express "these two of the three", so an operator either edited rows one at a
+// time or built a filter and hoped it matched nothing extra.
+func TestBulkBySelectionIgnoresFilter(t *testing.T) {
+	e := setup(t)
+	profID := e.createProfile(t, uniq("Sel_"), 10240, 10240)
+	tag := uniq("sel_")
+	var ids []string
+	for i := 0; i < 3; i++ {
+		r := e.do(t, "POST", "/api/v1/subscribers", map[string]any{
+			"username": fmt.Sprintf("%s-%d", tag, i), "password": "x", "profile_id": profID,
+		})
+		if r.status != http.StatusCreated {
+			t.Fatalf("seed create = %d: %s", r.status, r.body)
+		}
+		var c struct {
+			ID string `json:"id"`
+		}
+		r.into(t, &c)
+		ids = append(ids, c.ID)
+	}
+
+	// Two of the three, and a filter that would have matched all three — the
+	// selection must win, not union or intersect.
+	r := e.do(t, "POST", "/api/v1/subscribers/bulk", map[string]any{
+		"filter":         map[string]any{"q": tag},
+		"subscriber_ids": []string{ids[0], ids[2]},
+		"action":         "disable",
+	})
+	if r.status != http.StatusAccepted {
+		t.Fatalf("bulk = %d: %s", r.status, r.body)
+	}
+	var job struct {
+		ID    string `json:"id"`
+		Total int    `json:"total"`
+	}
+	r.into(t, &job)
+	if job.Total != 2 {
+		t.Fatalf("job total = %d, want exactly the 2 selected rows", job.Total)
+	}
+	final := e.pollJob(t, job.ID)
+	if final.Succeeded != 2 {
+		t.Fatalf("succeeded=%d failed=%d, want 2 succeeded", final.Succeeded, final.Failed)
+	}
+	// The unselected one is untouched, which is the whole point.
+	if got := e.getSubscriberStatus(t, ids[1]); got != "active" {
+		t.Errorf("the unselected subscriber's status = %q, want it untouched (active)", got)
+	}
+}
+
+// Bulk delete removes the rows an operator selected.
+func TestBulkDeleteBySelection(t *testing.T) {
+	e := setup(t)
+	tag := uniq("del_")
+	r := e.do(t, "POST", "/api/v1/subscribers", map[string]any{"username": tag, "password": "x"})
+	if r.status != http.StatusCreated {
+		t.Fatalf("seed create = %d: %s", r.status, r.body)
+	}
+	var c struct {
+		ID string `json:"id"`
+	}
+	r.into(t, &c)
+
+	r = e.do(t, "POST", "/api/v1/subscribers/bulk", map[string]any{
+		"subscriber_ids": []string{c.ID},
+		"action":         "delete",
+	})
+	if r.status != http.StatusAccepted {
+		t.Fatalf("bulk delete = %d: %s", r.status, r.body)
+	}
+	var job struct {
+		ID string `json:"id"`
+	}
+	r.into(t, &job)
+	final := e.pollJob(t, job.ID)
+	if final.Succeeded != 1 || final.Failed != 0 {
+		t.Fatalf("delete job: succeeded=%d failed=%d, want 1/0 (%+v)", final.Succeeded, final.Failed, final.Failures)
+	}
+	if got := e.do(t, "GET", "/api/v1/subscribers/"+c.ID, nil); got.status != http.StatusNotFound {
+		t.Errorf("GET after bulk delete = %d, want 404", got.status)
+	}
+}
+
+// An unknown action is still rejected — `delete` joining the allowlist must not
+// have opened it up.
+func TestBulkUnknownActionStillRejected(t *testing.T) {
+	e := setup(t)
+	r := e.do(t, "POST", "/api/v1/subscribers/bulk", map[string]any{
+		"subscriber_ids": []string{"00000000-0000-0000-0000-000000000000"},
+		"action":         "drop_database",
+	})
+	if r.status != http.StatusUnprocessableEntity {
+		t.Fatalf("unknown action = %d, want 422: %s", r.status, r.body)
+	}
+}

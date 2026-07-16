@@ -145,6 +145,34 @@ func attachScopes(ctx context.Context, db *pgxpool.Pool, items []Subscriber) err
 	return nil
 }
 
+// errHasFinancialHistory is why a subscriber cannot be deleted (FR-1 delete /
+// FR-19 money invariants).
+var errHasFinancialHistory = errors.New("subscriber has billing history")
+
+// hasFinancialHistory reports whether a subscriber has ever transacted.
+//
+// Deleting one who has is refused, and the reason is the ledger, not caution:
+// `ledger_transactions.subscriber_id` and `payments.subscriber_id` are ON DELETE
+// SET NULL, so the money rows would survive with no owner — revenue totals stay
+// correct while the customer they came from silently disappears from every
+// per-subscriber report and receipt. `card_payments` / `payment_intents` are NO
+// ACTION and would instead fail with a raw FK error the operator cannot read.
+// Neither is an acceptable answer to "remove this subscriber", so the honest one
+// is: a customer who has paid you is disabled, not deleted.
+//
+// A never-used account — the mis-typed row an operator actually wants gone — has
+// no such rows and deletes cleanly.
+func hasFinancialHistory(ctx context.Context, db *pgxpool.Pool, id string) (bool, error) {
+	var exists bool
+	err := db.QueryRow(ctx,
+		`SELECT EXISTS (SELECT 1 FROM ledger_transactions WHERE subscriber_id = $1::uuid)
+		     OR EXISTS (SELECT 1 FROM payments WHERE subscriber_id = $1::uuid)
+		     OR EXISTS (SELECT 1 FROM card_payments WHERE subscriber_id = $1::uuid)
+		     OR EXISTS (SELECT 1 FROM payment_intents WHERE subscriber_id = $1::uuid)`,
+		id).Scan(&exists)
+	return exists, err
+}
+
 // existsStaticIP reports whether any OTHER subscriber already holds ip (the
 // per-subscriber uniqueness half of FR-16.2). excludeID may be "" on create.
 func existsStaticIP(ctx context.Context, db *pgxpool.Pool, ip, excludeID string) (bool, error) {

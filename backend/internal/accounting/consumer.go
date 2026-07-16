@@ -211,7 +211,8 @@ func (s *Service) processMessage(ctx context.Context, m redis.XMessage) (ack boo
 
 	// (b/c) Session upsert + usage point.
 	res, err := upsertSession(ctx, tx, rec, binding{
-		NASID: nas.ID, Service: service, ServiceID: serviceID, SubscriberID: sub,
+		NASID: nas.ID, Service: service, ServiceID: serviceID,
+		ServiceName: nas.serviceName(serviceID), SubscriberID: sub,
 	})
 	if err != nil {
 		return false, err

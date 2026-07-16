@@ -99,3 +99,63 @@ func TestResolveServiceNeverCrossesKind(t *testing.T) {
 		t.Fatalf("got %+v ok=%v; a hotspot request must resolve within hotspot instances only", got, ok)
 	}
 }
+
+// --- unknown coarse kind (the accounting case) -----------------------------
+
+// The pilot bug, reproduced (2026-07-16): a MikroTik omits Service-Type from
+// Accounting-Requests, so the bridge's coarse hint is EMPTY. Filtering by a
+// guessed "pppoe" found no candidates on this hotspot-only NAS and gave up
+// before ever looking at Called-Station-Id — filing every hotspot session as
+// pppoe in the panel. An empty kind must identify by attributes instead.
+func TestResolveService_UnknownKindMatchesByStationName(t *testing.T) {
+	candidates := []ServiceInstance{
+		{ID: "svc-warith", Service: "hotspot", ROSServerName: "Warith-Wifi"},
+		{ID: "svc-free", Service: "hotspot", ROSServerName: "Warith-Free"},
+		{ID: "svc-students", Service: "hotspot", ROSServerName: "Students-Wifi"},
+	}
+	got, ok := For("mikrotik").ResolveService(ServiceQuery{
+		Service:         "", // the NAS sent no Service-Type
+		CalledStationID: "Students-Wifi",
+	}, candidates)
+	if !ok {
+		t.Fatal("an unknown kind failed to resolve despite an exact server-name match")
+	}
+	if got.ID != "svc-students" {
+		t.Errorf("resolved to %+v, want svc-students", got)
+	}
+	// And the instance's own service is the answer — not the missing hint.
+	if got.Service != "hotspot" {
+		t.Errorf("resolved service = %q, want hotspot", got.Service)
+	}
+}
+
+// An unknown kind on a NAS with exactly one instance is unambiguous.
+func TestResolveService_UnknownKindSoleInstance(t *testing.T) {
+	got, ok := For("mikrotik").ResolveService(ServiceQuery{Service: ""},
+		[]ServiceInstance{{ID: "svc-hs", Service: "hotspot", ROSServerName: "lobby"}})
+	if !ok || got.ID != "svc-hs" {
+		t.Fatalf("got %+v ok=%v, want svc-hs", got, ok)
+	}
+}
+
+// An unknown kind with nothing to disambiguate stays ambiguous — the resolver
+// must not pick a zone at random.
+func TestResolveService_UnknownKindAmbiguousStillFails(t *testing.T) {
+	if _, ok := For("mikrotik").ResolveService(ServiceQuery{Service: ""}, []ServiceInstance{
+		{ID: "a", Service: "hotspot", ROSServerName: "lobby"},
+		{ID: "b", Service: "hotspot", ROSServerName: "cafe"},
+	}); ok {
+		t.Fatal("an unnamed request among several zones resolved; it must stay ambiguous")
+	}
+}
+
+// A DEFINITE kind still filters — C6 step 2's nas_not_allowed depends on it, so
+// a pppoe request on a hotspot-only NAS must not start matching hotspot zones.
+func TestResolveService_DefiniteKindStillFilters(t *testing.T) {
+	if _, ok := For("mikrotik").ResolveService(ServiceQuery{
+		Service:         "pppoe",
+		CalledStationID: "Students-Wifi",
+	}, []ServiceInstance{{ID: "svc-students", Service: "hotspot", ROSServerName: "Students-Wifi"}}); ok {
+		t.Fatal("a pppoe request matched a hotspot instance; the kind filter must still apply")
+	}
+}

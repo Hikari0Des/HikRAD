@@ -28,7 +28,16 @@ type nasInfo struct {
 	ID       string // zeroUUID when the source IP is not a registered NAS
 	Vendor   string
 	Services []vendor.ServiceInstance
+	// names maps an instance id to the name an operator recognises it by — the
+	// label they typed, else the router's own server name. Kept beside Services
+	// rather than inside vendor.ServiceInstance because a display name is not
+	// something an adapter resolves on; it exists so the live view can say WHICH
+	// hotspot zone a session is on, not just "hotspot".
+	names map[string]string
 }
+
+// serviceName is the display name for an instance id, "" when unknown.
+func (n nasInfo) serviceName(id string) string { return n.names[id] }
 
 type nasResolver struct {
 	db  *pgxpool.Pool
@@ -65,14 +74,14 @@ func (r *nasResolver) byIP(ctx context.Context, ip string) nasInfo {
 		err := r.db.QueryRow(ctx, `SELECT id::text, vendor FROM nas WHERE ip = $1::inet`, ip).Scan(&id, &vend)
 		switch {
 		case err == nil:
-			svcs, serr := r.servicesOf(ctx, id)
+			svcs, names, serr := r.servicesOf(ctx, id)
 			if serr != nil {
 				// Transient DB error: don't cache a NAS with no instances — that
 				// would pin every session on it to the pppoe fallback for the
 				// whole TTL.
 				return info
 			}
-			info = nasInfo{ID: id, Vendor: vend, Services: svcs}
+			info = nasInfo{ID: id, Vendor: vend, Services: svcs, names: names}
 		case errors.Is(err, pgx.ErrNoRows):
 			// Unregistered NAS: keep the sentinel and cache it.
 		default:
@@ -86,23 +95,32 @@ func (r *nasResolver) byIP(ctx context.Context, ip string) nasInfo {
 	return info
 }
 
-func (r *nasResolver) servicesOf(ctx context.Context, nasID string) ([]vendor.ServiceInstance, error) {
+func (r *nasResolver) servicesOf(ctx context.Context, nasID string) ([]vendor.ServiceInstance, map[string]string, error) {
 	rows, err := r.db.Query(ctx,
-		`SELECT id::text, service, ros_server_name FROM nas_services
+		`SELECT id::text, service, ros_server_name, label FROM nas_services
 		  WHERE nas_id = $1::uuid AND enabled ORDER BY service DESC, label, id`, nasID)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer rows.Close()
 	var out []vendor.ServiceInstance
+	names := map[string]string{}
 	for rows.Next() {
 		var s vendor.ServiceInstance
-		if err := rows.Scan(&s.ID, &s.Service, &s.ROSServerName); err != nil {
-			return nil, err
+		var label string
+		if err := rows.Scan(&s.ID, &s.Service, &s.ROSServerName, &label); err != nil {
+			return nil, nil, err
 		}
 		out = append(out, s)
+		// The operator's label first; the router's own name is the fallback they
+		// would still recognise.
+		if label != "" {
+			names[s.ID] = label
+		} else {
+			names[s.ID] = s.ROSServerName
+		}
 	}
-	return out, rows.Err()
+	return out, names, rows.Err()
 }
 
 // resolveService maps an accounting record to one of the NAS's service
@@ -117,12 +135,14 @@ func (r *nasResolver) servicesOf(ctx context.Context, nasID string) ([]vendor.Se
 //
 //  1. The vendor adapter's answer, when it can identify the instance.
 //  2. A NAS running exactly ONE enabled instance: unambiguous whatever the
-//     attributes say, so the session is that instance's. This matters because
-//     accounting packets carry weaker service hints than Access-Requests (some
-//     NASes omit Service-Type on interims entirely) — trusting the coarse guess
-//     over an unambiguous fact would file a hotspot-only NAS's sessions as
-//     pppoe and break FR-58.2's per-service counting.
-//  3. The coarse hint, unattributed.
+//     attributes say, so the session is that instance's.
+//  3. A NAS whose enabled instances are ALL THE SAME KIND: we may not know
+//     which one, but the kind is not in doubt, so record it unattributed rather
+//     than fall through to a guess. This is what a hotspot-only NAS running
+//     several zones looks like, and without it every one of its sessions was
+//     labelled pppoe in the panel.
+//  4. The coarse hint, unattributed — and pppoe only as the last resort, which
+//     is what a pre-v2 record and a NAS with no instances imply.
 func (n nasInfo) resolveService(rec Record) (service, serviceID string) {
 	if len(n.Services) == 0 {
 		return livestate.ServicePPPoE, ""
@@ -138,7 +158,28 @@ func (n nasInfo) resolveService(rec Record) (service, serviceID string) {
 	if len(n.Services) == 1 {
 		return n.Services[0].Service, n.Services[0].ID
 	}
-	return rec.coarseService(), ""
+	if kind, ok := n.soleKind(); ok {
+		return kind, ""
+	}
+	if hint := rec.coarseService(); hint != "" {
+		return hint, ""
+	}
+	return livestate.ServicePPPoE, ""
+}
+
+// soleKind reports the service kind when every enabled instance on the NAS is
+// the same one — a hotspot-only or PPPoE-only router, whatever its zone count.
+func (n nasInfo) soleKind() (string, bool) {
+	if len(n.Services) == 0 {
+		return "", false
+	}
+	kind := n.Services[0].Service
+	for _, s := range n.Services[1:] {
+		if s.Service != kind {
+			return "", false
+		}
+	}
+	return kind, true
 }
 
 // subscriberByUsername maps a login to a subscriber id, or "" when none matches

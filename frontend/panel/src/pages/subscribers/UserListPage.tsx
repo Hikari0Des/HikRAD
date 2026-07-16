@@ -56,6 +56,9 @@ export function UserListPage() {
   )
   const [showBulk, setShowBulk] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
+  // Ticked rows. A bulk action runs against these when any are ticked, and
+  // against the server-side filter otherwise — see BulkBar.
+  const [selected, setSelected] = useState<Set<string>>(() => new Set())
 
   const profilesQ = useAsync(() => listProfiles(true), [])
   // Managers list is admin-only; a 403 for operators just hides owner controls.
@@ -110,6 +113,25 @@ export function UserListPage() {
     })
 
   const has = (c: Column) => columns.has(c)
+
+  const toggleSelected = (id: string) =>
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+
+  // Select-all covers the rows actually on screen, not the whole match set —
+  // ticking a box must never silently enlist rows the operator cannot see.
+  const allShownSelected = filtered.length > 0 && filtered.every((s) => selected.has(s.id))
+  const toggleAllShown = () =>
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (allShownSelected) filtered.forEach((s) => next.delete(s.id))
+      else filtered.forEach((s) => next.add(s.id))
+      return next
+    })
 
   return (
     <section>
@@ -238,9 +260,13 @@ export function UserListPage() {
         <div className="mb-3">
           <BulkBar
             filter={bulkFilter}
+            selectedIds={[...selected]}
             profiles={profiles}
             managers={managers}
-            onDone={() => page.reset()}
+            onDone={() => {
+              setSelected(new Set())
+              page.reset()
+            }}
           />
         </div>
       )}
@@ -253,6 +279,16 @@ export function UserListPage() {
           <table className="w-full min-w-[640px] text-sm">
             <thead className="bg-surface-raised text-start text-xs uppercase tracking-wide text-ink-muted">
               <tr>
+                {showBulk && (
+                  <Th>
+                    <input
+                      type="checkbox"
+                      checked={allShownSelected}
+                      onChange={toggleAllShown}
+                      aria-label={t('users.selectAllShown')}
+                    />
+                  </Th>
+                )}
                 {has('username') && <Th>{t('subscriber.username')}</Th>}
                 {has('name') && <Th>{t('subscriber.name')}</Th>}
                 {has('phone') && <Th>{t('subscriber.phone')}</Th>}
@@ -265,6 +301,16 @@ export function UserListPage() {
             <tbody>
               {filtered.map((s) => (
                 <tr key={s.id} className="border-t border-surface-sunken hover:bg-surface-raised">
+                  {showBulk && (
+                    <Td>
+                      <input
+                        type="checkbox"
+                        checked={selected.has(s.id)}
+                        onChange={() => toggleSelected(s.id)}
+                        aria-label={t('users.selectRow', { username: s.username })}
+                      />
+                    </Td>
+                  )}
                   {has('username') && (
                     <Td>
                       <Link to={`/subscribers/${s.id}`} className="font-medium text-brand-strong">

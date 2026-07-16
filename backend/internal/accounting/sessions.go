@@ -42,6 +42,7 @@ type binding struct {
 	NASID        string
 	Service      string // pppoe | hotspot
 	ServiceID    string // nas_services.id; "" when unresolved (unregistered NAS)
+	ServiceName  string // display name of that instance; "" when unresolved
 	SubscriberID string
 }
 
@@ -150,6 +151,8 @@ func upsertSession(ctx context.Context, tx pgx.Tx, rec Record, b binding) (apply
 			RateUpBps:     rateUp,
 			Stale:         false,
 			Service:       service,
+			NASServiceID:  b.ServiceID,
+			ServiceName:   b.ServiceName,
 		}
 	}
 	return res, nil

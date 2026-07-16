@@ -59,6 +59,17 @@ type State struct {
 	RateUpBps     int64     `json:"rate_up_bps"`
 	Stale         bool      `json:"stale"`
 	Service       string    `json:"service"`
+	// NASServiceID / ServiceName identify WHICH of the NAS's service instances
+	// the session is running on (FR-62). Service alone says "hotspot"; on a
+	// router with three hotspot zones that does not tell an operator where the
+	// user actually is. Both are empty when nothing identified the instance —
+	// a session is never dropped for being unattributable (M2).
+	//
+	// ServiceName is denormalized on purpose: live state is ephemeral and
+	// rewritten on every accounting packet, and the SSE push path must not do a
+	// per-event lookup to render a name.
+	NASServiceID string `json:"nas_service_id"`
+	ServiceName  string `json:"service_name"`
 }
 
 // Field is the live:sessions hash field for a session.

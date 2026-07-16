@@ -34,6 +34,9 @@ func (m *Module) Register(r chi.Router, d httpapi.Deps) {
 	r.With(auth.Require("profiles.create")).Post("/api/v1/profiles", m.createHandler)
 	r.With(auth.Require("profiles.edit")).Put("/api/v1/profiles/{id}", m.updateHandler)
 	r.With(auth.Require("profiles.edit")).Post("/api/v1/profiles/{id}/archive", m.archiveHandler)
+	// Delete is only for a plan nothing has ever used (FR-7.4); anything in use
+	// is archived instead, which is what the archive route above is for.
+	r.With(auth.Require("profiles.delete")).Delete("/api/v1/profiles/{id}", m.deleteHandler)
 
 	// Time-of-day windows (FR-11). B reads them via the provider seam below; the
 	// panel manages them per profile.

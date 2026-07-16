@@ -261,14 +261,22 @@ func (mikrotikAdapter) ComposeRate(spec RateSpec) string {
 // Anything else is ambiguous and returns false — the engine rejects rather than
 // guess, because guessing hands the session the wrong zone's address pool.
 func (mikrotikAdapter) ResolveService(q ServiceQuery, candidates []ServiceInstance) (ServiceInstance, bool) {
-	kind := q.Service
-	if kind != "hotspot" {
-		kind = "pppoe" // anything not explicitly hotspot is a PPPoE-style request
-	}
-	var ofKind []ServiceInstance
-	for _, c := range candidates {
-		if c.Service == kind {
-			ofKind = append(ofKind, c)
+	// An EMPTY q.Service means the caller could not tell the kind (an accounting
+	// packet with no Service-Type). Consider every instance then: the server name
+	// identifies the instance on its own, and the instance's own service is the
+	// answer. Filtering by a guessed kind here is what filed hotspot sessions as
+	// pppoe on a hotspot-only NAS.
+	ofKind := candidates
+	if q.Service != "" {
+		kind := q.Service
+		if kind != "hotspot" {
+			kind = "pppoe" // anything not explicitly hotspot is a PPPoE-style request
+		}
+		ofKind = nil
+		for _, c := range candidates {
+			if c.Service == kind {
+				ofKind = append(ofKind, c)
+			}
 		}
 	}
 	if len(ofKind) == 0 {

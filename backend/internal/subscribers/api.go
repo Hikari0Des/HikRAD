@@ -388,6 +388,17 @@ func (m *Module) deleteHandler(w http.ResponseWriter, r *http.Request) {
 		m.internalError(w, "get for delete", err)
 		return
 	}
+	// Refuse rather than orphan their ledger rows — see hasFinancialHistory.
+	paid, err := hasFinancialHistory(r.Context(), m.db, id)
+	if err != nil {
+		m.internalError(w, "check financial history", err)
+		return
+	}
+	if paid {
+		httpapi.Error(w, http.StatusConflict, "has_billing_history",
+			"this subscriber has billing history and cannot be deleted; disable them instead so their payments stay attached to them")
+		return
+	}
 	if err := deleteByID(r.Context(), m.db, id, scope); err != nil {
 		if isNotFound(err) {
 			httpapi.Error(w, http.StatusNotFound, "not_found", "subscriber not found")

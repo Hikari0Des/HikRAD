@@ -9,6 +9,7 @@ package subscribers
 import (
 	"context"
 	"encoding/csv"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -21,11 +22,25 @@ import (
 	"github.com/hikrad/hikrad/internal/radius"
 )
 
-// bulkRequest is the frozen C7-D body: {filter, action, params}.
+// bulkRequest is the C7-D body: {filter, action, params}, plus subscriber_ids
+// (added 2026-07-16, owner-requested).
 type bulkRequest struct {
-	Filter bulkFilter     `json:"filter"`
-	Action string         `json:"action"`
-	Params map[string]any `json:"params"`
+	Filter bulkFilter `json:"filter"`
+	// SubscriberIDs, when non-empty, is an EXPLICIT selection and REPLACES the
+	// filter entirely — the operator ticked these rows and means these rows.
+	//
+	// Filter-only bulk was the original contract, and it makes the common case
+	// ("disable these three") impossible: you cannot express an arbitrary set of
+	// rows as a filter, so an operator either edits them one at a time or builds
+	// a filter that happens to match and hopes it matches nothing else. The
+	// filter is still the right tool for "every expired subscriber", so both are
+	// supported and the selection wins when present.
+	//
+	// The manager scope still applies on top (selectTargets), so a scoped agent
+	// cannot reach another agent's subscriber by pasting its id.
+	SubscriberIDs []string       `json:"subscriber_ids"`
+	Action        string         `json:"action"`
+	Params        map[string]any `json:"params"`
 }
 
 type bulkFilter struct {
@@ -114,6 +129,18 @@ func (reg *jobRegistry) get(id string) (*bulkJob, bool) {
 var mutatingBulkActions = map[string]bool{
 	"enable": true, "disable": true, "change_profile": true,
 	"extend_expiry": true, "move_owner": true, "set_service_type": true,
+	"delete": true,
+}
+
+// bulkActionPerm is the permission an action needs. Everything is
+// subscribers.edit except delete, which destroys rows and therefore requires the
+// same subscribers.delete an operator needs to remove one by hand — a bulk verb
+// must never be a way around the permission its single-row equivalent enforces.
+func bulkActionPerm(action string) string {
+	if action == "delete" {
+		return "subscribers.delete"
+	}
+	return "subscribers.edit"
 }
 
 func (m *Module) bulkHandler(w http.ResponseWriter, r *http.Request) {
@@ -129,7 +156,7 @@ func (m *Module) bulkHandler(w http.ResponseWriter, r *http.Request) {
 			httpapi.Error(w, http.StatusForbidden, "forbidden", "you do not have permission to export")
 			return
 		}
-		m.bulkExport(w, r, req.Filter, scope)
+		m.bulkExport(w, r, req.Filter, req.SubscriberIDs, scope)
 		return
 	}
 	if !mutatingBulkActions[req.Action] {
@@ -137,8 +164,8 @@ func (m *Module) bulkHandler(w http.ResponseWriter, r *http.Request) {
 			httpapi.FieldError{Field: "action", Message: "unknown bulk action"})
 		return
 	}
-	if mgr == nil || !mgr.Can("subscribers.edit") {
-		httpapi.Error(w, http.StatusForbidden, "forbidden", "you do not have permission to edit subscribers")
+	if perm := bulkActionPerm(req.Action); mgr == nil || !mgr.Can(perm) {
+		httpapi.Error(w, http.StatusForbidden, "forbidden", "you do not have permission to "+perm)
 		return
 	}
 
@@ -149,7 +176,7 @@ func (m *Module) bulkHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	targets, err := m.selectTargets(r.Context(), req.Filter, scope)
+	targets, err := m.selectTargets(r.Context(), req.Filter, req.SubscriberIDs, scope)
 	if err != nil {
 		m.internalError(w, "bulk select", err)
 		return
@@ -183,8 +210,12 @@ func (m *Module) bulkStatusHandler(w http.ResponseWriter, r *http.Request) {
 // audit action name.
 type bulkApply struct {
 	action string // audit action, e.g. subscriber.bulk_disable
-	set    string // SQL after "SET "
+	set    string // SQL after "SET " (ignored when del is true)
 	args   []any  // positional args starting at $2 ($1 is the row id)
+	// del makes the row DELETE rather than UPDATE. The one action here that
+	// destroys data, so it is a distinct field rather than a magic `set` string
+	// — nothing should be able to become a delete by accident.
+	del bool
 }
 
 func (m *Module) buildBulkApply(ctx context.Context, action string, params map[string]any) (bulkApply, []httpapi.FieldError) {
@@ -239,6 +270,8 @@ func (m *Module) buildBulkApply(ctx context.Context, action string, params map[s
 		}
 		return bulkApply{action: "subscriber.bulk_set_service_type",
 			set: "service_type=$2", args: []any{v}}, nil
+	case "delete":
+		return bulkApply{action: "subscriber.bulk_delete", del: true}, nil
 	}
 	return bulkApply{}, bad("action", "unknown bulk action")
 }
@@ -246,22 +279,38 @@ func (m *Module) buildBulkApply(ctx context.Context, action string, params map[s
 func (m *Module) runBulk(job *bulkJob, targets []idUser, apply bulkApply, actorID, ip, ua string) {
 	for _, t := range targets {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		args := append([]any{t.ID}, apply.args...)
-		_, err := m.db.Exec(ctx, `UPDATE subscribers SET `+apply.set+` WHERE id = $1::uuid`, args...)
+		var err error
+		if apply.del {
+			// Per-row, not up front: one protected subscriber in a selection of
+			// fifty must be reported and skipped, not abort the other 49.
+			var paid bool
+			if paid, err = hasFinancialHistory(ctx, m.db, t.ID); err == nil {
+				if paid {
+					err = errHasFinancialHistory
+				} else {
+					_, err = m.db.Exec(ctx, `DELETE FROM subscribers WHERE id = $1::uuid`, t.ID)
+				}
+			}
+		} else {
+			args := append([]any{t.ID}, apply.args...)
+			_, err = m.db.Exec(ctx, `UPDATE subscribers SET `+apply.set+` WHERE id = $1::uuid`, args...)
+		}
 		cancel()
 
 		job.mu.Lock()
 		job.Done++
 		if err != nil {
 			job.Failed++
-			job.Failures = append(job.Failures, bulkFailure{SubscriberID: t.ID, Username: t.Username, Error: err.Error()})
+			job.Failures = append(job.Failures, bulkFailure{SubscriberID: t.ID, Username: t.Username, Error: friendlyBulkError(err)})
 			job.mu.Unlock()
 			continue
 		}
 		job.Succeeded++
 		job.mu.Unlock()
 
-		// One audit entry per affected row (AC-4a) + policy invalidation.
+		// One audit entry per affected row (AC-4a) + policy invalidation. The
+		// audit is the ONLY trace a deleted subscriber leaves, so it records the
+		// username rather than just the id that no longer resolves to anything.
 		actx, acancel := context.WithTimeout(context.Background(), 5*time.Second)
 		_ = auth.AuditActor(actx, actorID, ip, ua, apply.action, "subscriber", t.ID, nil, map[string]string{"username": t.Username})
 		acancel()
@@ -272,9 +321,19 @@ func (m *Module) runBulk(job *bulkJob, targets []idUser, apply bulkApply, actorI
 	job.mu.Unlock()
 }
 
+// friendlyBulkError turns the errors a bulk row can hit into something an
+// operator can act on. A raw pgx FK message in the failures list tells them
+// nothing about what to do next.
+func friendlyBulkError(err error) string {
+	if errors.Is(err, errHasFinancialHistory) {
+		return "has billing history — disable instead of deleting, so their payments stay attached to them"
+	}
+	return err.Error()
+}
+
 // selectTargets runs the filter server-side and returns every matching row's id
 // and username (scoped).
-func (m *Module) selectTargets(ctx context.Context, f bulkFilter, scope *auth.ManagerScope) ([]idUser, error) {
+func (m *Module) selectTargets(ctx context.Context, f bulkFilter, ids []string, scope *auth.ManagerScope) ([]idUser, error) {
 	sql := `SELECT id::text, username::text FROM subscribers WHERE 1=1`
 	var args []any
 	n := 1
@@ -282,6 +341,17 @@ func (m *Module) selectTargets(ctx context.Context, f bulkFilter, scope *auth.Ma
 		sql += fmt.Sprintf(cond, n)
 		args = append(args, v)
 		n++
+	}
+	// An explicit selection replaces the filter — but NOT the scope clause
+	// below, which is appended either way. A scoped agent listing another
+	// agent's id simply matches no row.
+	if len(ids) > 0 {
+		push(" AND id = ANY($%d::uuid[])", ids)
+		if scope != nil {
+			push(" AND owner_manager_id = $%d::uuid", scope.ManagerID)
+		}
+		sql += " ORDER BY id"
+		return m.queryTargets(ctx, sql, args)
 	}
 	if f.Status != "" {
 		push(" AND status = $%d", f.Status)
@@ -307,7 +377,10 @@ func (m *Module) selectTargets(ctx context.Context, f bulkFilter, scope *auth.Ma
 		push(" AND owner_manager_id = $%d::uuid", scope.ManagerID)
 	}
 	sql += " ORDER BY id"
+	return m.queryTargets(ctx, sql, args)
+}
 
+func (m *Module) queryTargets(ctx context.Context, sql string, args []any) ([]idUser, error) {
 	rows, err := m.db.Query(ctx, sql, args...)
 	if err != nil {
 		return nil, err
@@ -324,23 +397,25 @@ func (m *Module) selectTargets(ctx context.Context, f bulkFilter, scope *auth.Ma
 	return out, rows.Err()
 }
 
-// bulkExport streams the filtered subscribers as CSV (scoped, export-gated).
-func (m *Module) bulkExport(w http.ResponseWriter, r *http.Request, f bulkFilter, scope *auth.ManagerScope) {
-	targets, err := m.selectTargets(r.Context(), f, scope)
+// bulkExport streams the selected-or-filtered subscribers as CSV (scoped,
+// export-gated). It takes ids for the same reason every other action does: an
+// operator who ticked rows and pressed Export means those rows.
+func (m *Module) bulkExport(w http.ResponseWriter, r *http.Request, f bulkFilter, ids []string, scope *auth.ManagerScope) {
+	targets, err := m.selectTargets(r.Context(), f, ids, scope)
 	if err != nil {
 		m.internalError(w, "export select", err)
 		return
 	}
-	ids := make([]string, len(targets))
+	targetIDs := make([]string, len(targets))
 	for i, t := range targets {
-		ids[i] = t.ID
+		targetIDs[i] = t.ID
 	}
 	rows, err := m.db.Query(r.Context(),
 		`SELECT username::text, COALESCE(name,''), COALESCE(phone,''), status,
 		        COALESCE((SELECT name FROM profiles WHERE id = s.profile_id),''),
 		        COALESCE(to_char(expires_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"'),''),
 		        COALESCE(host(static_ip),'')
-		   FROM subscribers s WHERE id = ANY($1::uuid[]) ORDER BY username`, ids)
+		   FROM subscribers s WHERE id = ANY($1::uuid[]) ORDER BY username`, targetIDs)
 	if err != nil {
 		m.internalError(w, "export query", err)
 		return

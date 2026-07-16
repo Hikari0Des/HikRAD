@@ -80,6 +80,11 @@ func (Module) Register(r chi.Router, d httpapi.Deps) {
 	// stored credentials.
 	r.With(auth.Require("nas.edit")).Post("/api/v1/nas/{id}/discover-services", m.discoverServicesHandler)
 
+	// FR-62.7 health fix: applies HikRAD's known fix for ONE detected finding,
+	// re-verified against the router first. nas.edit-gated and audited like any
+	// other router write.
+	r.With(auth.Require("nas.edit")).Post("/api/v1/nas/{id}/health/fix", m.healthFixHandler)
+
 	// RouterOS API auto-setup (FR-56.2-56.4 / contract C6). Preview connects
 	// read-only; apply is the scariest write path in the product (additive-
 	// only, whole-apply-abort-on-conflict, hash-gated against the router

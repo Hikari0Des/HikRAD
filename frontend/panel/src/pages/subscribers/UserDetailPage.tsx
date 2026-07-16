@@ -1,13 +1,14 @@
 import { useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 
 import { Ltr, ErrorState, LoadingState, StatusBadge, useFormatters, useT } from '@hikrad/shared'
 
 import { disconnectSession, openLiveStream } from '../../api/live'
 import { listProfiles } from '../../api/profiles'
 import { listManagers, type ManagerView } from '../../api/managers'
-import { getSubscriber, resetMac } from '../../api/subscribers'
+import { deleteSubscriber, getSubscriber, resetMac } from '../../api/subscribers'
 import type { LiveSession, Profile, SubscriberDetail } from '../../api/types'
+import { ApiError } from '../../api/client'
 import { useAuth } from '../../auth/AuthContext'
 import { PERM_DISCONNECT, PERM_RENEW } from '../../auth/permissions'
 import { Button } from '../../components/Button'
@@ -28,6 +29,7 @@ type Tab = 'usage' | 'history' | 'audit'
 /** User-detail page (FR-3) — the screen front-desk Sara lives on. */
 export function UserDetailPage() {
   const { id = '' } = useParams()
+  const navigate = useNavigate()
   const t = useT()
   const { can } = useAuth()
   const { toast } = useToast()
@@ -43,6 +45,7 @@ export function UserDetailPage() {
   const [renewOpen, setRenewOpen] = useState(false)
   const [redeemOpen, setRedeemOpen] = useState(false)
   const [resetOpen, setResetOpen] = useState(false)
+  const [deleteOpen, setDeleteOpen] = useState(false)
   const [disconnectOffer, setDisconnectOffer] = useState(false)
 
   if (error) return <ErrorState onRetry={reload} />
@@ -50,6 +53,29 @@ export function UserDetailPage() {
 
   const s = data.subscriber
   const canEdit = can('subscribers.edit')
+
+  /**
+   * Delete the subscriber and leave the page — there is nothing here to come
+   * back to.
+   *
+   * The backend refuses (409 has_billing_history) when they have ever
+   * transacted, because their ledger rows would survive with no owner. Surface
+   * that reason verbatim: "disable them instead" is the actual next step, and a
+   * generic failure toast would leave Sara clicking Delete again.
+   */
+  async function doDelete() {
+    try {
+      await deleteSubscriber(id)
+      toast(t('subscriber.deleted', { username: s.username }), 'ok')
+      navigate('/subscribers')
+    } catch (err) {
+      if (err instanceof ApiError && err.code === 'has_billing_history') {
+        toast(t('subscriber.deleteHasBilling'), 'danger')
+        return
+      }
+      toast(err instanceof Error ? err.message : t('common.error.body'), 'danger')
+    }
+  }
 
   async function doResetMac() {
     try {
@@ -83,6 +109,11 @@ export function UserDetailPage() {
             {canEdit && (
               <Button size="sm" onClick={() => setEditOpen(true)}>
                 {t('ui.edit')}
+              </Button>
+            )}
+            {can('subscribers.delete') && (
+              <Button size="sm" variant="danger" onClick={() => setDeleteOpen(true)}>
+                {t('ui.delete')}
               </Button>
             )}
           </>
@@ -227,6 +258,16 @@ export function UserDetailPage() {
         body={t('subscriber.resetMacBody')}
         confirmLabel={t('subscriber.resetMac')}
         onConfirm={doResetMac}
+      />
+
+      <ConfirmDialog
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        title={t('subscriber.deleteTitle', { username: s.username })}
+        body={t('subscriber.deleteBody')}
+        confirmLabel={t('ui.delete')}
+        destructive
+        onConfirm={doDelete}
       />
 
       {/* Disable-with-CoA-disconnect flow: after disabling an online user, offer

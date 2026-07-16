@@ -459,6 +459,86 @@ func (m *module) discoverServicesHandler(w http.ResponseWriter, r *http.Request)
 	httpapi.JSON(w, http.StatusOK, map[string]any{"items": items, "health": health})
 }
 
+// healthFixHandler applies HikRAD's known fix for ONE health finding (FR-62.7).
+//
+// This is a write to a live router, so it is deliberately the narrowest one in
+// the product. It re-runs CheckHealth against the router and refuses unless the
+// requested code is something the router is reporting RIGHT NOW — a stale panel
+// cannot apply a fix to a router that no longer needs it. The request carries
+// only a code, never a command, and the adapter maps codes to a closed set of
+// writes, so no request body can turn this into "run this on my router".
+//
+// It exists because the flagship finding cannot be fixed from the GUI at all:
+// Winbox resolves a pool id to a name, so a dangling id renders as an empty
+// "none" and an operator who checks it is told everything is fine. HikRAD found
+// the fault and knows the fix; making them hand-type CLI to escape a trap they
+// cannot see is not a fix.
+func (m *module) healthFixHandler(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	n, err := getNAS(ctx, m.db, chi.URLParam(r, "id"))
+	if errors.Is(err, pgx.ErrNoRows) {
+		httpapi.Error(w, http.StatusNotFound, "not_found", "nas not found")
+		return
+	}
+	if err != nil {
+		m.internal(w, "get nas", err)
+		return
+	}
+	var req struct {
+		Code string `json:"code"`
+	}
+	if !httpapi.Bind(w, r, &req) {
+		return
+	}
+	if n.APIUser == "" || len(n.APIPasswordEnc) == 0 {
+		httpapi.Error(w, http.StatusUnprocessableEntity, "no_api_credentials",
+			"no RouterOS API credentials saved for this NAS")
+		return
+	}
+	apiPassword, err := decryptToString(n.APIPasswordEnc)
+	if err != nil {
+		m.internal(w, "decrypt nas api password", err)
+		return
+	}
+	conn, err := m.dialROS(ctx, n.IP, apiPortOrDefault(n.APIPort), n.APIUser, apiPassword)
+	if err != nil {
+		httpapi.Error(w, http.StatusBadGateway, "router_unreachable",
+			"could not connect to the router: "+err.Error())
+		return
+	}
+	defer conn.Close()
+
+	adapter := vendor.For(n.Vendor)
+	current, err := adapter.CheckHealth(conn)
+	if err != nil {
+		httpapi.Error(w, http.StatusBadGateway, "router_unreachable",
+			"connected but could not re-check the router: "+err.Error())
+		return
+	}
+	var target *vendor.HealthFinding
+	for i := range current {
+		if current[i].Code == req.Code && current[i].Fixable {
+			target = &current[i]
+			break
+		}
+	}
+	if target == nil {
+		httpapi.Error(w, http.StatusConflict, "finding_stale",
+			"the router no longer reports this problem, or it has no automatic fix; re-run detection")
+		return
+	}
+	if err := adapter.ApplyHealthFix(conn, target.Code); err != nil {
+		_ = auth.Audit(ctx, "nas.health_fix", "nas", n.ID, nil,
+			map[string]any{"code": target.Code, "outcome": "failed", "error": err.Error()})
+		httpapi.Error(w, http.StatusBadGateway, "router_write_failed",
+			"the router refused the change: "+err.Error())
+		return
+	}
+	_ = auth.Audit(ctx, "nas.health_fix", "nas", n.ID, nil,
+		map[string]any{"code": target.Code, "outcome": "applied", "command": target.Fix})
+	httpapi.JSON(w, http.StatusOK, map[string]any{"applied": target.Fix})
+}
+
 // nasStatusHandler reports the FR-14.4 "seen since created" check: the last
 // Access-Request (this package) and last accounting packet (C) times for the
 // NAS IP, from Redis.

@@ -23,7 +23,13 @@ function renderBar() {
     <I18nProvider>
       <AuthProvider>
         <ToastProvider>
-          <BulkBar filter={{ status: 'active' }} profiles={[]} managers={[]} onDone={() => {}} />
+          <BulkBar
+            filter={{ status: 'active' }}
+            selectedIds={[]}
+            profiles={[]}
+            managers={[]}
+            onDone={() => {}}
+          />
         </ToastProvider>
       </AuthProvider>
     </I18nProvider>,
@@ -125,6 +131,7 @@ describe('BulkBar (FR-4)', () => {
           <ToastProvider>
             <BulkBar
               filter={{ status: 'active', service_type: 'hotspot' }}
+              selectedIds={[]}
               profiles={[]}
               managers={[]}
               onDone={() => {}}
@@ -145,5 +152,99 @@ describe('BulkBar (FR-4)', () => {
       params: { service_type: 'dual' },
       filter: { status: 'active', service_type: 'hotspot' },
     })
+  })
+})
+
+// A selection must reach the backend as subscriber_ids — that is the whole
+// feature. Without it the action silently hits the filter's whole match set,
+// which for "delete" is the difference between three rows and everyone.
+describe('selection', () => {
+  it('sends the ticked ids and says so', async () => {
+    tokenStore.setManager({ id: 'm1', username: 'admin', role: 'admin' })
+    let posted: Record<string, unknown> | null = null
+    fetchMock.mockImplementation(async (url: string, init: RequestInit) => {
+      if (url.endsWith('/subscribers/bulk') && init.method === 'POST') {
+        posted = JSON.parse(init.body as string)
+        return json(202, {
+          id: 'j1',
+          action: 'enable',
+          status: 'completed',
+          total: 2,
+          done: 2,
+          succeeded: 2,
+          failed: 0,
+          failures: [],
+          started_at: '2026-07-16T10:00:00Z',
+        })
+      }
+      throw new Error(`unexpected fetch ${url}`)
+    })
+
+    render(
+      <I18nProvider>
+        <AuthProvider>
+          <ToastProvider>
+            <BulkBar
+              filter={{ status: 'active' }}
+              selectedIds={['id-a', 'id-b']}
+              profiles={[]}
+              managers={[]}
+              onDone={() => {}}
+            />
+          </ToastProvider>
+        </AuthProvider>
+      </I18nProvider>,
+    )
+
+    // The bar states which set the buttons will hit, before anything is clicked.
+    expect(screen.getByText(/2 selected subscriber/)).toBeInTheDocument()
+
+    fireEvent.click(screen.getByText(en.bulk.enable))
+    await waitFor(() => expect(posted).not.toBeNull())
+    expect(posted).toMatchObject({ action: 'enable', subscriber_ids: ['id-a', 'id-b'] })
+  })
+
+  // With nothing ticked the filter is the target, and no ids are sent at all —
+  // an empty array must not be mistaken for "these zero rows".
+  it('omits subscriber_ids when nothing is selected', async () => {
+    tokenStore.setManager({ id: 'm1', username: 'admin', role: 'admin' })
+    let posted: Record<string, unknown> | null = null
+    fetchMock.mockImplementation(async (url: string, init: RequestInit) => {
+      if (url.endsWith('/subscribers/bulk') && init.method === 'POST') {
+        posted = JSON.parse(init.body as string)
+        return json(202, {
+          id: 'j1',
+          action: 'enable',
+          status: 'completed',
+          total: 0,
+          done: 0,
+          succeeded: 0,
+          failed: 0,
+          failures: [],
+          started_at: '2026-07-16T10:00:00Z',
+        })
+      }
+      throw new Error(`unexpected fetch ${url}`)
+    })
+
+    render(
+      <I18nProvider>
+        <AuthProvider>
+          <ToastProvider>
+            <BulkBar
+              filter={{ status: 'active' }}
+              selectedIds={[]}
+              profiles={[]}
+              managers={[]}
+              onDone={() => {}}
+            />
+          </ToastProvider>
+        </AuthProvider>
+      </I18nProvider>,
+    )
+
+    fireEvent.click(screen.getByText(en.bulk.enable))
+    await waitFor(() => expect(posted).not.toBeNull())
+    expect(posted).not.toHaveProperty('subscriber_ids')
   })
 })

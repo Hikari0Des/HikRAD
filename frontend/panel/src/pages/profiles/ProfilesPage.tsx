@@ -2,7 +2,13 @@ import { useEffect, useState } from 'react'
 
 import { IQDAmount, ErrorState, LoadingState, useFormatters, useT } from '@hikrad/shared'
 
-import { archiveProfile, createProfile, listProfiles, updateProfile } from '../../api/profiles'
+import {
+  archiveProfile,
+  createProfile,
+  deleteProfile,
+  listProfiles,
+  updateProfile,
+} from '../../api/profiles'
 import { ApiError } from '../../api/client'
 import type {
   ExpiryBehavior,
@@ -36,9 +42,11 @@ export function ProfilesPage() {
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState<Profile | undefined>(undefined)
   const [archiveTarget, setArchiveTarget] = useState<Profile | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<Profile | null>(null)
 
   const canCreate = can('profiles.create')
   const canEdit = can('profiles.edit')
+  const canDelete = can('profiles.delete')
 
   async function doArchive(p: Profile) {
     try {
@@ -46,6 +54,25 @@ export function ProfilesPage() {
       toast(t('profiles.archived'), 'ok')
       reload()
     } catch (err) {
+      toast(err instanceof Error ? err.message : t('common.error.body'), 'danger')
+    }
+  }
+
+  /**
+   * Delete a plan. The backend refuses (409 profile_in_use) anything ever sold —
+   * archive is the answer there — so surface that reason rather than a generic
+   * failure, because "archive it instead" is the actual next step.
+   */
+  async function doDelete(p: Profile) {
+    try {
+      await deleteProfile(p.id)
+      toast(t('profiles.deleted', { name: p.name }), 'ok')
+      reload()
+    } catch (err) {
+      if (err instanceof ApiError && err.code === 'profile_in_use') {
+        toast(t('profiles.deleteInUse'), 'danger')
+        return
+      }
       toast(err instanceof Error ? err.message : t('common.error.body'), 'danger')
     }
   }
@@ -98,6 +125,8 @@ export function ProfilesPage() {
                     setFormOpen(true)
                   }}
                   onArchive={() => setArchiveTarget(p)}
+                  canDelete={canDelete}
+                  onDelete={() => setDeleteTarget(p)}
                 />
               ))}
             </tbody>
@@ -125,6 +154,18 @@ export function ProfilesPage() {
           if (archiveTarget) await doArchive(archiveTarget)
         }}
       />
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        onOpenChange={(o) => !o && setDeleteTarget(null)}
+        title={t('profiles.deleteTitle', { name: deleteTarget?.name ?? '' })}
+        body={t('profiles.deleteBody')}
+        confirmLabel={t('ui.delete')}
+        destructive
+        onConfirm={async () => {
+          if (deleteTarget) await doDelete(deleteTarget)
+        }}
+      />
     </section>
   )
 }
@@ -144,11 +185,15 @@ function ProfileRow({
   canEdit,
   onEdit,
   onArchive,
+  canDelete,
+  onDelete,
 }: {
   profile: Profile
   canEdit: boolean
   onEdit: () => void
   onArchive: () => void
+  canDelete: boolean
+  onDelete: () => void
 }) {
   const t = useT()
   const { formatNumber } = useFormatters()
@@ -182,6 +227,14 @@ function ProfileRow({
               {t('profiles.archive')}
             </Button>
           </>
+        )}
+        {/* Delete stays available on an ARCHIVED plan too: archiving a
+            never-used plan created by mistake is the likeliest way to end up
+            wanting it gone, and hiding delete there would strand it. */}
+        {canDelete && (
+          <Button size="sm" variant="ghost" onClick={onDelete}>
+            {t('ui.delete')}
+          </Button>
         )}
       </td>
     </tr>

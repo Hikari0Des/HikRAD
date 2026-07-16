@@ -67,13 +67,20 @@ type Record struct {
 	EventTimeParsed time.Time `json:"event_time_parsed"`
 }
 
-// coarseService is the record's pppoe|hotspot hint, defaulting to pppoe (what
-// every pre-v2 record and every non-hotspot NAS implies).
+// coarseService is the record's pppoe|hotspot hint, or "" when the NAS sent
+// nothing to base one on.
+//
+// It deliberately does NOT default to pppoe. A MikroTik omits Service-Type from
+// Accounting-Requests, so the old default turned "we don't know" into a
+// confident "pppoe" that the resolver then filtered on — filing every hotspot
+// session on a hotspot-only NAS as pppoe (docs/ops/known-issues.md). "" lets the
+// resolver identify the instance from the attributes that actually carry it.
 func (r Record) coarseService() string {
-	if r.ServiceType == "hotspot" {
-		return "hotspot"
+	switch r.ServiceType {
+	case "hotspot", "pppoe":
+		return r.ServiceType
 	}
-	return "pppoe"
+	return ""
 }
 
 var errNoSession = errors.New("accounting: missing acct_session_id")

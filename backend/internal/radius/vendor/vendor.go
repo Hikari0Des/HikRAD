@@ -50,7 +50,21 @@ type RateSpec struct {
 // (how a MikroTik encodes a hotspot server name into Called-Station-Id, say) is
 // interpreted only by an adapter in this package — that is the FR-17 boundary.
 type ServiceQuery struct {
-	Service         string // coarse hint: "pppoe" | "hotspot"
+	// Service is the bridge's coarse kind: "pppoe" | "hotspot", or **EMPTY when
+	// the kind is genuinely unknown**.
+	//
+	// Empty is not the same as "pppoe", and conflating the two was a real bug: a
+	// MikroTik sends Service-Type=Login-User on a hotspot Access-Request but
+	// omits it from Accounting-Requests, so accounting's guess defaulted to
+	// pppoe. An adapter that FILTERS by that guess then finds no candidates on a
+	// hotspot-only NAS and gives up before it ever looks at the attributes that
+	// actually identify the instance — filing every hotspot session as pppoe
+	// (2026-07-16, docs/ops/known-issues.md).
+	//
+	// So: a non-empty Service is a claim the caller stands behind and the adapter
+	// may filter on; an empty one means "identify this from the attributes
+	// alone", and the resolved instance's own service is the answer.
+	Service         string
 	CalledStationID string
 	NASPortType     string
 	NASPortID       string
@@ -102,6 +116,10 @@ type HealthFinding struct {
 	Code   string `json:"code"`
 	Detail string `json:"detail"`
 	Fix    string `json:"fix"`
+	// Fixable reports whether HikRAD can apply Fix itself via ApplyHealthFix.
+	// When false the operator must run Fix by hand — so the panel keeps showing
+	// the command either way, and only offers the button when this is true.
+	Fixable bool `json:"fixable"`
 }
 
 // Health finding codes.
@@ -152,6 +170,15 @@ type Adapter interface {
 	// check on the router. Read-only. An empty result means nothing known-bad
 	// was found, never "healthy" in any stronger sense.
 	CheckHealth(conn ROSConn) ([]HealthFinding, error)
+	// ApplyHealthFix writes the fix for ONE finding code (FR-62.7). Deliberately
+	// keyed on a code rather than taking a command: the set of writes it can
+	// ever make is closed and lives here, so no caller — and no request body —
+	// can turn this into "run arbitrary commands on the router".
+	//
+	// An unknown or unfixable code is an error, never a silent no-op. Callers
+	// re-run CheckHealth first and only pass a code it currently reports, so a
+	// stale panel cannot apply a fix to a router that no longer needs it.
+	ApplyHealthFix(conn ROSConn, code string) error
 	// SupportsInPlace reports whether an in-place CoA-Request change for
 	// intent is known to take effect on an already-active session for a NAS
 	// of type nasType ("pppoe"|"hotspot") running rosVersion — the Phase 4

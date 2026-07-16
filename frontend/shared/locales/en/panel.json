@@ -147,6 +147,8 @@
     "columns": "Columns",
     "empty": "No subscribers match.",
     "clearFilters": "Clear filters",
+    "selectAllShown": "Select all shown subscribers",
+    "selectRow": "Select {username}",
     "filterStatus": "Status",
     "filterProfile": "Profile",
     "filterOwner": "Owner",
@@ -214,6 +216,10 @@
     "resetMac": "Reset MAC",
     "resetMacTitle": "Reset the learned MAC?",
     "resetMacBody": "The subscriber will re-learn their MAC on the next connection. Use this when a customer changed their router.",
+    "deleteTitle": "Delete {username}?",
+    "deleteBody": "This cannot be undone. Their sessions and usage history go with them. If you only want to cut off access, disable them instead.",
+    "deleted": "{username} was deleted.",
+    "deleteHasBilling": "This subscriber has billing history and cannot be deleted — disable them instead, so their payments stay attached to them.",
     "macReset": "MAC reset.",
     "disableDisconnectTitle": "Disconnect now?",
     "disableDisconnectBody": "This subscriber is online. Drop their live sessions now via CoA, rather than waiting for the next re-authentication?",
@@ -269,7 +275,11 @@
     "archived": "Profile archived.",
     "archivedTag": "Archived",
     "archiveTitle": "Archive this profile?",
-    "archiveBody": "Archived profiles disappear from the picker but stay on subscribers already using them."
+    "archiveBody": "Archived profiles disappear from the picker but stay on subscribers already using them.",
+    "deleteTitle": "Delete {name}?",
+    "deleteBody": "This only works for a plan nothing has ever used. Anything already sold must be archived instead, so past renewals keep the price and speeds they were sold at.",
+    "deleted": "{name} was deleted.",
+    "deleteInUse": "This plan is in use by subscribers, vouchers or payment history — archive it instead of deleting it."
   },
   "nas": {
     "add": "Add NAS",
@@ -467,12 +477,16 @@
     "noPermission": "You do not have permission to view the audit trail."
   },
   "bulk": {
-    "scopeHint": "Bulk actions apply to every subscriber matching the current filters, not just the visible rows.",
+    "scopeHint": "Nothing is selected, so these apply to every subscriber matching the current filters — not just the visible rows. Tick rows to act on those instead.",
+    "scopeSelected": "These apply to the {count} selected subscriber(s) only. The filters are ignored.",
     "enable": "Enable",
     "disable": "Disable",
     "changeProfile": "Change profile",
     "extendExpiry": "Extend expiry",
     "moveOwner": "Move owner",
+    "delete": "Delete",
+    "deleteWarning": "Deleted subscribers cannot be recovered.",
+    "deleteBillingNote": "Any subscriber with billing history will be skipped and listed below — disable those instead, so their payments stay attached to them.",
     "export": "Export CSV",
     "exported": "Export downloaded.",
     "disabledReason": "Reason (optional)",
@@ -486,7 +500,8 @@
       "change_profile": "Change profile",
       "extend_expiry": "Extend expiry",
       "move_owner": "Move owner",
-      "set_allow_hotspot": "Set Hotspot access"
+      "set_service_type": "Set service",
+      "delete": "Delete"
     },
     "setServiceType": "Set service"
   },

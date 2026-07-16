@@ -265,6 +265,14 @@ function Row({
         <span className="rounded bg-surface-sunken px-1.5 py-0.5 text-xs">
           {t(`live.service.${s.service}`)}
         </span>
+        {/* Which zone/server, when the session resolved to one (FR-62). A NAS
+            can run several hotspots, so the kind alone doesn't locate the user.
+            LTR: it is the router's own object name. */}
+        {s.service_name ? (
+          <span className="mt-0.5 block text-xs text-ink-muted">
+            <Ltr>{s.service_name}</Ltr>
+          </span>
+        ) : null}
       </span>
       <span className="flex justify-end gap-1">
         {canDisconnect && (

@@ -223,8 +223,17 @@ func (e *engine) resolveInstance(ctx context.Context, nas nasIdentity, req autho
 		})
 		byID[r.ID] = r
 	}
+	// The authorize bridge ALWAYS sends a definite kind, so an empty one here is
+	// a malformed request, not the "kind unknown" case accounting has. Normalize
+	// it to pppoe — v1's default and C6's frozen meaning — rather than letting it
+	// mean "any instance", which would quietly weaken step 2's nas_not_allowed
+	// and the FR-61 service-type matrix that hangs off the resolved kind.
+	kind := req.Service
+	if kind == "" {
+		kind = "pppoe"
+	}
 	got, ok := vendor.For(nas.Vendor).ResolveService(vendor.ServiceQuery{
-		Service:         req.Service,
+		Service:         kind,
 		CalledStationID: req.CalledStationID,
 		NASPortType:     req.NASPortType,
 		NASPortID:       req.NASPortID,

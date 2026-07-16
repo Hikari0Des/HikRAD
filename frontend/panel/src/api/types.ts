@@ -155,10 +155,17 @@ export type BulkAction =
   | 'extend_expiry'
   | 'move_owner'
   | 'set_service_type'
+  | 'delete'
   | 'export'
 
 export interface BulkRequest {
   filter: BulkFilter
+  /**
+   * An explicit selection. When non-empty it REPLACES `filter` — the operator
+   * ticked these rows and means these rows. The manager scope still applies, so
+   * this cannot reach a subscriber the caller couldn't otherwise see.
+   */
+  subscriber_ids?: string[]
   action: BulkAction
   params?: Record<string, unknown>
 }
@@ -456,6 +463,14 @@ export interface LiveSession {
   rate_up_bps: number
   stale: boolean
   service: 'pppoe' | 'hotspot'
+  /**
+   * FR-62: WHICH of the NAS's service instances this session is on. `service`
+   * alone says "hotspot", which on a router running three zones doesn't tell an
+   * operator where the user actually is. Empty when the session couldn't be
+   * attributed to an instance (recorded anyway — a session is never dropped).
+   */
+  nas_service_id?: string
+  service_name?: string
 }
 
 export interface SessionHistory {

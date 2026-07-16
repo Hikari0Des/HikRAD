@@ -183,6 +183,27 @@ func updateProfile(ctx context.Context, tx pgx.Tx, id string, in profileInput) (
 		in.BurstRate, in.BurstThreshold, in.BurstTime, in.RatePriority, in.MinRate))
 }
 
+// profileInUse reports whether anything references this plan. Checked before a
+// delete so the refusal names a reason instead of surfacing an FK violation —
+// the DB's ON DELETE RESTRICT is the backstop, not the UX.
+//
+// pending_profile_id is included: a scheduled plan change at next renewal is a
+// live reference even though nobody is on the plan yet.
+func profileInUse(ctx context.Context, db *pgxpool.Pool, id string) (bool, error) {
+	var inUse bool
+	err := db.QueryRow(ctx,
+		`SELECT EXISTS (SELECT 1 FROM subscribers WHERE profile_id = $1::uuid OR pending_profile_id = $1::uuid)
+		     OR EXISTS (SELECT 1 FROM vouchers WHERE profile_id = $1::uuid)
+		     OR EXISTS (SELECT 1 FROM payment_intents WHERE profile_id = $1::uuid)`,
+		id).Scan(&inUse)
+	return inUse, err
+}
+
+func deleteProfile(ctx context.Context, db *pgxpool.Pool, id string) error {
+	_, err := db.Exec(ctx, `DELETE FROM profiles WHERE id = $1::uuid`, id)
+	return err
+}
+
 func archiveProfile(ctx context.Context, db *pgxpool.Pool, id string) (Profile, error) {
 	return scanProfile(db.QueryRow(ctx,
 		`UPDATE profiles SET archived = true WHERE id = $1::uuid RETURNING `+profileColumns, id))
