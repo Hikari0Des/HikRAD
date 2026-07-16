@@ -2,7 +2,7 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 
-import { I18nProvider } from '@hikrad/shared'
+import { I18nProvider, initTheme } from '@hikrad/shared'
 import '@hikrad/shared/ui.css'
 
 import { App } from './App'
@@ -14,6 +14,9 @@ import { OfflineBanner } from './pwa/OfflineBanner'
 import { registerServiceWorker } from './pwa/registerServiceWorker'
 import { UpdateToast } from './pwa/UpdateToast'
 import './index.css'
+
+// Resolve the stored dark/light/system preference before first paint (item 19).
+initTheme()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

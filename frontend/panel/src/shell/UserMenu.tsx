@@ -1,6 +1,6 @@
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
 
-import { Ltr, useLocale, useT, type Locale } from '@hikrad/shared'
+import { Ltr, THEME_PREFERENCES, useLocale, useT, useTheme, type Locale } from '@hikrad/shared'
 
 import { useAuth } from '../auth/AuthContext'
 
@@ -9,6 +9,7 @@ const LOCALES: readonly Locale[] = ['en', 'ar', 'ku']
 export function UserMenu() {
   const { manager, logout } = useAuth()
   const { locale, dir, setLocale } = useLocale()
+  const { theme, setTheme } = useTheme()
   const t = useT()
 
   if (!manager) return null
@@ -52,6 +53,22 @@ export function UserMenu() {
               <span className="flex items-center justify-between gap-4">
                 {t(`languages.${code}`)}
                 {locale === code && <span aria-hidden="true">✓</span>}
+              </span>
+            </DropdownMenu.Item>
+          ))}
+          <DropdownMenu.Separator className="my-1 h-px bg-surface-sunken" />
+          <DropdownMenu.Label className="px-3 pt-1 text-xs text-ink-muted">
+            {t('common.theme.label')}
+          </DropdownMenu.Label>
+          {THEME_PREFERENCES.map((pref) => (
+            <DropdownMenu.Item
+              key={pref}
+              onSelect={() => setTheme(pref)}
+              className="cursor-pointer rounded px-3 py-2 text-sm outline-none data-[highlighted]:bg-brand-soft"
+            >
+              <span className="flex items-center justify-between gap-4">
+                {t(`common.theme.${pref}`)}
+                {theme === pref && <span aria-hidden="true">✓</span>}
               </span>
             </DropdownMenu.Item>
           ))}

@@ -5,6 +5,7 @@ import { useT } from '@hikrad/shared'
 import { useAuth } from '../auth/AuthContext'
 import { brandInitial, useBranding } from '../branding'
 import { LanguageSwitcher } from '../components/LanguageSwitcher'
+import { ThemeSwitcher } from '../components/ThemeSwitcher'
 
 const TABS = [
   { to: '/home', key: 'portal.nav.home' },
@@ -45,6 +46,7 @@ export function PortalLayout() {
         </span>
         <div className="flex items-center gap-2">
           <LanguageSwitcher />
+          <ThemeSwitcher />
           <button
             type="button"
             onClick={logout}

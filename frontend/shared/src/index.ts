@@ -27,3 +27,7 @@ export type { SubscriberStatus } from './ui/StatusBadge'
 export { QuotaBar } from './ui/QuotaBar'
 export { EmptyState, ErrorState, LoadingState } from './ui/states'
 export { IQDAmount } from './ui/IQDAmount'
+
+// Theme preference (item 19): dark/light/system, applied as data-theme on <html>
+export { initTheme, setThemePreference, THEME_PREFERENCES, useTheme } from './ui/theme'
+export type { ThemePreference } from './ui/theme'

@@ -23,3 +23,26 @@
      a distinct amber, neither "danger" nor "ok" (task 3b/FR-59). */
   --hik-warning: 180 116 8;
 }
+
+/*
+ * Dark theme (item 19) — same values as the panel's tokens.css, applied as
+ * data-theme="dark" on <html> by the shared theme store (@hikrad/shared
+ * initTheme/useTheme). Components stay theme-blind.
+ */
+:root[data-theme='dark'] {
+  --hik-brand: 45 156 186;
+  --hik-brand-strong: 122 199 220;
+  --hik-brand-soft: 21 51 61;
+
+  --hik-surface: 16 22 29;
+  --hik-surface-raised: 25 33 43;
+  --hik-surface-sunken: 40 51 63;
+
+  --hik-ink: 226 233 240;
+  --hik-ink-muted: 148 160 174;
+  --hik-ink-inverse: 13 18 24;
+
+  --hik-danger: 240 106 106;
+  --hik-ok: 84 205 132;
+  --hik-warning: 224 171 61;
+}
