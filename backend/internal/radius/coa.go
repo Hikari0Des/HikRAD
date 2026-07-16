@@ -33,6 +33,19 @@ type SessionRef struct {
 	AcctSessionID string
 	Username      string
 	FramedIP      string
+	// Service ("pppoe"|"hotspot") keys the FR-15.4 ROS quirk matrix. Until v2
+	// phase 1 this was read off nas.type — sound only while a NAS ran exactly
+	// one service. A multi-service NAS (FR-62) makes the session's own service
+	// the only accurate answer, so callers pass it from the live session state.
+	// Empty falls back to "pppoe", the quirk matrix's v1 default.
+	Service string
+}
+
+func (r SessionRef) service() string {
+	if r.Service == "" {
+		return "pppoe"
+	}
+	return r.Service
 }
 
 // CoAOutcome is the typed result of a CoA/Disconnect attempt.
@@ -209,11 +222,11 @@ func (c *coaService) send(ctx context.Context, ref SessionRef, code radius.Code,
 		ros = *n.ROSVersion
 	}
 	for _, a := range attrs {
-		if !adapter.SupportsInPlace(ros, n.Type, a.Intent) {
+		if !adapter.SupportsInPlace(ros, ref.service(), a.Intent) {
 			res := CoAResult{Outcome: CoAUnsupported, Err: fmt.Errorf(
-				"coa: %s unsupported in-place on %s ROS %q %s NAS — falling back", a.Intent, n.Vendor, ros, n.Type)}
+				"coa: %s unsupported in-place on %s ROS %q %s session — falling back", a.Intent, n.Vendor, ros, ref.service())}
 			c.log.Info("coa attempt skipped (version-aware quirk)",
-				"nas", ref.NASID, "op", codeName(code), "intent", a.Intent, "ros_version", ros, "nas_type", n.Type)
+				"nas", ref.NASID, "op", codeName(code), "intent", a.Intent, "ros_version", ros, "service", ref.service())
 			c.recordMetric(ctx, codeName(code), res.Outcome)
 			return res
 		}

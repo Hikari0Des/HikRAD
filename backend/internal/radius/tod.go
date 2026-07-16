@@ -185,6 +185,7 @@ func (e *todEngine) sweepProfile(ctx context.Context, profileID, rate, label str
 		}
 		res := e.applyRate(ctx, SessionRef{
 			NASID: s.NASID, AcctSessionID: s.AcctSessionID, Username: s.Username, FramedIP: s.IP,
+			Service: s.Service,
 		}, rate)
 		if res.Ok() {
 			swept++

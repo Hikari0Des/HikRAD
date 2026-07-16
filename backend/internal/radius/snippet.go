@@ -6,6 +6,7 @@ package radius
 // (the reachable FreeRADIUS host), defaulting to a placeholder Ali edits.
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"os"
@@ -28,7 +29,7 @@ func (m *module) configSnippetHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	in, ros, err := m.snippetInputFor(n, r.URL.Query().Get("ros"))
+	in, ros, err := m.snippetInputFor(r.Context(), n, r.URL.Query().Get("ros"))
 	if err != nil {
 		m.internal(w, "build snippet input", err)
 		return
@@ -41,7 +42,7 @@ func (m *module) configSnippetHandler(w http.ResponseWriter, r *http.Request) {
 	httpapi.JSON(w, http.StatusOK, map[string]any{
 		"nas_id":      n.ID,
 		"ros_version": ros,
-		"type":        n.Type,
+		"type":        in.Type,
 		"snippet":     snippet,
 	})
 }
@@ -51,7 +52,11 @@ func (m *module) configSnippetHandler(w http.ResponseWriter, r *http.Request) {
 // (autosetup_api.go) — both must describe exactly the same target config, or
 // a router set up by one path would look "wrong" to the other. rosOverride,
 // when non-empty, wins over the NAS record's stored ros_version (default 7).
-func (m *module) snippetInputFor(n nasRow, rosOverride string) (vendor.SnippetInput, string, error) {
+func (m *module) snippetInputFor(ctx context.Context, n nasRow, rosOverride string) (vendor.SnippetInput, string, error) {
+	services, err := enabledServices(ctx, m.db, n.ID)
+	if err != nil {
+		return vendor.SnippetInput{}, "", err
+	}
 	ros := rosOverride
 	if ros == "" && n.ROSVersion != nil {
 		ros = *n.ROSVersion
@@ -74,9 +79,18 @@ func (m *module) snippetInputFor(n nasRow, rosOverride string) (vendor.SnippetIn
 		secret = plain
 	}
 
+	// Type is the coarse kind the v1 single-service snippet renders. Chunk 3 of
+	// this phase replaces it with the full per-instance Services loop (C8); for
+	// now the first enabled instance preserves v1's exact output for the
+	// one-service NAS that every upgraded install starts with.
+	kind := "pppoe"
+	if len(services) > 0 {
+		kind = services[0].Service
+	}
+
 	return vendor.SnippetInput{
 		ROSVersion:   ros,
-		Type:         n.Type,
+		Type:         kind,
 		NASName:      n.Name,
 		RadiusServer: server,
 		Secret:       secret,

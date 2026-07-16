@@ -108,7 +108,7 @@ func (reg *jobRegistry) get(id string) (*bulkJob, bool) {
 
 var mutatingBulkActions = map[string]bool{
 	"enable": true, "disable": true, "change_profile": true,
-	"extend_expiry": true, "move_owner": true, "set_allow_hotspot": true,
+	"extend_expiry": true, "move_owner": true, "set_service_type": true,
 }
 
 func (m *Module) bulkHandler(w http.ResponseWriter, r *http.Request) {
@@ -225,13 +225,15 @@ func (m *Module) buildBulkApply(ctx context.Context, action string, params map[s
 		}
 		return bulkApply{action: "subscriber.bulk_move_owner",
 			set: "owner_manager_id=$2::uuid", args: []any{owner}}, nil
-	case "set_allow_hotspot":
-		v, ok := params["allow_hotspot"].(bool)
-		if !ok {
-			return bulkApply{}, bad("params.allow_hotspot", "boolean required")
+	case "set_service_type":
+		v, _ := params["service_type"].(string)
+		switch v {
+		case "pppoe", "hotspot", "dual":
+		default:
+			return bulkApply{}, bad("params.service_type", "must be one of: pppoe hotspot dual")
 		}
-		return bulkApply{action: "subscriber.bulk_set_allow_hotspot",
-			set: "allow_hotspot=$2", args: []any{v}}, nil
+		return bulkApply{action: "subscriber.bulk_set_service_type",
+			set: "service_type=$2", args: []any{v}}, nil
 	}
 	return bulkApply{}, bad("action", "unknown bulk action")
 }

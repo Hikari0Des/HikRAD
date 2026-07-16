@@ -78,7 +78,10 @@ func (e *engine) decide(ctx context.Context, req authorizeRequest) (authorizeRes
 	// 3. Service check (FR-58): a Hotspot login for a PPPoE subscriber is
 	// allowed only when the subscriber opts into Hotspot. A redeemed voucher is
 	// inherently a Hotspot credential, so it bypasses this gate.
-	if hotspot && !voucherAuthed && !view.AllowHotspot {
+	// NOTE: chunk 2 of this phase replaces this with the full FR-61 service-type
+	// matrix (C6 step 4). service_type='pppoe' is exactly v1's allow_hotspot=false
+	// and 'dual' its true, so this reads identically for every migrated row.
+	if hotspot && !voucherAuthed && view.ServiceType == "pppoe" {
 		return e.reject(ctx, ev, ReasonServiceNotAllowed), nil
 	}
 	ev.Checks = append(ev.Checks, "service")

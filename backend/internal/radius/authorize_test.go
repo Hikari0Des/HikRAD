@@ -88,6 +88,9 @@ func baseView(sub, pass string) AuthView {
 		RateLimit:    "10M/10M",
 		SessionLimit: 1,
 		MacLockMode:  "off",
+		// pppoe is v1's allow_hotspot=false and the migration's default, so
+		// every pre-existing test keeps asserting exactly what it did (C1).
+		ServiceType: "pppoe",
 	}
 }
 
@@ -315,7 +318,7 @@ func hotspotReq(user, pass string) authorizeRequest {
 func TestFR58FlagOffRejects(t *testing.T) {
 	env := newTestEnv(t, "10.0.0.1")
 	v := baseView("s1", "pw")
-	v.AllowHotspot = false
+	v.ServiceType = "pppoe"
 	env.add("u", v)
 	assertReject(t, mustDecide(t, env, hotspotReq("u", "pw")), ReasonServiceNotAllowed)
 }
@@ -323,7 +326,7 @@ func TestFR58FlagOffRejects(t *testing.T) {
 func TestFR58HotspotAcceptsAtPPPoELimitWithHotspotRate(t *testing.T) {
 	env := newTestEnv(t, "10.0.0.1")
 	v := baseView("s1", "pw")
-	v.AllowHotspot = true
+	v.ServiceType = "dual"
 	v.SessionLimit = 1
 	v.RateLimit = "10M/10M"
 	v.HotspotRateLimit = "2M/2M"
@@ -341,7 +344,7 @@ func TestFR58HotspotAcceptsAtPPPoELimitWithHotspotRate(t *testing.T) {
 func TestFR58SecondHotspotRejects(t *testing.T) {
 	env := newTestEnv(t, "10.0.0.1")
 	v := baseView("s1", "pw")
-	v.AllowHotspot = true
+	v.ServiceType = "dual"
 	env.add("u", v)
 	env.live[[2]string{"s1", "hotspot"}] = 1 // one already online
 	assertReject(t, mustDecide(t, env, hotspotReq("u", "pw")), ReasonSessionLimit)
@@ -350,7 +353,7 @@ func TestFR58SecondHotspotRejects(t *testing.T) {
 func TestFR58HotspotRateFallback(t *testing.T) {
 	env := newTestEnv(t, "10.0.0.1")
 	v := baseView("s1", "pw")
-	v.AllowHotspot = true
+	v.ServiceType = "dual"
 	v.RateLimit = "10M/10M"
 	v.HotspotRateLimit = "" // fall back to the main rate
 	env.add("u", v)
@@ -364,7 +367,7 @@ func TestFR58HotspotRateFallback(t *testing.T) {
 func TestFR58HotspotSkipsQuota(t *testing.T) {
 	env := newTestEnv(t, "10.0.0.1")
 	v := baseView("s1", "pw")
-	v.AllowHotspot = true
+	v.ServiceType = "dual"
 	v.QuotaExhausted = true
 	v.QuotaBehavior = "block" // would block PPPoE, but Hotspot skips quota (FR-58.3)
 	env.add("u", v)
@@ -374,7 +377,7 @@ func TestFR58HotspotSkipsQuota(t *testing.T) {
 func TestHotspotSkipsMacLock(t *testing.T) {
 	env := newTestEnv(t, "10.0.0.1")
 	v := baseView("s1", "pw")
-	v.AllowHotspot = true
+	v.ServiceType = "dual"
 	v.MacLockMode = "fixed"
 	v.LearnedMac = "AA:BB:CC:DD:EE:FF"
 	env.add("u", v)

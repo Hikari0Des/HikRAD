@@ -42,8 +42,18 @@ type AuthView struct {
 	MacLockMode      string    `json:"mac_lock_mode"` // off | learn | fixed
 	LearnedMac       string    `json:"learned_mac"`
 	ThrottleRate     string    `json:"throttle_rate"`
-	AllowHotspot     bool      `json:"allow_hotspot"`      // FR-58
 	HotspotRateLimit string    `json:"hotspot_rate_limit"` // empty = fall back to RateLimit
+	// ServiceType (FR-61, C5) is pppoe | hotspot | dual. It replaced v1's
+	// AllowHotspot bool: 'dual' is exactly the old allow_hotspot=true (FR-58
+	// semantics, unchanged), 'pppoe' the old false, and 'hotspot' is the new
+	// case v1 could not express — a full subscriber with no PPPoE access, whose
+	// quota and session limit DO apply (unlike dual's hotspot leg).
+	ServiceType string `json:"service_type"`
+	// AssignedNASID/AssignedServiceID are the FR-64 effective scope the loader
+	// resolves with subscriber-over-profile precedence; "" means any (v1's
+	// behaviour). The engine rejects nas_not_allowed on a mismatch.
+	AssignedNASID     string `json:"assigned_nas_id"`
+	AssignedServiceID string `json:"assigned_service_id"`
 	// StaticIP is the subscriber's fixed Framed-IP-Address (FR-16.2), empty
 	// when the subscriber uses a pool. NOTE: this field is NOT in the frozen
 	// C4 AuthView struct but the engine provably needs it — the FR-16.2 /
@@ -73,11 +83,12 @@ type PolicyProvider interface {
 }
 
 var (
-	seamMu         sync.RWMutex
-	provider       PolicyProvider
-	liveCountFn    = func(subscriberID, service string) int { return 0 }
-	nasLiveCountFn = func(nasID string) int { return 0 }
-	poolUsageFn    = func(poolName string) int { return 0 }
+	seamMu             sync.RWMutex
+	provider           PolicyProvider
+	liveCountFn        = func(subscriberID, service string) int { return 0 }
+	nasLiveCountFn     = func(nasID string) int { return 0 }
+	serviceLiveCountFn = func(serviceID string) int { return 0 }
+	poolUsageFn        = func(poolName string) int { return 0 }
 )
 
 // SetPolicyProvider installs D's read-model. Called once from the subscribers
@@ -109,6 +120,20 @@ func currentNASLiveCount() func(string) int {
 	seamMu.RLock()
 	defer seamMu.RUnlock()
 	return nasLiveCountFn
+}
+
+// SetServiceLiveCounter installs C's per-service-instance live count, used by
+// the FR-63 services sub-list. Unset → 0, so the panel renders before C wires it.
+func SetServiceLiveCounter(count func(serviceID string) int) {
+	seamMu.Lock()
+	serviceLiveCountFn = count
+	seamMu.Unlock()
+}
+
+func currentServiceLiveCount() func(string) int {
+	seamMu.RLock()
+	defer seamMu.RUnlock()
+	return serviceLiveCountFn
 }
 
 // SetPoolUsageCounter installs C's per-pool live-session count (from live.List

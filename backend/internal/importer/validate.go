@@ -179,6 +179,13 @@ func dryRun(ctx context.Context, db *pgxpool.Pool, b batch) ([]importRow, error)
 				res.Fields["expires_at"] = t.Format(time.RFC3339)
 			}
 		}
+		if st := strings.TrimSpace(r["service_type"]); st != "" {
+			if v, ok := normalizeServiceType(st); ok {
+				res.Fields["service_type"] = v
+			} else {
+				res.Errors = append(res.Errors, "service_type must be pppoe, hotspot, dual, or a yes/no hotspot flag: "+st)
+			}
+		}
 
 		if username != "" {
 			if first, dup := seenInFile[lowerU]; dup {

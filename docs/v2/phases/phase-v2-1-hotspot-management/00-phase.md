@@ -18,12 +18,19 @@ Commit in reviewable chunks along these boundaries (schema+model / engine / wiza
 
 | Migration | Owns |
 |---|---|
-| `0500_subscriber_service_type` | `subscribers.service_type text NOT NULL DEFAULT 'pppoe' CHECK (service_type IN ('pppoe','hotspot','dual'))`; backfill `allow_hotspot=false→'pppoe'`, `true→'dual'`; **then** `DROP COLUMN allow_hotspot`. Down: re-add `allow_hotspot bool`, backfill `service_type IN ('dual','hotspot')→true` else false, drop `service_type`. |
-| `0501_nas_services` | `nas_services` table (C3); backfill one row per NAS from `nas.type`; **then** `ALTER TABLE nas DROP COLUMN type`. Down: re-add `nas.type` (default 'pppoe'), backfill from each NAS's first service row, drop table. |
-| `0502_nas_scoping` | `subscribers.nas_id/nas_service_id` + `profiles.nas_id/nas_service_id` (nullable, `ON DELETE SET NULL`) + supporting indexes. Down: drop the four columns. |
+| `0500_subscriber_service_type` | `subscribers.service_type text NOT NULL DEFAULT 'pppoe' CHECK (service_type IN ('pppoe','hotspot','dual'))`; backfill `allow_hotspot=false→'pppoe'`, `true→'dual'`; **then** `DROP COLUMN allow_hotspot`. |
+| `0501_nas_services` | `nas_services` table (C3); backfill one row per NAS from `nas.type`; **then** `ALTER TABLE nas DROP COLUMN type`. |
+| `0502_nas_scoping` | `subscribers.nas_id/nas_service_id` + `profiles.nas_id/nas_service_id` (nullable, `ON DELETE SET NULL`) + supporting indexes. |
 | `0503`–`0519` | reserved (extra indexes / follow-ups discovered during build). |
 
-Every migration ships a paired `.down.sql`. The 0500 and 0501 add→backfill→drop sequences are single migrations because all Go reads switch to the new column in the same phase/binary (on-prem single-version deploy; migrations run at the new binary's boot).
+The 0500 and 0501 add→backfill→drop sequences are single migrations because all Go reads switch to the new column in the same phase/binary (on-prem single-version deploy; migrations run at the new binary's boot).
+
+**No `.down.sql` files** (amended 2026-07-16, owner-confirmed — supersedes this doc's original "every migration ships a paired `.down.sql`"). Reasons, in order of authority:
+1. **FR-51.4 / [docs/ops/update.md](../../../ops/update.md)**: migrations are *forward-only*; "there is no down-migration path in production". A failed update rolls back by restoring the pre-update images + the automatic pre-update backup, never by migrating down. The master PRD wins over a phase brief (doc hierarchy).
+2. **Repo reality**: all 47 v1 migrations are `.up.sql` only; `platform.Migrate` only ever calls `m.Up()`.
+3. **0500's down path is provably lossy**: `service_type` has three values, `allow_hotspot` has two — `hotspot→true` and `dual→true` collapse, so a down-then-up round trip would silently convert every hotspot-only account into `dual`, granting PPPoE access it never had. A rollback path that corrupts data on re-upgrade is worse than none.
+
+Gate item 1 therefore tests the **forward** migration only.
 
 ## Frozen contracts
 
@@ -141,7 +148,7 @@ Subscriber form: PPPoE/Hotspot/Both radio (persists `service_type`) + NAS/servic
 
 Green when all pass (scriptable legs in `scripts/gate-v2-phase-1.sh`; human/harness legs noted):
 
-1. **Lossless migration** — apply 0500/0501 against a DB seeded with mixed `allow_hotspot` + typed NAS rows: every `false→pppoe`, `true→dual`, one `nas_services` row per NAS from `type`, zero row loss; down-migrations restore the prior columns. (DB-gated Go test.)
+1. **Lossless migration** — apply 0500/0501 against a DB seeded with mixed `allow_hotspot` + typed NAS rows: every `false→pppoe`, `true→dual`, one `nas_services` row per NAS from `type`, zero row loss. Forward-only, per the migration-range note above (no down leg). (DB-gated Go test.)
 2. **Phase-2 regression** — the full `internal/radius` + `internal/subscribers` suites pass with pppoe/dual outcomes byte-for-byte unchanged (C1).
 3. **Service matrix (harness-driven)** — the RADIUS packet harness drives, per the C6 table: pppoe-only rejects hotspot `service_not_allowed`; hotspot-only rejects pppoe `service_not_allowed` and accepts hotspot with hotspot rate + quota enforced + `session_limit`-capped concurrency; dual accepts both with FR-58 semantics; voucher still bypasses.
 4. **Multi-service NAS (harness-driven)** — one NAS with 2 hotspot + 1 pppoe `nas_services` rows: each request resolves to its own instance and gets that instance's pool; the config-snippet covers all three; live sessions carry the service instance.

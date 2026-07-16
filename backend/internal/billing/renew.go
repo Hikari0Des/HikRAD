@@ -341,6 +341,7 @@ func (m *Module) restoreCoA(ctx context.Context, subscriberID, rate, poolName st
 		if s.SubscriberID == subscriberID {
 			refs = append(refs, radius.SessionRef{
 				NASID: s.NASID, AcctSessionID: s.AcctSessionID, Username: s.Username, FramedIP: s.IP,
+				Service: s.Service,
 			})
 		}
 	}

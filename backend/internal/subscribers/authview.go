@@ -61,6 +61,9 @@ func (p *policyProvider) GetAuthView(ctx context.Context, username string) (radi
 		burstTime    *string
 		ratePriority *string
 		minRate      *string
+		// FR-64 effective NAS scope (nil = any NAS).
+		assignedNAS     *string
+		assignedService *string
 	)
 	err := p.db.QueryRow(ctx,
 		`SELECT s.id::text, s.password_enc, s.status, s.expires_at,
@@ -68,10 +71,16 @@ func (p *policyProvider) GetAuthView(ctx context.Context, username string) (radi
 		        p.throttle_rate, p.session_limit_default,
 		        p.hotspot_rate_down_kbps, p.hotspot_rate_up_kbps,
 		        s.session_limit_override, s.rate_override, s.mac_lock_mode, s.learned_mac,
-		        host(s.static_ip), s.allow_hotspot,
+		        host(s.static_ip), s.service_type,
 		        (SELECT name FROM ip_pools WHERE id = p.pool_id),
 		        (SELECT name FROM ip_pools WHERE purpose = 'expired' ORDER BY name LIMIT 1),
-		        p.burst_rate, p.burst_threshold, p.burst_time, p.rate_priority, p.min_rate
+		        p.burst_rate, p.burst_threshold, p.burst_time, p.rate_priority, p.min_rate,
+		        -- FR-64 effective scope, subscriber-over-profile: the subscriber's
+		        -- pair is taken WHOLE when its nas_id is set, so a subscriber that
+		        -- narrows to a NAS never silently inherits the profile's service
+		        -- pin. COALESCE per-column would mix the two halves.
+		        CASE WHEN s.nas_id IS NOT NULL THEN s.nas_id ELSE p.nas_id END::text,
+		        CASE WHEN s.nas_id IS NOT NULL THEN s.nas_service_id ELSE p.nas_service_id END::text
 		   FROM subscribers s
 		   LEFT JOIN profiles p ON p.id = s.profile_id
 		  WHERE s.username = $1`, username).Scan(
@@ -79,8 +88,9 @@ func (p *policyProvider) GetAuthView(ctx context.Context, username string) (radi
 		&expiryBeh, &quotaBeh, &rateDown, &rateUp,
 		&throttle, &sessDefault, &hsDown, &hsUp,
 		&sessOverride, &rateOverride, &v.MacLockMode, &learnedMac,
-		&staticIP, &v.AllowHotspot, &poolName, &expiredPool,
-		&burstRate, &burstThresh, &burstTime, &ratePriority, &minRate)
+		&staticIP, &v.ServiceType, &poolName, &expiredPool,
+		&burstRate, &burstThresh, &burstTime, &ratePriority, &minRate,
+		&assignedNAS, &assignedService)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return radius.AuthView{}, radius.ErrNoSubscriber
 	}
@@ -103,6 +113,8 @@ func (p *policyProvider) GetAuthView(ctx context.Context, username string) (radi
 	v.BurstTime = strOr(burstTime, "")
 	v.RatePriority = strOr(ratePriority, "")
 	v.MinRate = strOr(minRate, "")
+	v.AssignedNASID = strOr(assignedNAS, "")
+	v.AssignedServiceID = strOr(assignedService, "")
 
 	// Session limit: per-user override else profile default else 1.
 	switch {

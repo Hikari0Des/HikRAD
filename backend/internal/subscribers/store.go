@@ -36,9 +36,15 @@ type Subscriber struct {
 	RateOverride         *string    `json:"rate_override"`
 	PriceOverride        *int64     `json:"price_override"`
 	DisabledReason       *string    `json:"disabled_reason"`
-	AllowHotspot         bool       `json:"allow_hotspot"`
-	WhatsappOptIn        bool       `json:"whatsapp_opt_in"`
-	PendingProfileID     *string    `json:"pending_profile_id"`
+	// ServiceType (FR-61) is pppoe | hotspot | dual — it replaced v1's
+	// allow_hotspot bool, which could not express a hotspot-only account.
+	ServiceType   string `json:"service_type"`
+	WhatsappOptIn bool   `json:"whatsapp_opt_in"`
+	// NASID/NASServiceID scope the account to one NAS / one service instance
+	// (FR-64), enforced at auth. Both nil = any NAS, the v1 behaviour.
+	NASID            *string `json:"nas_id"`
+	NASServiceID     *string `json:"nas_service_id"`
+	PendingProfileID *string `json:"pending_profile_id"`
 	// HasPassword is false for passwordless hotspot logins (item 13) — the
 	// credential column then seals an empty string and the portal refuses
 	// password login for the account.
@@ -52,14 +58,16 @@ type Subscriber struct {
 const columns = `id::text, username::text, name, phone, address, notes, status,
 	profile_id::text, owner_manager_id::text, expires_at, mac_lock_mode, learned_mac,
 	host(static_ip), session_limit_override, rate_override, price_override, disabled_reason,
-	allow_hotspot, whatsapp_opt_in, pending_profile_id::text, has_password, created_at, updated_at`
+	service_type, whatsapp_opt_in, nas_id::text, nas_service_id::text,
+	pending_profile_id::text, has_password, created_at, updated_at`
 
 func scanSubscriber(row pgx.Row) (Subscriber, error) {
 	var s Subscriber
 	err := row.Scan(&s.ID, &s.Username, &s.Name, &s.Phone, &s.Address, &s.Notes, &s.Status,
 		&s.ProfileID, &s.OwnerManagerID, &s.ExpiresAt, &s.MacLockMode, &s.LearnedMac,
 		&s.StaticIP, &s.SessionLimitOverride, &s.RateOverride, &s.PriceOverride, &s.DisabledReason,
-		&s.AllowHotspot, &s.WhatsappOptIn, &s.PendingProfileID, &s.HasPassword, &s.CreatedAt, &s.UpdatedAt)
+		&s.ServiceType, &s.WhatsappOptIn, &s.NASID, &s.NASServiceID,
+		&s.PendingProfileID, &s.HasPassword, &s.CreatedAt, &s.UpdatedAt)
 	if err != nil {
 		return Subscriber{}, err
 	}

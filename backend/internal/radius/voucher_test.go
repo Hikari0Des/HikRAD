@@ -47,7 +47,7 @@ func (f *fakeVoucherAuth) AuthenticateVoucher(_ context.Context, code string) (A
 func TestVoucherLogin_Accepts(t *testing.T) {
 	env := newTestEnv(t, "10.0.0.1")
 	fv := &fakeVoucherAuth{code: "GOLD-2222", view: AuthView{
-		SubscriberID: "vsub", Status: "active", AllowHotspot: true, RateLimit: "5M/5M", PoolName: "hotspot-pool",
+		SubscriberID: "vsub", Status: "active", ServiceType: "dual", RateLimit: "5M/5M", PoolName: "hotspot-pool",
 	}}
 	SetVoucherAuthenticator(fv)
 	t.Cleanup(func() { SetVoucherAuthenticator(nil) })
@@ -61,7 +61,7 @@ func TestVoucherLogin_Accepts(t *testing.T) {
 
 func TestVoucherLogin_InvalidCodeRejects(t *testing.T) {
 	env := newTestEnv(t, "10.0.0.1")
-	fv := &fakeVoucherAuth{code: "GOLD-2222", view: AuthView{Status: "active", AllowHotspot: true}}
+	fv := &fakeVoucherAuth{code: "GOLD-2222", view: AuthView{Status: "active", ServiceType: "dual"}}
 	SetVoucherAuthenticator(fv)
 	t.Cleanup(func() { SetVoucherAuthenticator(nil) })
 
@@ -82,7 +82,7 @@ func TestVoucherLogin_NotAttemptedForNonVoucherShape(t *testing.T) {
 func TestVoucherLogin_RealUsernameUnaffected(t *testing.T) {
 	env := newTestEnv(t, "10.0.0.1")
 	v := baseView("s1", "secret")
-	v.AllowHotspot = true
+	v.ServiceType = "dual"
 	env.add("realuser", v)
 	SetVoucherAuthenticator(&fakeVoucherAuth{code: "realuser", view: AuthView{Status: "active"}})
 	t.Cleanup(func() { SetVoucherAuthenticator(nil) })

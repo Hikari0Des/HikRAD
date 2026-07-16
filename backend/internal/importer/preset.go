@@ -18,6 +18,9 @@ var hikradFields = map[string]bool{
 	"address":    true,
 	"profile":    true, // profile NAME; resolved to profile_id during validation
 	"expires_at": true,
+	// service_type (FR-61): pppoe | hotspot | dual. Accepts a SAS4-style
+	// boolean hotspot column too — see normalizeServiceType. Omitted → pppoe.
+	"service_type": true,
 }
 
 // presets maps a preset name to its default column_map. Column names are
@@ -32,6 +35,28 @@ var presets = map[string]map[string]string{
 		"profile":    "Package",
 		"expires_at": "ExpireDate",
 	},
+}
+
+// normalizeServiceType maps an imported cell onto an FR-61 service_type. It
+// accepts the three canonical values and, because no other system models a
+// three-valued service, the boolean "is this a hotspot user?" column a SAS4-era
+// export actually carries — mapped exactly as migration 0500 maps v1's own
+// allow_hotspot bit (true → dual, false → pppoe) so an import and an upgrade
+// agree. An operator who means hotspot-ONLY writes "hotspot" explicitly.
+func normalizeServiceType(s string) (string, bool) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "pppoe", "ppp":
+		return "pppoe", true
+	case "hotspot":
+		return "hotspot", true
+	case "dual", "both":
+		return "dual", true
+	case "true", "yes", "y", "1":
+		return "dual", true
+	case "false", "no", "n", "0":
+		return "pppoe", true
+	}
+	return "", false
 }
 
 // resolvePreset returns the column_map for a named preset restricted to

@@ -15,42 +15,44 @@ import (
 
 	"github.com/hikrad/hikrad/internal/platform/crypto"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // nasRow is the full NAS record. Secret/SNMP/API-password are stored sealed;
 // callers that need cleartext decrypt explicitly.
 type nasRow struct {
-	ID            string
-	Name          string
-	IP            string
-	SecretEnc     []byte
-	Type          string
-	Vendor        string
-	CoAPort       int
-	SNMPEnc       []byte
-	ROSVersion    *string
-	Location      string
-	Enabled       bool
-	APIPort       int
-	APIUser       string
+	ID             string
+	Name           string
+	IP             string
+	SecretEnc      []byte
+	Vendor         string
+	CoAPort        int
+	SNMPEnc        []byte
+	ROSVersion     *string
+	Location       string
+	Enabled        bool
+	APIPort        int
+	APIUser        string
 	APIPasswordEnc []byte
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
 }
 
-// nasView is the JSON read shape (C7-B). Secrets are never serialized.
+// nasView is the JSON read shape (C7-B, amended by v2 phase-1 C3/C9: the
+// top-level `type` is gone — a NAS runs many services, listed in Services).
+// Secrets are never serialized.
 type nasView struct {
-	ID         string    `json:"id"`
-	Name       string    `json:"name"`
-	IP         string    `json:"ip"`
-	Type       string    `json:"type"`
-	Vendor     string    `json:"vendor"`
-	CoAPort    int       `json:"coa_port"`
-	HasSNMP    bool      `json:"has_snmp"`
-	ROSVersion *string   `json:"ros_version"`
-	Location   string    `json:"location"`
-	Enabled    bool      `json:"enabled"`
+	ID         string        `json:"id"`
+	Name       string        `json:"name"`
+	IP         string        `json:"ip"`
+	Services   []serviceView `json:"services"`
+	Vendor     string        `json:"vendor"`
+	CoAPort    int           `json:"coa_port"`
+	HasSNMP    bool          `json:"has_snmp"`
+	ROSVersion *string       `json:"ros_version"`
+	Location   string        `json:"location"`
+	Enabled    bool          `json:"enabled"`
 	// API* is the FR-56.2 auto-setup credential slice: HasAPICreds reports
 	// whether a password is on file without ever serializing it.
 	APIPort     int       `json:"api_port"`
@@ -60,23 +62,26 @@ type nasView struct {
 	UpdatedAt   time.Time `json:"updated_at"`
 }
 
+// view renders the NAS without its services; callers that serve JSON attach
+// them via withServices (one query for a list, rather than N).
 func (n nasRow) view() nasView {
 	return nasView{
-		ID: n.ID, Name: n.Name, IP: n.IP, Type: n.Type, Vendor: n.Vendor,
-		CoAPort: n.CoAPort, HasSNMP: len(n.SNMPEnc) > 0, ROSVersion: n.ROSVersion,
+		ID: n.ID, Name: n.Name, IP: n.IP, Vendor: n.Vendor,
+		Services: []serviceView{},
+		CoAPort:  n.CoAPort, HasSNMP: len(n.SNMPEnc) > 0, ROSVersion: n.ROSVersion,
 		Location: n.Location, Enabled: n.Enabled,
 		APIPort: n.APIPort, APIUser: n.APIUser, HasAPICreds: len(n.APIPasswordEnc) > 0,
 		CreatedAt: n.CreatedAt.UTC(), UpdatedAt: n.UpdatedAt.UTC(),
 	}
 }
 
-const nasColumns = `id::text, name, host(ip) AS ip, secret_enc, type, vendor,
+const nasColumns = `id::text, name, host(ip) AS ip, secret_enc, vendor,
 	coa_port, snmp_community_enc, ros_version, location, enabled,
 	api_port, coalesce(api_user, ''), api_password_enc, created_at, updated_at`
 
 func scanNAS(row pgx.Row) (nasRow, error) {
 	var n nasRow
-	err := row.Scan(&n.ID, &n.Name, &n.IP, &n.SecretEnc, &n.Type, &n.Vendor,
+	err := row.Scan(&n.ID, &n.Name, &n.IP, &n.SecretEnc, &n.Vendor,
 		&n.CoAPort, &n.SNMPEnc, &n.ROSVersion, &n.Location, &n.Enabled,
 		&n.APIPort, &n.APIUser, &n.APIPasswordEnc, &n.CreatedAt, &n.UpdatedAt)
 	return n, err
@@ -107,7 +112,6 @@ type nasInput struct {
 	Name       string
 	IP         string
 	Secret     string
-	Type       string
 	Vendor     string
 	CoAPort    int
 	SNMP       string
@@ -122,7 +126,7 @@ type nasInput struct {
 	APIPassword string
 }
 
-func insertNAS(ctx context.Context, db *pgxpool.Pool, in nasInput) (nasRow, error) {
+func insertNAS(ctx context.Context, q pgxQuerier, in nasInput) (nasRow, error) {
 	secretEnc, err := crypto.Encrypt([]byte(in.Secret))
 	if err != nil {
 		return nasRow{}, err
@@ -139,18 +143,18 @@ func insertNAS(ctx context.Context, db *pgxpool.Pool, in nasInput) (nasRow, erro
 			return nasRow{}, err
 		}
 	}
-	row := db.QueryRow(ctx,
-		`INSERT INTO nas (name, ip, secret_enc, type, vendor, coa_port, snmp_community_enc, ros_version, location, enabled, api_port, api_user, api_password_enc)
-		 VALUES ($1, $2::inet, $3, $4, $5, $6, $7, $8, $9, $10, $11, NULLIF($12, ''), $13)
+	row := q.QueryRow(ctx,
+		`INSERT INTO nas (name, ip, secret_enc, vendor, coa_port, snmp_community_enc, ros_version, location, enabled, api_port, api_user, api_password_enc)
+		 VALUES ($1, $2::inet, $3, $4, $5, $6, $7, $8, $9, $10, NULLIF($11, ''), $12)
 		 RETURNING `+nasColumns,
-		in.Name, in.IP, secretEnc, in.Type, in.Vendor, in.CoAPort, snmpEnc, in.ROSVersion, in.Location, in.Enabled,
+		in.Name, in.IP, secretEnc, in.Vendor, in.CoAPort, snmpEnc, in.ROSVersion, in.Location, in.Enabled,
 		apiPortOrDefault(in.APIPort), in.APIUser, apiPasswordEnc)
 	return scanNAS(row)
 }
 
 // updateNAS applies a full update. A nil secret/snmp/api-password leaves the
 // sealed value untouched (the reveal/rotate flow sets them explicitly).
-func updateNAS(ctx context.Context, db *pgxpool.Pool, id string, in nasInput, rotateSecret, rotateSNMP, rotateAPIPassword bool) (nasRow, error) {
+func updateNAS(ctx context.Context, q pgxQuerier, id string, in nasInput, rotateSecret, rotateSNMP, rotateAPIPassword bool) (nasRow, error) {
 	var secretEnc []byte
 	if rotateSecret {
 		var err error
@@ -172,20 +176,29 @@ func updateNAS(ctx context.Context, db *pgxpool.Pool, id string, in nasInput, ro
 			return nasRow{}, err
 		}
 	}
-	row := db.QueryRow(ctx,
+	row := q.QueryRow(ctx,
 		`UPDATE nas SET
-		    name = $2, ip = $3::inet, type = $4, vendor = $5, coa_port = $6,
-		    ros_version = $7, location = $8, enabled = $9,
-		    secret_enc = COALESCE($10, secret_enc),
-		    snmp_community_enc = CASE WHEN $11 THEN $12 ELSE snmp_community_enc END,
-		    api_port = $13, api_user = NULLIF($14, ''),
-		    api_password_enc = CASE WHEN $15 THEN $16 ELSE api_password_enc END
+		    name = $2, ip = $3::inet, vendor = $4, coa_port = $5,
+		    ros_version = $6, location = $7, enabled = $8,
+		    secret_enc = COALESCE($9, secret_enc),
+		    snmp_community_enc = CASE WHEN $10 THEN $11 ELSE snmp_community_enc END,
+		    api_port = $12, api_user = NULLIF($13, ''),
+		    api_password_enc = CASE WHEN $14 THEN $15 ELSE api_password_enc END
 		 WHERE id = $1
 		 RETURNING `+nasColumns,
-		id, in.Name, in.IP, in.Type, in.Vendor, in.CoAPort, in.ROSVersion, in.Location, in.Enabled,
+		id, in.Name, in.IP, in.Vendor, in.CoAPort, in.ROSVersion, in.Location, in.Enabled,
 		secretEnc, rotateSNMP, snmpEnc,
 		apiPortOrDefault(in.APIPort), in.APIUser, rotateAPIPassword, apiPasswordEnc)
 	return scanNAS(row)
+}
+
+// pgxQuerier is the subset of pgxpool.Pool / pgx.Tx the NAS writes need, so a
+// create can insert the NAS and its service instances (C3) in one transaction —
+// a NAS committed without its services would authenticate nobody.
+type pgxQuerier interface {
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
 }
 
 func apiPortOrDefault(p int) int {

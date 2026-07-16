@@ -177,7 +177,7 @@ func (m *module) buildAutoSetupPlan(ctx context.Context, n nasRow) (plan vendor.
 		return plan, "", nil, closeConn, fmt.Errorf("radius: decrypt nas api password: %w", err)
 	}
 
-	in, ros, err := m.snippetInputFor(n, "")
+	in, ros, err := m.snippetInputFor(ctx, n, "")
 	if err != nil {
 		return plan, ros, nil, closeConn, err
 	}

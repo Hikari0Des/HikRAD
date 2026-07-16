@@ -7,6 +7,7 @@ package subscribers
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -16,6 +17,7 @@ import (
 	"github.com/hikrad/hikrad/internal/httpapi"
 	"github.com/hikrad/hikrad/internal/platform/crypto"
 	"github.com/hikrad/hikrad/internal/radius"
+	"github.com/jackc/pgx/v5"
 )
 
 // writeInput is the create/update body. Pointers distinguish "field omitted"
@@ -37,8 +39,15 @@ type writeInput struct {
 	RateOverride         *string    `json:"rate_override"`
 	PriceOverride        *int64     `json:"price_override"`
 	DisabledReason       *string    `json:"disabled_reason"`
-	AllowHotspot         *bool      `json:"allow_hotspot"`
-	WhatsappOptIn        *bool      `json:"whatsapp_opt_in"`
+	// ServiceType (FR-61) is pppoe | hotspot | dual; it replaced v1's
+	// allow_hotspot bool. Omitted on create defaults to pppoe.
+	ServiceType   *string `json:"service_type"`
+	WhatsappOptIn *bool   `json:"whatsapp_opt_in"`
+	// NASID/NASServiceID scope the account to one NAS / service instance
+	// (FR-64). An explicit empty string clears the scope back to "any NAS";
+	// omitted leaves it unchanged.
+	NASID        *string `json:"nas_id"`
+	NASServiceID *string `json:"nas_service_id"`
 	// NoPassword (item 13): hotspot subscribers may deliberately have no
 	// password — the NAS then sends password="" and auth compares empty to
 	// empty. true seals an empty credential (and clears any existing one);
@@ -59,14 +68,26 @@ func (m *Module) listHandler(w http.ResponseWriter, r *http.Request) {
 		httpapi.Error(w, http.StatusBadRequest, "invalid_pagination", "malformed cursor")
 		return
 	}
+	// ?service_type= keeps the subscriber list unified (C10): hotspot-only
+	// accounts live in the one list and are found by filtering, not in a
+	// separate section.
+	serviceType := r.URL.Query().Get("service_type")
+	switch serviceType {
+	case "", "pppoe", "hotspot", "dual":
+	default:
+		httpapi.Error(w, http.StatusBadRequest, "invalid_filter", "service_type must be one of: pppoe hotspot dual")
+		return
+	}
+
 	scope := auth.ScopeFilter(r.Context())
-	// $1 cursor, $2 limit, optional $3 owner scope.
-	q := `SELECT ` + columns + ` FROM subscribers WHERE ($1::uuid IS NULL OR id > $1::uuid)`
-	args := []any{after}
-	clause, arg := scopeClause(scope, 3)
+	// $1 cursor, $2 limit, $3 service_type filter, optional $4 owner scope.
+	q := `SELECT ` + columns + ` FROM subscribers
+	       WHERE ($1::uuid IS NULL OR id > $1::uuid)
+	         AND ($3::text = '' OR service_type = $3::text)`
+	args := []any{after, page.Limit + 1, serviceType}
+	clause, arg := scopeClause(scope, 4)
 	q += clause
 	q += ` ORDER BY id LIMIT $2`
-	args = append(args, page.Limit+1)
 	if arg != nil {
 		args = append(args, arg)
 	}
@@ -156,19 +177,25 @@ func (m *Module) createHandler(w http.ResponseWriter, r *http.Request) {
 	if norm.macLockMode != nil {
 		macMode = *norm.macLockMode
 	}
+	// service_type is NOT NULL; default to 'pppoe' (FR-61 / C9) when omitted, so
+	// an existing API client that never learned the field keeps v1's meaning.
+	serviceType := "pppoe"
+	if in.ServiceType != nil && *in.ServiceType != "" {
+		serviceType = *in.ServiceType
+	}
 
 	s, err := scanSubscriber(m.db.QueryRow(r.Context(),
 		`INSERT INTO subscribers
 		   (username, password_enc, name, phone, address, notes, status, profile_id,
 		    owner_manager_id, expires_at, mac_lock_mode, static_ip, session_limit_override,
-		    rate_override, price_override, disabled_reason, allow_hotspot, whatsapp_opt_in,
-		    has_password, quota_cycle_anchor)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8::uuid,$9::uuid,$10,$11,$12::inet,$13,$14,$15,$16,$17,$18,$19, now())
+		    rate_override, price_override, disabled_reason, service_type, whatsapp_opt_in,
+		    nas_id, nas_service_id, has_password, quota_cycle_anchor)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8::uuid,$9::uuid,$10,$11,$12::inet,$13,$14,$15,$16,$17,$18,$19::uuid,$20::uuid,$21, now())
 		 RETURNING `+columns,
 		in.Username, enc, in.Name, norm.phonePtr, in.Address, in.Notes, status, in.ProfileID,
 		owner, in.ExpiresAt, macMode, norm.staticIP, in.SessionLimitOverride,
-		in.RateOverride, in.PriceOverride, in.DisabledReason, boolOr(in.AllowHotspot, false),
-		boolOr(in.WhatsappOptIn, false), !noPassword))
+		in.RateOverride, in.PriceOverride, in.DisabledReason, serviceType,
+		boolOr(in.WhatsappOptIn, false), norm.nasID, norm.nasServiceID, !noPassword))
 	if err != nil {
 		if isUniqueViolation(err) {
 			httpapi.Error(w, http.StatusConflict, "conflict", "username already exists")
@@ -261,9 +288,11 @@ func (m *Module) updateHandler(w http.ResponseWriter, r *http.Request) {
 		    rate_override         = CASE WHEN $23::bool THEN $24 ELSE rate_override END,
 		    price_override        = CASE WHEN $25::bool THEN $26 ELSE price_override END,
 		    disabled_reason       = CASE WHEN $27::bool THEN $28 ELSE disabled_reason END,
-		    allow_hotspot         = COALESCE($29, allow_hotspot),
+		    service_type          = COALESCE($29, service_type),
 		    whatsapp_opt_in       = COALESCE($30, whatsapp_opt_in),
-		    has_password          = COALESCE($31, has_password)
+		    nas_id                = CASE WHEN $31::bool THEN $32::uuid ELSE nas_id END,
+		    nas_service_id        = CASE WHEN $33::bool THEN $34::uuid ELSE nas_service_id END,
+		    has_password          = COALESCE($35, has_password)
 		  WHERE id = $1::uuid
 		 RETURNING `+columns,
 		id, encArg,
@@ -279,7 +308,10 @@ func (m *Module) updateHandler(w http.ResponseWriter, r *http.Request) {
 		in.RateOverride != nil, in.RateOverride,
 		in.PriceOverride != nil, in.PriceOverride,
 		in.DisabledReason != nil, in.DisabledReason,
-		in.AllowHotspot, in.WhatsappOptIn, hasPasswordArg))
+		nilIfEmpty(in.ServiceType), in.WhatsappOptIn,
+		norm.writeNASScope, norm.nasID,
+		norm.writeNASScope, norm.nasServiceID,
+		hasPasswordArg))
 	if err != nil {
 		if isForeignKeyViolation(err) {
 			httpapi.Error(w, http.StatusUnprocessableEntity, "validation_failed", "request validation failed",
@@ -333,12 +365,20 @@ type normalized struct {
 	staticIP    *string
 	macLockMode *string
 	owner       *string
+	// nasID/nasServiceID are the resolved FR-64 scope; writeNASScope reports
+	// whether the request touched it at all (false = leave both columns alone
+	// on update). nasID is filled in from nas_service_id's parent when only the
+	// service was supplied (C4).
+	nasID         *string
+	nasServiceID  *string
+	writeNASScope bool
 }
 
 // normalizeWrite validates and canonicalizes the cross-cutting fields shared by
 // create and update: phone (FR-1.3), static IP (FR-16.2), mac_lock_mode enum,
-// status enum, and the whatsapp-opt-in→phone dependency (FR-1.5). excludeID is
-// the subscriber being updated ("" on create) for static-IP uniqueness.
+// status enum, service_type enum (FR-61), the NAS scope pair (FR-64), and the
+// whatsapp-opt-in→phone dependency (FR-1.5). excludeID is the subscriber being
+// updated ("" on create) for static-IP uniqueness.
 func (m *Module) normalizeWrite(ctx context.Context, in *writeInput, excludeID string) (normalized, []httpapi.FieldError) {
 	var out normalized
 	var fe []httpapi.FieldError
@@ -400,10 +440,83 @@ func (m *Module) normalizeWrite(ctx context.Context, in *writeInput, excludeID s
 		out.staticIP = nil
 	}
 
+	if in.ServiceType != nil && *in.ServiceType != "" {
+		switch *in.ServiceType {
+		case "pppoe", "hotspot", "dual":
+		default:
+			add("service_type", "must be one of: pppoe hotspot dual")
+		}
+	}
+
+	if nasFE := m.normalizeNASScope(ctx, in.NASID, in.NASServiceID, &out); nasFE != nil {
+		fe = append(fe, nasFE...)
+	}
+
 	if in.OwnerManagerID != nil && *in.OwnerManagerID != "" {
 		out.owner = in.OwnerManagerID
 	}
 	return out, fe
+}
+
+// normalizeNASScope validates the FR-64 assignment pair and resolves the C4
+// "service without a NAS implies its parent" rule.
+//
+// It maintains one invariant the AuthView loader depends on: nas_service_id is
+// never set while nas_id is NULL. The loader reads the assignment pair whole,
+// keyed on nas_id — so a service-without-NAS row would have its service scope
+// silently ignored and fall back to the profile's. Both halves therefore always
+// move together.
+//
+// It also refuses a pair whose service belongs to a *different* NAS: that scope
+// is unsatisfiable (no request can match both halves), so it would reject every
+// login the operator meant to permit. Failing at write time turns an invisible
+// outage into a form error.
+func (m *Module) normalizeNASScope(ctx context.Context, nasID, serviceID *string, out *normalized) []httpapi.FieldError {
+	var fe []httpapi.FieldError
+	add := func(f, msg string) { fe = append(fe, httpapi.FieldError{Field: f, Message: msg}) }
+
+	if nasID == nil && serviceID == nil {
+		return fe // untouched: update leaves both columns alone.
+	}
+	out.writeNASScope = true
+	// An empty string is an explicit "any NAS"; normalize it to a NULL column.
+	if nasID != nil && *nasID != "" {
+		out.nasID = nasID
+	}
+	if serviceID != nil && *serviceID != "" {
+		out.nasServiceID = serviceID
+	}
+	// Clearing the NAS clears the service with it — see the invariant above.
+	if out.nasID == nil && out.nasServiceID == nil {
+		return fe
+	}
+
+	if out.nasServiceID == nil {
+		// NAS-wide scope, no instance pinned: nothing further to resolve.
+		return fe
+	}
+
+	// Read nas_services directly: it is B's table and exposes no by-id helper,
+	// mirroring how this package already resolves ip_pools names in SQL.
+	var parentNAS string
+	err := m.db.QueryRow(ctx, `SELECT nas_id::text FROM nas_services WHERE id = $1::uuid`, *out.nasServiceID).Scan(&parentNAS)
+	if errors.Is(err, pgx.ErrNoRows) {
+		add("nas_service_id", "unknown NAS service")
+		return fe
+	}
+	if err != nil {
+		m.log.Error("subscribers: nas scope check", "error", err)
+		add("nas_service_id", "could not validate NAS service")
+		return fe
+	}
+	if out.nasID == nil {
+		out.nasID = &parentNAS // C4: a service without a NAS implies its parent.
+		return fe
+	}
+	if *out.nasID != parentNAS {
+		add("nas_service_id", "service does not belong to the selected NAS")
+	}
+	return fe
 }
 
 func boolOr(p *bool, d bool) bool {

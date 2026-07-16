@@ -66,9 +66,25 @@ func (m *module) hotspotPackageHandler(w http.ResponseWriter, r *http.Request) {
 		m.internal(w, "get nas for hotspot package", err)
 		return
 	}
-	if n.Type != "hotspot" {
+	// FR-62: a NAS no longer *is* a hotspot — it may run one among several
+	// services. The login package is offered as soon as any enabled hotspot
+	// instance exists, which is also true of the multi-service routers v1's
+	// nas.type='hotspot' check would have wrongly refused.
+	services, err := enabledServices(ctx, m.db, n.ID)
+	if err != nil {
+		m.internal(w, "list nas services for hotspot package", err)
+		return
+	}
+	hasHotspot := false
+	for _, s := range services {
+		if s.Service == "hotspot" {
+			hasHotspot = true
+			break
+		}
+	}
+	if !hasHotspot {
 		httpapi.Error(w, http.StatusBadRequest, "not_hotspot",
-			"hotspot login package is only available for hotspot-type NAS")
+			"hotspot login package is only available for a NAS with an enabled hotspot service")
 		return
 	}
 

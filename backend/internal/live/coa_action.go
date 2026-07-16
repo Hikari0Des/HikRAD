@@ -52,6 +52,7 @@ func (m *Module) disconnect(w http.ResponseWriter, r *http.Request) {
 		AcctSessionID: req.AcctSessionID,
 		Username:      state.Username,
 		FramedIP:      state.IP,
+		Service:       state.Service,
 	})
 	status := http.StatusOK
 	if !res.Ok() {

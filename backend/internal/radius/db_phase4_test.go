@@ -75,15 +75,23 @@ func mustInsertNAS(t *testing.T, m *module, apiUser, apiPassword, rosVersion str
 	ip := uniqueTestIP(t)
 	ros := rosVersion
 	in := nasInput{
-		Name: "autosetup-test-" + ip, IP: ip, Secret: "radsecret", Type: "pppoe",
+		Name: "autosetup-test-" + ip, IP: ip, Secret: "radsecret",
 		Vendor: "mikrotik", CoAPort: 3799, Enabled: true, APIUser: apiUser, APIPassword: apiPassword,
 	}
 	if ros != "" {
 		in.ROSVersion = &ros
 	}
-	n, err := insertNAS(context.Background(), m.db, in)
+	ctx := context.Background()
+	n, err := insertNAS(ctx, m.db, in)
 	if err != nil {
 		t.Fatalf("insert nas: %v", err)
+	}
+	// Every NAS keeps >= 1 service instance (C3); these fixtures are the PPPoE
+	// single-service shape v1's Type:"pppoe" used to mean.
+	if _, err := m.db.Exec(ctx,
+		`INSERT INTO nas_services (nas_id, service, label, enabled) VALUES ($1::uuid, 'pppoe', 'test-pppoe', true)`,
+		n.ID); err != nil {
+		t.Fatalf("insert nas service: %v", err)
 	}
 	return n
 }

@@ -60,21 +60,30 @@ func seedDemoSubscribers(ctx context.Context, db *pgxpool.Pool, profiles map[str
 			status, expires = "active", now.Add(time.Duration(20+i%40)*24*time.Hour)
 		}
 
-		allowHotspot := i%5 == 0
+		// Spread all three FR-61 service types across the demo set so the
+		// panel's service_type filter has something to show in every position:
+		// mostly pppoe, every 5th dual, every 8th hotspot-only.
+		serviceType := "pppoe"
+		switch {
+		case i%8 == 0:
+			serviceType = "hotspot"
+		case i%5 == 0:
+			serviceType = "dual"
+		}
 		batch = append(batch, []any{username, enc, name, phone, status,
-			profileIDs[i%len(profileIDs)], nilUUID(ownerID), expires, allowHotspot})
+			profileIDs[i%len(profileIDs)], nilUUID(ownerID), expires, serviceType})
 	}
 
 	for _, row := range batch {
 		if _, err := db.Exec(ctx,
 			`INSERT INTO subscribers
 			   (username, password_enc, name, phone, status, profile_id, owner_manager_id,
-			    expires_at, allow_hotspot, quota_cycle_anchor)
+			    expires_at, service_type, quota_cycle_anchor)
 			 VALUES ($1,$2,$3,$4,$5,$6::uuid,$7::uuid,$8,$9, now())
 			 ON CONFLICT (username) DO UPDATE SET
 			    name=EXCLUDED.name, phone=EXCLUDED.phone, status=EXCLUDED.status,
 			    profile_id=EXCLUDED.profile_id, owner_manager_id=EXCLUDED.owner_manager_id,
-			    expires_at=EXCLUDED.expires_at, allow_hotspot=EXCLUDED.allow_hotspot`,
+			    expires_at=EXCLUDED.expires_at, service_type=EXCLUDED.service_type`,
 			row...); err != nil {
 			return err
 		}

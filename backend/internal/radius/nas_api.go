@@ -7,6 +7,7 @@ package radius
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -23,16 +24,19 @@ import (
 // they are redacted from the audit log (C2). On update an empty secret leaves
 // the sealed value untouched.
 type nasRequest struct {
-	Name          string  `json:"name" validate:"required,min=1,max=128"`
-	IP            string  `json:"ip" validate:"required,ip"`
-	Secret        string  `json:"secret" audit:"secret"`
-	Type          string  `json:"type" validate:"omitempty,oneof=pppoe hotspot"`
-	Vendor        string  `json:"vendor" validate:"omitempty,max=32"`
-	CoAPort       int     `json:"coa_port" validate:"omitempty,min=1,max=65535"`
-	SNMPCommunity string  `json:"snmp_community" audit:"secret"`
-	ROSVersion    *string `json:"ros_version" validate:"omitempty"`
-	Location      string  `json:"location" validate:"omitempty,max=256"`
-	Enabled       *bool   `json:"enabled"`
+	Name   string `json:"name" validate:"required,min=1,max=128"`
+	IP     string `json:"ip" validate:"required,ip"`
+	Secret string `json:"secret" audit:"secret"`
+	// Services is the NAS's service instances (FR-62 / C9) — it replaced v1's
+	// single `type`. The array is the whole truth for the NAS: an omitted row
+	// is deleted. At least one is required.
+	Services      []serviceInput `json:"services"`
+	Vendor        string         `json:"vendor" validate:"omitempty,max=32"`
+	CoAPort       int            `json:"coa_port" validate:"omitempty,min=1,max=65535"`
+	SNMPCommunity string         `json:"snmp_community" audit:"secret"`
+	ROSVersion    *string        `json:"ros_version" validate:"omitempty"`
+	Location      string         `json:"location" validate:"omitempty,max=256"`
+	Enabled       *bool          `json:"enabled"`
 	// APIPort/APIUser/APIPassword (FR-56.2): RouterOS API auto-setup
 	// credentials, encrypted at rest like Secret/SNMPCommunity. Optional —
 	// a NAS with none set simply can't preview/apply auto-setup and stays on
@@ -44,13 +48,10 @@ type nasRequest struct {
 
 func (req nasRequest) toInput() nasInput {
 	in := nasInput{
-		Name: req.Name, IP: req.IP, Secret: req.Secret, Type: req.Type,
+		Name: req.Name, IP: req.IP, Secret: req.Secret,
 		Vendor: req.Vendor, CoAPort: req.CoAPort, SNMP: req.SNMPCommunity,
 		ROSVersion: req.ROSVersion, Location: req.Location, Enabled: true,
 		APIPort: req.APIPort, APIUser: req.APIUser, APIPassword: req.APIPassword,
-	}
-	if in.Type == "" {
-		in.Type = "pppoe"
 	}
 	if in.Vendor == "" {
 		in.Vendor = "mikrotik"
@@ -64,15 +65,78 @@ func (req nasRequest) toInput() nasInput {
 	return in
 }
 
+// validateServices enforces the C3/C9 write rules for the embedded services
+// array before any transaction opens.
+func validateServices(in []serviceInput) []httpapi.FieldError {
+	var fe []httpapi.FieldError
+	if len(in) == 0 {
+		return []httpapi.FieldError{{Field: "services", Message: "at least one service is required"}}
+	}
+	// A hotspot request resolves to an instance by its RouterOS server name
+	// (C7); two enabled hotspots sharing one name on the same NAS would be
+	// indistinguishable at auth, so the sessions would reject as ambiguous.
+	// Catch it in the form instead of at 2am on the router.
+	seen := map[string]int{}
+	for i, s := range in {
+		switch s.Service {
+		case "pppoe", "hotspot":
+		default:
+			fe = append(fe, httpapi.FieldError{
+				Field: fmt.Sprintf("services.%d.service", i), Message: "must be one of: pppoe hotspot"})
+			continue
+		}
+		if !s.enabled() {
+			continue
+		}
+		key := s.Service + "\x00" + s.ROSServerName
+		if prev, dup := seen[key]; dup {
+			fe = append(fe, httpapi.FieldError{
+				Field: fmt.Sprintf("services.%d.ros_server_name", i),
+				Message: fmt.Sprintf(
+					"another enabled %s service (#%d) already uses this server name; they could not be told apart at login",
+					s.Service, prev+1)})
+			continue
+		}
+		seen[key] = i
+	}
+	return fe
+}
+
+// withServices attaches each NAS's service instances (and their live counts) to
+// its view. One query for the whole list, not one per NAS.
+func (m *module) withServices(ctx context.Context, rows []nasRow) ([]nasView, error) {
+	ids := make([]string, 0, len(rows))
+	for _, n := range rows {
+		ids = append(ids, n.ID)
+	}
+	byNAS, err := listServicesFor(ctx, m.db, ids)
+	if err != nil {
+		return nil, err
+	}
+	count := currentServiceLiveCount()
+	views := make([]nasView, 0, len(rows))
+	for _, n := range rows {
+		v := n.view()
+		for _, s := range byNAS[n.ID] {
+			sv := s.view()
+			sv.LiveSessions = count(s.ID)
+			v.Services = append(v.Services, sv)
+		}
+		views = append(views, v)
+	}
+	return views, nil
+}
+
 func (m *module) listNASHandler(w http.ResponseWriter, r *http.Request) {
 	rows, err := listNAS(r.Context(), m.db)
 	if err != nil {
 		m.internal(w, "list nas", err)
 		return
 	}
-	views := make([]nasView, 0, len(rows))
-	for _, n := range rows {
-		views = append(views, n.view())
+	views, err := m.withServices(r.Context(), rows)
+	if err != nil {
+		m.internal(w, "list nas services", err)
+		return
 	}
 	httpapi.JSON(w, http.StatusOK, map[string]any{"items": views})
 }
@@ -87,7 +151,12 @@ func (m *module) getNASHandler(w http.ResponseWriter, r *http.Request) {
 		m.internal(w, "get nas", err)
 		return
 	}
-	httpapi.JSON(w, http.StatusOK, n.view())
+	views, err := m.withServices(r.Context(), []nasRow{n})
+	if err != nil {
+		m.internal(w, "get nas services", err)
+		return
+	}
+	httpapi.JSON(w, http.StatusOK, views[0])
 }
 
 func (m *module) createNASHandler(w http.ResponseWriter, r *http.Request) {
@@ -100,7 +169,20 @@ func (m *module) createNASHandler(w http.ResponseWriter, r *http.Request) {
 			httpapi.FieldError{Field: "secret", Message: "this field is required"})
 		return
 	}
-	n, err := insertNAS(r.Context(), m.db, req.toInput())
+	if fe := validateServices(req.Services); len(fe) > 0 {
+		httpapi.Error(w, http.StatusUnprocessableEntity, "validation_failed", "request validation failed", fe...)
+		return
+	}
+	// The NAS row and its services commit together (C3: a NAS with no service
+	// authenticates nobody, so a half-written one is a dead router).
+	var n nasRow
+	err := m.inTx(r.Context(), func(tx pgx.Tx) error {
+		var err error
+		if n, err = insertNAS(r.Context(), tx, req.toInput()); err != nil {
+			return err
+		}
+		return replaceServices(r.Context(), tx, n.ID, req.Services)
+	})
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
@@ -111,8 +193,13 @@ func (m *module) createNASHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	m.afterNASChange(r.Context())
-	_ = auth.Audit(r.Context(), "nas.create", "nas", n.ID, nil, n.view())
-	httpapi.JSON(w, http.StatusCreated, n.view())
+	views, err := m.withServices(r.Context(), []nasRow{n})
+	if err != nil {
+		m.internal(w, "read back nas services", err)
+		return
+	}
+	_ = auth.Audit(r.Context(), "nas.create", "nas", n.ID, nil, views[0])
+	httpapi.JSON(w, http.StatusCreated, views[0])
 }
 
 func (m *module) updateNASHandler(w http.ResponseWriter, r *http.Request) {
@@ -126,11 +213,29 @@ func (m *module) updateNASHandler(w http.ResponseWriter, r *http.Request) {
 		m.internal(w, "lookup nas", err)
 		return
 	}
+	beforeViews, err := m.withServices(r.Context(), []nasRow{before})
+	if err != nil {
+		m.internal(w, "lookup nas services", err)
+		return
+	}
 	var req nasRequest
 	if !httpapi.Bind(w, r, &req) {
 		return
 	}
-	n, err := updateNAS(r.Context(), m.db, id, req.toInput(), req.Secret != "", req.SNMPCommunity != "", req.APIPassword != "")
+	if fe := validateServices(req.Services); len(fe) > 0 {
+		httpapi.Error(w, http.StatusUnprocessableEntity, "validation_failed", "request validation failed", fe...)
+		return
+	}
+	var n nasRow
+	err = m.inTx(r.Context(), func(tx pgx.Tx) error {
+		var err error
+		n, err = updateNAS(r.Context(), tx, id, req.toInput(),
+			req.Secret != "", req.SNMPCommunity != "", req.APIPassword != "")
+		if err != nil {
+			return err
+		}
+		return replaceServices(r.Context(), tx, id, req.Services)
+	})
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
@@ -141,8 +246,26 @@ func (m *module) updateNASHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	m.afterNASChange(r.Context())
-	_ = auth.Audit(r.Context(), "nas.update", "nas", id, before.view(), n.view())
-	httpapi.JSON(w, http.StatusOK, n.view())
+	views, err := m.withServices(r.Context(), []nasRow{n})
+	if err != nil {
+		m.internal(w, "read back nas services", err)
+		return
+	}
+	_ = auth.Audit(r.Context(), "nas.update", "nas", id, beforeViews[0], views[0])
+	httpapi.JSON(w, http.StatusOK, views[0])
+}
+
+// inTx runs fn in a transaction, rolling back on error.
+func (m *module) inTx(ctx context.Context, fn func(pgx.Tx) error) error {
+	tx, err := m.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if err := fn(tx); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 // deleteNASHandler refuses to delete a NAS with live sessions unless ?confirm=

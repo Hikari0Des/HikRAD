@@ -231,6 +231,7 @@ func (m *Module) enforceExpiredCoA(ctx context.Context, subID, behavior, expired
 		if s.SubscriberID == subID {
 			refs = append(refs, radius.SessionRef{
 				NASID: s.NASID, AcctSessionID: s.AcctSessionID, Username: s.Username, FramedIP: s.IP,
+				Service: s.Service,
 			})
 		}
 	}

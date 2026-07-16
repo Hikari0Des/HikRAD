@@ -442,6 +442,7 @@ func liveSessionRefs(ctx context.Context, rdb *redis.Client, subID string) ([]Se
 			AcctSessionID: s.AcctSessionID,
 			Username:      s.Username,
 			FramedIP:      s.IP,
+			Service:       s.Service,
 		})
 	}
 	return out, nil

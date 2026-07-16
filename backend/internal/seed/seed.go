@@ -96,17 +96,39 @@ func seedManager(ctx context.Context, db *pgxpool.Pool) (string, error) {
 // seedNAS registers the demo NAS at 10.0.0.1 so testuser (and the harness)
 // authenticate through the known-NAS check (FR-13.2). Raw SQL into Agent 2's
 // table, sealed secret; idempotent on the unique ip.
+//
+// The NAS carries both a PPPoE and a Hotspot service instance (FR-62): the
+// demo set seeds hotspot-only and dual subscribers, and a hotspot login on a
+// NAS with no enabled hotspot instance rejects nas_not_allowed (C6 step 2), so
+// a PPPoE-only demo NAS would make every seeded hotspot account un-loginable.
 func seedNAS(ctx context.Context, db *pgxpool.Pool) error {
 	secret, err := crypto.Encrypt([]byte("testing123"))
 	if err != nil {
 		return err
 	}
-	_, err = db.Exec(ctx,
-		`INSERT INTO nas (name, ip, secret_enc, type, vendor, enabled)
-		 VALUES ('Demo NAS', '10.0.0.1'::inet, $1, 'pppoe', 'mikrotik', true)
-		 ON CONFLICT (ip) DO UPDATE SET secret_enc = EXCLUDED.secret_enc, enabled = true`,
-		secret)
-	return err
+	var nasID string
+	if err := db.QueryRow(ctx,
+		`INSERT INTO nas (name, ip, secret_enc, vendor, enabled)
+		 VALUES ('Demo NAS', '10.0.0.1'::inet, $1, 'mikrotik', true)
+		 ON CONFLICT (ip) DO UPDATE SET secret_enc = EXCLUDED.secret_enc, enabled = true
+		 RETURNING id::text`,
+		secret).Scan(&nasID); err != nil {
+		return err
+	}
+	for _, s := range []struct{ service, label, server string }{
+		{"pppoe", "Demo PPPoE", "hikrad-pppoe"},
+		{"hotspot", "Demo Hotspot", "hotspot1"},
+	} {
+		if _, err := db.Exec(ctx,
+			`INSERT INTO nas_services (nas_id, service, label, ros_server_name, enabled)
+			 SELECT $1::uuid, $2, $3, $4, true
+			  WHERE NOT EXISTS (
+			        SELECT 1 FROM nas_services WHERE nas_id = $1::uuid AND service = $2 AND ros_server_name = $4)`,
+			nasID, s.service, s.label, s.server); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // profileSpec is one seeded plan. Speeds in kbps (1024-multiples render as "NM").

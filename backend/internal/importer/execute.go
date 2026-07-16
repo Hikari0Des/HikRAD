@@ -61,13 +61,14 @@ func (reg *jobRegistry) get(batchID string) (*execProgress, bool) {
 
 // createBody is the subset of the subscribers writeInput this wizard fills.
 type createBody struct {
-	Username  string  `json:"username"`
-	Password  string  `json:"password"`
-	Name      *string `json:"name,omitempty"`
-	Phone     *string `json:"phone,omitempty"`
-	Address   *string `json:"address,omitempty"`
-	ProfileID *string `json:"profile_id,omitempty"`
-	ExpiresAt *string `json:"expires_at,omitempty"`
+	Username    string  `json:"username"`
+	Password    string  `json:"password"`
+	Name        *string `json:"name,omitempty"`
+	Phone       *string `json:"phone,omitempty"`
+	Address     *string `json:"address,omitempty"`
+	ProfileID   *string `json:"profile_id,omitempty"`
+	ExpiresAt   *string `json:"expires_at,omitempty"`
+	ServiceType *string `json:"service_type,omitempty"`
 }
 
 // runExecute processes every eligible row of the batch, self-dispatching
@@ -134,6 +135,9 @@ func (m *Module) runExecute(batchID, authHeader string, prog *execProgress) {
 		}
 		if v := r.Fields["expires_at"]; v != "" {
 			body.ExpiresAt = &v
+		}
+		if v := r.Fields["service_type"]; v != "" {
+			body.ServiceType = &v
 		}
 
 		buf, _ := json.Marshal(body)

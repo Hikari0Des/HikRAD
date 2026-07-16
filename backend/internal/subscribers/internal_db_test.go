@@ -63,8 +63,8 @@ func TestAuthViewOverrideInheritance(t *testing.T) {
 	username := uniqName("av")
 	var subID string
 	if err := db.QueryRow(ctx,
-		`INSERT INTO subscribers (username, password_enc, status, profile_id, allow_hotspot)
-		 VALUES ($1, '\x0102'::bytea, 'active', $2::uuid, true) RETURNING id::text`,
+		`INSERT INTO subscribers (username, password_enc, status, profile_id, service_type)
+		 VALUES ($1, '\x0102'::bytea, 'active', $2::uuid, 'dual') RETURNING id::text`,
 		username, profID).Scan(&subID); err != nil {
 		t.Fatal(err)
 	}
@@ -83,8 +83,8 @@ func TestAuthViewOverrideInheritance(t *testing.T) {
 	if v.HotspotRateLimit != "5M/5M" {
 		t.Errorf("HotspotRateLimit = %q, want 5M/5M", v.HotspotRateLimit)
 	}
-	if !v.AllowHotspot {
-		t.Error("AllowHotspot should be true")
+	if v.ServiceType != "dual" {
+		t.Errorf("ServiceType = %q, want dual", v.ServiceType)
 	}
 
 	// Apply overrides: rate + session limit win over the profile.
