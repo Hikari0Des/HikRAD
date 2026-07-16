@@ -68,6 +68,12 @@ func (mikrotikAdapter) Apply(p *radius.Packet, attrs []Attr) error {
 // and 7.x share almost all of this syntax; the version only changes small
 // details (noted inline) — real per-version validation against a router/CHR is
 // the manual step in the Definition of Done.
+//
+// A NAS may run several service instances (FR-62 / C8), so the output is: one
+// shared /radius block whose service list covers every enabled kind, one PPPoE
+// AAA block when any pppoe instance is enabled, and one /ip hotspot block per
+// hotspot instance (each addressed by its own server name, so a two-zone router
+// gets both configured in one paste).
 func (mikrotikAdapter) Snippet(in SnippetInput) (string, error) {
 	if in.RadiusServer == "" {
 		return "", fmt.Errorf("mikrotik: snippet needs a RADIUS server address")
@@ -81,47 +87,114 @@ func (mikrotikAdapter) Snippet(in SnippetInput) (string, error) {
 		interim = 300
 	}
 	ros7 := in.ROSVersion != "6"
+	services := in.services()
 
 	var b strings.Builder
 	fmt.Fprintf(&b, "# HikRAD RouterOS %s bootstrap for NAS %q\n",
 		map[bool]string{true: "7.x", false: "6.49+"}[ros7], in.NASName)
 	fmt.Fprintf(&b, "# Paste into the router terminal. Additive only — review before running.\n\n")
 
-	// service=ppp for PPPoE NAS, service=hotspot,login for Hotspot NAS. A NAS
-	// that also accepts Hotspot logins for flagged subscribers (FR-58) still
-	// terminates its primary service here; the login service covers Hotspot.
-	service := "ppp"
-	if in.Type == "hotspot" {
-		service = "hotspot,login"
+	// One /radius client covers every service this NAS terminates: service= is a
+	// list, so a router doing PPPoE and hotspot needs ppp,hotspot,login — not one
+	// client per instance (RouterOS would query the same server repeatedly).
+	var kinds []string
+	if anyOfKind(services, "pppoe") {
+		kinds = append(kinds, "ppp")
+	}
+	if anyOfKind(services, "hotspot") {
+		kinds = append(kinds, "hotspot", "login")
+	}
+	if len(kinds) == 0 {
+		return "", fmt.Errorf("mikrotik: snippet needs at least one enabled service")
 	}
 	src := ""
 	if in.SrcAddress != "" {
 		src = " src-address=" + in.SrcAddress
 	}
 	fmt.Fprintf(&b, "/radius add service=%s address=%s secret=\"%s\"%s timeout=3s\n",
-		service, in.RadiusServer, in.Secret, src)
+		strings.Join(kinds, ","), in.RadiusServer, in.Secret, src)
 	fmt.Fprintf(&b, "/radius incoming set accept=yes port=%d\n\n", coaPort)
 
-	switch in.Type {
-	case "hotspot":
-		b.WriteString("/ip hotspot profile set [find] use-radius=yes ")
-		if ros7 {
-			b.WriteString("radius-interim-update=" + secs(interim) + "\n")
-		} else {
-			// ROS 6 spells the interim knob differently on the hotspot profile.
-			b.WriteString("radius-accounting=yes interim-update=" + secs(interim) + "\n")
+	if anyOfKind(services, "pppoe") {
+		b.WriteString("# PPPoE\n")
+		fmt.Fprintf(&b, "/ppp aaa set use-radius=yes accounting=yes interim-update=%s\n\n", secs(interim))
+	}
+
+	for _, s := range services {
+		if s.Service != "hotspot" {
+			continue
 		}
-		for _, host := range in.WalledGarden {
-			host = strings.TrimSpace(host)
-			if host == "" {
-				continue
-			}
-			fmt.Fprintf(&b, "/ip hotspot walled-garden add dst-host=%s action=allow\n", host)
-		}
-	default: // pppoe
-		fmt.Fprintf(&b, "/ppp aaa set use-radius=yes accounting=yes interim-update=%s\n", secs(interim))
+		writeHotspotBlock(&b, s, in.WalledGarden, interim, ros7)
 	}
 	return b.String(), nil
+}
+
+// writeHotspotBlock renders one hotspot instance. The server profile is
+// addressed by the instance's own ROS server name where known, so configuring a
+// second zone cannot silently re-point the first; only a NAS with no named
+// server falls back to [find] (v1's single-hotspot behaviour).
+func writeHotspotBlock(b *strings.Builder, s ServiceSnippet, walledGarden []string, interim int, ros7 bool) {
+	name := strings.TrimSpace(s.ROSServerName)
+	title := name
+	if s.Label != "" {
+		title = s.Label
+	}
+	if title == "" {
+		title = "hotspot"
+	}
+	fmt.Fprintf(b, "# Hotspot: %s\n", title)
+	if s.Interface != "" {
+		fmt.Fprintf(b, "#   interface: %s\n", s.Interface)
+	}
+
+	profileSel := "[find]"
+	if name != "" {
+		// Resolve the profile via the named server rather than assuming there is
+		// only one hotspot profile on the box.
+		profileSel = fmt.Sprintf("[/ip hotspot get [find name=%q] profile]", name)
+	}
+	fmt.Fprintf(b, "/ip hotspot profile set %s use-radius=yes ", profileSel)
+	if ros7 {
+		b.WriteString("radius-interim-update=" + secs(interim) + "\n")
+	} else {
+		// ROS 6 spells the interim knob differently on the hotspot profile.
+		b.WriteString("radius-accounting=yes interim-update=" + secs(interim) + "\n")
+	}
+	if s.PoolName != "" {
+		fmt.Fprintf(b, "#   addresses come from HikRAD's per-service pool %q (reply attribute)\n", s.PoolName)
+	} else {
+		b.WriteString("#   addresses come from this hotspot's own address-pool (HikRAD sends none)\n")
+	}
+	for _, host := range walledGarden {
+		host = strings.TrimSpace(host)
+		if host == "" {
+			continue
+		}
+		fmt.Fprintf(b, "/ip hotspot walled-garden add dst-host=%s action=allow\n", host)
+	}
+	b.WriteString("\n")
+}
+
+// services normalizes the input to the C8 instance list, falling back to the
+// legacy single Type for callers that predate FR-62.
+func (in SnippetInput) services() []ServiceSnippet {
+	if len(in.Services) > 0 {
+		return in.Services
+	}
+	kind := in.Type
+	if kind == "" {
+		kind = "pppoe"
+	}
+	return []ServiceSnippet{{Service: kind}}
+}
+
+func anyOfKind(services []ServiceSnippet, kind string) bool {
+	for _, s := range services {
+		if s.Service == kind {
+			return true
+		}
+	}
+	return false
 }
 
 func secs(n int) string { return strconv.Itoa(n) + "s" }
@@ -133,6 +206,30 @@ func secs(n int) string { return strconv.Itoa(n) + "s" }
 //
 // so burst needs the full rate/threshold/time triple, and priority/min-rate are
 // only valid once burst is present. Segments beyond what the spec provides are
+// omitted (MikroTik defaults them). This is the ONLY place the burst syntax is
+// assembled — the engine and CoA path stay vendor-neutral (FR-17).
+func (mikrotikAdapter) ComposeRate(spec RateSpec) string {
+	if spec.Rate == "" {
+		return ""
+	}
+	parts := []string{spec.Rate}
+	hasBurst := spec.BurstRate != "" && spec.BurstThreshold != "" && spec.BurstTime != ""
+	if hasBurst {
+		parts = append(parts, spec.BurstRate, spec.BurstThreshold, spec.BurstTime)
+		switch {
+		case spec.Priority != "" && spec.MinRate != "":
+			parts = append(parts, spec.Priority, spec.MinRate)
+		case spec.Priority != "":
+			parts = append(parts, spec.Priority)
+		case spec.MinRate != "":
+			// min-rate is positionally after priority, so emit the MikroTik
+			// default priority (8, lowest) to keep the string valid.
+			parts = append(parts, "8", spec.MinRate)
+		}
+	}
+	return strings.Join(parts, " ")
+}
+
 // ResolveService picks the nas_services instance an Access-Request belongs to
 // (C7). This is the only place MikroTik's request-identification quirks live.
 //
@@ -214,30 +311,6 @@ func looksLikeMAC(s string) bool {
 		}
 	}
 	return true
-}
-
-// omitted (MikroTik defaults them). This is the ONLY place the burst syntax is
-// assembled — the engine and CoA path stay vendor-neutral (FR-17).
-func (mikrotikAdapter) ComposeRate(spec RateSpec) string {
-	if spec.Rate == "" {
-		return ""
-	}
-	parts := []string{spec.Rate}
-	hasBurst := spec.BurstRate != "" && spec.BurstThreshold != "" && spec.BurstTime != ""
-	if hasBurst {
-		parts = append(parts, spec.BurstRate, spec.BurstThreshold, spec.BurstTime)
-		switch {
-		case spec.Priority != "" && spec.MinRate != "":
-			parts = append(parts, spec.Priority, spec.MinRate)
-		case spec.Priority != "":
-			parts = append(parts, spec.Priority)
-		case spec.MinRate != "":
-			// min-rate is positionally after priority, so emit the MikroTik
-			// default priority (8, lowest) to keep the string valid.
-			parts = append(parts, "8", spec.MinRate)
-		}
-	}
-	return strings.Join(parts, " ")
 }
 
 func init() { Register(mikrotikAdapter{}) }

@@ -79,10 +79,20 @@ func (m *module) snippetInputFor(ctx context.Context, n nasRow, rosOverride stri
 		secret = plain
 	}
 
-	// Type is the coarse kind the v1 single-service snippet renders. Chunk 3 of
-	// this phase replaces it with the full per-instance Services loop (C8); for
-	// now the first enabled instance preserves v1's exact output for the
-	// one-service NAS that every upgraded install starts with.
+	// Every enabled instance goes into one snippet (C8/FR-62): a router running
+	// PPPoE plus two hotspot zones is configured by a single paste.
+	svcs := make([]vendor.ServiceSnippet, 0, len(services))
+	for _, s := range services {
+		svcs = append(svcs, vendor.ServiceSnippet{
+			Service:       s.Service,
+			Label:         s.Label,
+			ROSServerName: s.ROSServerName,
+			PoolName:      s.IPPoolName,
+			Interface:     s.InterfaceNote,
+		})
+	}
+	// Type stays filled with the first instance's kind for the response's
+	// legacy `type` field and any caller still reading it.
 	kind := "pppoe"
 	if len(services) > 0 {
 		kind = services[0].Service
@@ -90,6 +100,7 @@ func (m *module) snippetInputFor(ctx context.Context, n nasRow, rosOverride stri
 
 	return vendor.SnippetInput{
 		ROSVersion:   ros,
+		Services:     svcs,
 		Type:         kind,
 		NASName:      n.Name,
 		RadiusServer: server,

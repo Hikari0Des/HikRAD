@@ -90,8 +90,23 @@ func (a mikrotikAdapter) PlanAutoSetup(conn ROSConn, in SnippetInput) (AutoSetup
 		plan.Items = append(plan.Items, *incomingItem)
 	}
 
-	switch in.Type {
-	case "hotspot":
+	// Plan each enabled service additively (C8/FR-62): a NAS running PPPoE and
+	// two hotspot zones needs the PPP AAA entry AND each hotspot's profile, not
+	// one or the other. Kinds are planned once each — /ppp aaa is global on
+	// RouterOS, so N pppoe instances still yield one AAA item.
+	services := in.services()
+	if anyOfKind(services, "pppoe") {
+		aaaItem, aaaConflict, err := a.planPPPAAA(conn, in)
+		if err != nil {
+			return plan, err
+		}
+		if aaaConflict != nil {
+			plan.Conflicts = append(plan.Conflicts, *aaaConflict)
+		} else if aaaItem != nil {
+			plan.Items = append(plan.Items, *aaaItem)
+		}
+	}
+	if anyOfKind(services, "hotspot") {
 		profItem, profConflict, err := a.planHotspotProfile(conn, in)
 		if err != nil {
 			return plan, err
@@ -107,16 +122,6 @@ func (a mikrotikAdapter) PlanAutoSetup(conn ROSConn, in SnippetInput) (AutoSetup
 			return plan, err
 		}
 		plan.Items = append(plan.Items, gardenItems...)
-	default: // pppoe
-		aaaItem, aaaConflict, err := a.planPPPAAA(conn, in)
-		if err != nil {
-			return plan, err
-		}
-		if aaaConflict != nil {
-			plan.Conflicts = append(plan.Conflicts, *aaaConflict)
-		} else if aaaItem != nil {
-			plan.Items = append(plan.Items, *aaaItem)
-		}
 	}
 
 	return plan, nil
@@ -147,7 +152,7 @@ func (mikrotikAdapter) planRadiusEntry(conn ROSConn, in SnippetInput) (*PlanItem
 	if err != nil {
 		return nil, nil, fmt.Errorf("mikrotik: read /radius: %w", err)
 	}
-	service := radiusService(in.Type)
+	service := radiusService(in)
 	for _, row := range rows {
 		if row["address"] != in.RadiusServer || !strings.Contains(row["service"], strings.Split(service, ",")[0]) {
 			continue
@@ -179,11 +184,23 @@ func (mikrotikAdapter) planRadiusEntry(conn ROSConn, in SnippetInput) (*PlanItem
 	return &PlanItem{Action: "add", Path: "/radius", Command: cmd, CurrentState: "not present", Sentence: sentence}, nil, nil
 }
 
-func radiusService(nasType string) string {
-	if nasType == "hotspot" {
-		return "hotspot,login"
+// radiusService is the /radius service list covering every kind the NAS
+// terminates. It must render exactly what Snippet's shared /radius block does,
+// or a router set up by the copy-paste path would look "wrong" to auto-setup
+// (and vice versa) — the two paths describe one desired state.
+func radiusService(in SnippetInput) string {
+	services := in.services()
+	var kinds []string
+	if anyOfKind(services, "pppoe") {
+		kinds = append(kinds, "ppp")
 	}
-	return "ppp"
+	if anyOfKind(services, "hotspot") {
+		kinds = append(kinds, "hotspot", "login")
+	}
+	if len(kinds) == 0 {
+		return "ppp"
+	}
+	return strings.Join(kinds, ",")
 }
 
 // --- /radius/incoming (global CoA listener toggle) --------------------------

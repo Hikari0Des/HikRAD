@@ -64,11 +64,26 @@ type ServiceInstance struct {
 	ROSServerName string
 }
 
+// ServiceSnippet is one service instance the snippet must configure (C8).
+type ServiceSnippet struct {
+	Service       string // "pppoe" | "hotspot"
+	Label         string // zone / SSID / friendly name, for comments
+	ROSServerName string // the router's own name for this instance
+	PoolName      string // the instance's address pool, "" = router-local
+	Interface     string // interface note, for comments
+}
+
 // SnippetInput is everything the FR-14 config wizard needs to render a NAS's
 // copy-paste bootstrap config.
 type SnippetInput struct {
-	ROSVersion   string   // "6" or "7"; anything else is treated as 7
-	Type         string   // "pppoe" | "hotspot"
+	ROSVersion string // "6" or "7"; anything else is treated as 7
+	// Services is every enabled instance on the NAS (C8/FR-62): one shared
+	// /radius block, a PPPoE AAA block when any pppoe service is enabled, and
+	// one /ip hotspot block per hotspot service. Empty falls back to Type.
+	Services []ServiceSnippet
+	// Type is the legacy single-service kind ("pppoe" | "hotspot"), kept for
+	// callers that have not moved to Services. Ignored when Services is set.
+	Type         string
 	NASName      string   // for comments
 	RadiusServer string   // address the router should send RADIUS to (the HikRAD host)
 	Secret       string   // shared secret (shown once at creation, FR-13.3)
