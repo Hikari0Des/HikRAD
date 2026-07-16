@@ -27,6 +27,15 @@ type authorizeRequest struct {
 	NasIP            string `json:"nas_ip" validate:"required"`
 	CallingStationID string `json:"calling_station_id"`
 	Service          string `json:"service" validate:"required,oneof=pppoe hotspot"`
+	// CalledStationID/NASPortType/NASPortID are raw request attributes the
+	// bridge forwards for FR-62 service-instance resolution (C6/C7). They are
+	// passed to the vendor adapter untouched — this package never interprets
+	// them, which is what keeps instance identity vendor-neutral (FR-17).
+	// Service above stays the bridge's coarse hint; a resolved instance's own
+	// service supersedes it.
+	CalledStationID string `json:"called_station_id"`
+	NASPortType     string `json:"nas_port_type"`
+	NASPortID       string `json:"nas_port_id"`
 }
 
 type attribute struct {

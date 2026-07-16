@@ -242,6 +242,28 @@ func (e *engine) overlayQuota(ctx context.Context, view *AuthView) {
 	}
 }
 
+// InvalidatePolicyByProfile drops the cached AuthView of every subscriber on a
+// profile (contract C11 / FR-64.4). A profile carries policy its subscribers
+// inherit — including, since v2 phase 1, the FR-64 NAS assignment — so changing
+// it must invalidate every view derived from it. Without this a scope change
+// would take up to the 30 s cache TTL to bite on some subscribers and not
+// others, which looks exactly like a flaky router.
+//
+// subscriberIDs is supplied by the caller (D owns the subscribers table; this
+// package must not query it — that would be the import cycle the seam exists to
+// avoid). Errors on individual ids are collected, not fatal: a best-effort miss
+// self-heals at the TTL, whereas aborting the loop would leave later ids stale
+// indefinitely.
+func InvalidatePolicyByProfile(subscriberIDs []string) error {
+	var firstErr error
+	for _, id := range subscriberIDs {
+		if err := InvalidatePolicy(id); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	return firstErr
+}
+
 // InvalidatePolicy deletes the cached AuthView for a subscriber (contract C4,
 // B-exposed). D calls it on every subscriber/profile mutation that could
 // change an auth decision. Safe to call with a subscriber that was never

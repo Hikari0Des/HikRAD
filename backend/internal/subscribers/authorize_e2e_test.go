@@ -31,8 +31,15 @@ type authzResult struct {
 func (e testEnv) registerNAS(t *testing.T) string {
 	t.Helper()
 	ip := fmt.Sprintf("10.%d.%d.1", rand.Intn(200)+10, rand.Intn(200)+10)
+	// Both services, so the FR-58 hotspot legs below resolve to an instance
+	// (v2 phase 1: a hotspot login on a NAS with no hotspot service rejects
+	// nas_not_allowed before ever reaching the subscriber's service_type).
 	r := e.do(t, "POST", "/api/v1/nas", map[string]any{
-		"name": uniq("nas_"), "ip": ip, "secret": "testing123", "type": "pppoe",
+		"name": uniq("nas_"), "ip": ip, "secret": "testing123",
+		"services": []map[string]any{
+			{"service": "pppoe", "label": "e2e-pppoe"},
+			{"service": "hotspot", "label": "e2e-hotspot"},
+		},
 	})
 	if r.status != http.StatusCreated {
 		t.Fatalf("register NAS = %d: %s", r.status, r.body)
@@ -131,11 +138,18 @@ func TestAuthViewDrivesAuthorize(t *testing.T) {
 	}
 }
 
+// mkSub creates a subscriber. hotspot maps to the FR-61 service_type exactly as
+// migration 0500 maps v1's allow_hotspot bit (true -> dual, false -> pppoe), so
+// these assertions keep testing precisely what they tested before (C1).
 func mkSub(t *testing.T, e testEnv, user, pass, profileID string, expires time.Time, hotspot bool, status string) {
 	t.Helper()
+	serviceType := "pppoe"
+	if hotspot {
+		serviceType = "dual"
+	}
 	r := e.do(t, "POST", "/api/v1/subscribers", map[string]any{
 		"username": user, "password": pass, "profile_id": profileID,
-		"expires_at": expires.UTC().Format(time.RFC3339), "allow_hotspot": hotspot, "status": status,
+		"expires_at": expires.UTC().Format(time.RFC3339), "service_type": serviceType, "status": status,
 	})
 	if r.status != http.StatusCreated {
 		t.Fatalf("create subscriber %s = %d: %s", user, r.status, r.body)

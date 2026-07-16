@@ -6,7 +6,8 @@
 #
 # Contract C6: POST http://hikrad-acct:8082/acct
 #   {record_type:"start|interim|stop", nas_ip, acct_session_id, username,
-#    framed_ip, calling_station_id, session_time, bytes_in/out (+gigawords),
+#    framed_ip, calling_station_id, called_station_id, nas_port_type,
+#    nas_port_id, service_type, session_time, bytes_in/out (+gigawords),
 #    event_time, terminate_cause?}
 # hikrad-acct replies 204 ONLY after durable enqueue (Redis stream + disk
 # spill) — that is what makes the pipeline lossless (M2).
@@ -58,6 +59,15 @@ my $body = eval {
         username           => unwrap($ENV{USER_NAME}),
         framed_ip          => unwrap($ENV{FRAMED_IP_ADDRESS}),
         calling_station_id => unwrap($ENV{CALLING_STATION_ID}),
+        # Service-instance identification (FR-62 / C7), forwarded RAW and
+        # uninterpreted — same contract as the authorize bridge. These let the
+        # pipeline file a session under the service instance it actually ran on
+        # instead of guessing from the NAS, which is required now that one NAS
+        # runs both PPPoE and several hotspot servers.
+        called_station_id  => unwrap($ENV{CALLED_STATION_ID}),
+        nas_port_type      => unwrap($ENV{NAS_PORT_TYPE}),
+        nas_port_id        => unwrap($ENV{NAS_PORT_ID}),
+        service_type       => (unwrap($ENV{SERVICE_TYPE}) =~ /login/i) ? "hotspot" : "pppoe",
         session_time       => num($ENV{ACCT_SESSION_TIME}),
         bytes_in           => num($ENV{ACCT_INPUT_OCTETS}),
         bytes_out          => num($ENV{ACCT_OUTPUT_OCTETS}),

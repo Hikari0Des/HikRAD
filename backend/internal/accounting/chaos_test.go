@@ -146,15 +146,24 @@ func post(t *testing.T, s *Service, rec map[string]any) {
 	}
 }
 
+// insertTestNAS registers a NAS running one service instance of kind typ. Since
+// v2 phase 1 the service lives on nas_services, not a nas.type column (FR-62).
 func insertTestNAS(t *testing.T, ctx context.Context, s *Service, ip, typ string) string {
 	t.Helper()
 	var id string
 	err := s.db.QueryRow(ctx,
-		`INSERT INTO nas (name, ip, secret_enc, type) VALUES ($1, $2::inet, $3, $4)
-		 ON CONFLICT (ip) DO UPDATE SET type = EXCLUDED.type RETURNING id::text`,
-		"test-"+ip, ip, []byte("x"), typ).Scan(&id)
+		`INSERT INTO nas (name, ip, secret_enc) VALUES ($1, $2::inet, $3)
+		 ON CONFLICT (ip) DO UPDATE SET name = EXCLUDED.name RETURNING id::text`,
+		"test-"+ip, ip, []byte("x")).Scan(&id)
 	if err != nil {
 		t.Fatalf("insert nas: %v", err)
+	}
+	if _, err := s.db.Exec(ctx,
+		`INSERT INTO nas_services (nas_id, service, label, enabled)
+		 SELECT $1::uuid, $2, 'test', true
+		  WHERE NOT EXISTS (SELECT 1 FROM nas_services WHERE nas_id = $1::uuid AND service = $2)`,
+		id, typ); err != nil {
+		t.Fatalf("insert nas service: %v", err)
 	}
 	return id
 }
@@ -455,18 +464,18 @@ func TestReaperLifecycle(t *testing.T) {
 // rec builds a C6 ingest payload. bytes_in is upload, bytes_out is download.
 func rec(nasID, ip, acct, user, typ string, base time.Time, secs int, bin, bout, gw uint64) map[string]any {
 	return map[string]any{
-		"record_type":     typ,
-		"nas_ip":          ip,
-		"acct_session_id": acct,
-		"username":        user,
-		"framed_ip":       "100.64.0.1",
+		"record_type":        typ,
+		"nas_ip":             ip,
+		"acct_session_id":    acct,
+		"username":           user,
+		"framed_ip":          "100.64.0.1",
 		"calling_station_id": "AA:BB:CC:DD:EE:FF",
-		"session_time":    secs,
-		"bytes_in":        bin,
-		"bytes_out":       bout,
-		"gigawords_in":    gw,
-		"gigawords_out":   gw,
-		"event_time":      evTime(base, secs),
+		"session_time":       secs,
+		"bytes_in":           bin,
+		"bytes_out":          bout,
+		"gigawords_in":       gw,
+		"gigawords_out":      gw,
+		"event_time":         evTime(base, secs),
 	}
 }
 

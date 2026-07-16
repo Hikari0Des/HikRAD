@@ -44,6 +44,26 @@ type RateSpec struct {
 	MinRate        string // "rx/tx" committed information rate
 }
 
+// ServiceQuery is one Access-Request's identifying attributes, as forwarded by
+// the FreeRADIUS bridge. Service is the bridge's coarse pppoe|hotspot guess;
+// the rest are raw RADIUS attribute VALUES whose vendor-specific *meaning*
+// (how a MikroTik encodes a hotspot server name into Called-Station-Id, say) is
+// interpreted only by an adapter in this package — that is the FR-17 boundary.
+type ServiceQuery struct {
+	Service         string // coarse hint: "pppoe" | "hotspot"
+	CalledStationID string
+	NASPortType     string
+	NASPortID       string
+}
+
+// ServiceInstance is the subset of a nas_services row an adapter needs to match
+// a request against (C7). ID is opaque to the adapter.
+type ServiceInstance struct {
+	ID            string
+	Service       string // pppoe | hotspot
+	ROSServerName string
+}
+
 // SnippetInput is everything the FR-14 config wizard needs to render a NAS's
 // copy-paste bootstrap config.
 type SnippetInput struct {
@@ -72,6 +92,16 @@ type Adapter interface {
 	// the concrete vendor rate string used as the rate_limit intent value
 	// (FR-11 burst syntax). An empty base rate yields "".
 	ComposeRate(spec RateSpec) string
+	// ResolveService maps an Access-Request's identifying attributes to one of
+	// the NAS's service instances (FR-62 / C7). Vendor-specific attribute
+	// parsing — how this vendor encodes a hotspot server name, what its
+	// NAS-Port-Type values mean — lives ONLY here (FR-17).
+	//
+	// candidates is the NAS's ENABLED instances. Returning false means "cannot
+	// say which instance this is", which the engine turns into a
+	// nas_not_allowed reject rather than guessing — an ambiguous match would
+	// otherwise hand the session another zone's address pool.
+	ResolveService(q ServiceQuery, candidates []ServiceInstance) (ServiceInstance, bool)
 	// SupportsInPlace reports whether an in-place CoA-Request change for
 	// intent is known to take effect on an already-active session for a NAS
 	// of type nasType ("pppoe"|"hotspot") running rosVersion — the Phase 4

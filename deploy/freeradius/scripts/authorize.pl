@@ -14,7 +14,8 @@
 #
 # Contract C4: POST /internal/radius/authorize, request
 # {username,password?,chap_challenge?,chap_response?,nas_ip,
-#  calling_station_id?,service}, response
+#  calling_station_id?,service,called_station_id?,nas_port_type?,nas_port_id?},
+# response
 # {action,reason,attributes:[{intent,value}]}.
 #
 # stdout is parsed by rlm_exec as `Attribute := value` pairs (no per-line
@@ -48,11 +49,21 @@ my $chap_response  = unwrap($ENV{CHAP_PASSWORD});
 my $nas_ip   = unwrap($ENV{NAS_IP_ADDRESS}) || unwrap($ENV{NAS_IPV6_ADDRESS});
 my $calling  = unwrap($ENV{CALLING_STATION_ID});
 
+# Service-instance identification (FR-62 / contract C7): forwarded RAW and
+# uninterpreted. Which of a NAS's hotspot/PPPoE service instances a request
+# belongs to is decided by the Go vendor adapter, which is the only place that
+# knows how a given vendor encodes it (e.g. MikroTik puts the hotspot server
+# name in Called-Station-Id). This script's job here is to forward, not to
+# interpret — keep it that way, or instance identity stops being vendor-neutral.
+my $called        = unwrap($ENV{CALLED_STATION_ID});
+my $nas_port_type = unwrap($ENV{NAS_PORT_TYPE});
+my $nas_port_id   = unwrap($ENV{NAS_PORT_ID});
+
 # Service discrimination (FR-58): MikroTik Hotspot logins arrive as
-# Service-Type = Login-User, PPPoE as Framed-User. The backend policy engine
-# accepts a Hotspot login for a PPPoE subscriber only when the subscriber has
-# opted in; everything else defaults to pppoe. Match case-insensitively since
-# rlm_exec may render the value as the enum name or a raw number.
+# Service-Type = Login-User, PPPoE as Framed-User. This stays the COARSE hint
+# only — the backend supersedes it with the resolved instance's own service.
+# Match case-insensitively since rlm_exec may render the value as the enum name
+# or a raw number.
 my $service_type = unwrap($ENV{SERVICE_TYPE});
 my $service = ($service_type =~ /login/i) ? "hotspot" : "pppoe";
 
@@ -79,6 +90,9 @@ my $body = eval {
         nas_ip              => $nas_ip,
         calling_station_id  => $calling,
         service             => $service,
+        called_station_id   => $called,
+        nas_port_type       => $nas_port_type,
+        nas_port_id         => $nas_port_id,
     });
 };
 emit_internal_error() if $@ || !defined $body;

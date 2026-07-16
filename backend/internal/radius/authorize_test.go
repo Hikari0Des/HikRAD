@@ -50,13 +50,21 @@ type testEnv struct {
 	eng      *engine
 	provider *fakeProvider
 	live     map[[2]string]int // (subID, service) -> count
+	// services is the enabled nas_services rows per NAS id, the candidate set
+	// C7 resolution runs against. Keyed by the ids newTestEnv assigns below.
+	services map[string][]serviceRow
 }
+
+// testNASID is the id newTestEnv gives the NAS at a known IP: "nas-<ip>". Tests
+// that assert FR-64 scoping compare against it.
+func testNASID(ip string) string { return "nas-" + canonicalIP(ip) }
 
 func newTestEnv(t *testing.T, knownIPs ...string) *testEnv {
 	t.Helper()
 	env := &testEnv{
 		provider: &fakeProvider{views: map[string]AuthView{}, learned: map[string]string{}},
 		live:     map[[2]string]int{},
+		services: map[string][]serviceRow{},
 	}
 	SetPolicyProvider(env.provider)
 	SetLiveCounter(func(sub, svc string) int { return env.live[[2]string{sub, svc}] })
@@ -67,6 +75,14 @@ func newTestEnv(t *testing.T, knownIPs ...string) *testEnv {
 	known := map[string]bool{}
 	for _, ip := range knownIPs {
 		known[canonicalIP(ip)] = true
+		// Default: one PPPoE + one Hotspot instance, which is what makes the
+		// pre-v2 tests (pppoe and FR-58 hotspot alike) resolve exactly as they
+		// did before service instances existed. Tests needing another shape
+		// overwrite env.services.
+		env.services[testNASID(ip)] = []serviceRow{
+			{ID: "svc-pppoe-" + canonicalIP(ip), NASID: testNASID(ip), Service: "pppoe", Enabled: true},
+			{ID: "svc-hs-" + canonicalIP(ip), NASID: testNASID(ip), Service: "hotspot", Enabled: true},
+		}
 	}
 	env.eng = &engine{
 		rdb:      nil,
@@ -74,6 +90,15 @@ func newTestEnv(t *testing.T, knownIPs ...string) *testEnv {
 		now:      func() time.Time { return fixedNow },
 		decrypt:  func(b []byte) ([]byte, error) { return b, nil },
 		nasKnown: func(_ context.Context, ip string) (bool, error) { return known[canonicalIP(ip)], nil },
+		nasByIP: func(_ context.Context, ip string) (nasIdentity, bool, error) {
+			if !known[canonicalIP(ip)] {
+				return nasIdentity{}, false, nil
+			}
+			return nasIdentity{ID: testNASID(ip), Vendor: "mikrotik"}, true, nil
+		},
+		servicesOf: func(_ context.Context, nasID string) ([]serviceRow, error) {
+			return env.services[nasID], nil
+		},
 	}
 	return env
 }

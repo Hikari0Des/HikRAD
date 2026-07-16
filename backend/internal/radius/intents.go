@@ -31,4 +31,11 @@ const (
 	ReasonUnknownNAS        = "unknown_nas"
 	ReasonServiceNotAllowed = "service_not_allowed"
 	ReasonQuotaExhausted    = "quota_exhausted"
+	// ReasonNASNotAllowed (FR-64) means the NAS/service instance forbids this
+	// session — either the subscriber is scoped elsewhere, or the request could
+	// not be resolved to an enabled service instance on this NAS (C6 step 2).
+	// Deliberately distinct from service_not_allowed, which means the SUBSCRIBER
+	// may not use the service: one is an operator config fact, the other an
+	// account fact, and FR-39's debug view must tell them apart.
+	ReasonNASNotAllowed = "nas_not_allowed"
 )

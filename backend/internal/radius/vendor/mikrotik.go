@@ -133,6 +133,89 @@ func secs(n int) string { return strconv.Itoa(n) + "s" }
 //
 // so burst needs the full rate/threshold/time triple, and priority/min-rate are
 // only valid once burst is present. Segments beyond what the spec provides are
+// ResolveService picks the nas_services instance an Access-Request belongs to
+// (C7). This is the only place MikroTik's request-identification quirks live.
+//
+// How a MikroTik identifies the instance:
+//   - Hotspot: Called-Station-Id carries the hotspot SERVER NAME (e.g.
+//     "hotspot1"), which is what nas_services.ros_server_name stores. Some
+//     builds append the AP MAC after a colon/space, so match on the first token.
+//   - PPPoE: Called-Station-Id carries the PPPoE service-name when one is
+//     configured, and is often empty/a MAC when it isn't.
+//
+// Resolution order, deliberately: an exact server-name match wins; failing
+// that, a NAS running exactly ONE enabled instance of the requested kind is
+// unambiguous, so it resolves (this is the single-service NAS every v1 install
+// upgrades into, and the reason a v1 install's behaviour is unchanged).
+// Anything else is ambiguous and returns false — the engine rejects rather than
+// guess, because guessing hands the session the wrong zone's address pool.
+func (mikrotikAdapter) ResolveService(q ServiceQuery, candidates []ServiceInstance) (ServiceInstance, bool) {
+	kind := q.Service
+	if kind != "hotspot" {
+		kind = "pppoe" // anything not explicitly hotspot is a PPPoE-style request
+	}
+	var ofKind []ServiceInstance
+	for _, c := range candidates {
+		if c.Service == kind {
+			ofKind = append(ofKind, c)
+		}
+	}
+	if len(ofKind) == 0 {
+		return ServiceInstance{}, false // C6 step 2: no instance of this kind
+	}
+
+	if name := mikrotikStationName(q.CalledStationID); name != "" {
+		for _, c := range ofKind {
+			if strings.EqualFold(c.ROSServerName, name) {
+				return c, true
+			}
+		}
+	}
+	if len(ofKind) == 1 {
+		return ofKind[0], true
+	}
+	return ServiceInstance{}, false // ambiguous: several instances, none matched
+}
+
+// mikrotikStationName extracts the server name from a Called-Station-Id.
+// MikroTik renders it as "<server-name>" or "<server-name>:<ap-mac>" (and some
+// builds use a space); a bare MAC means the router sent no server name, which
+// is not a name — return "" so the caller falls back rather than trying to
+// match a MAC against a server name.
+func mikrotikStationName(called string) string {
+	s := strings.TrimSpace(called)
+	if s == "" {
+		return ""
+	}
+	if i := strings.IndexAny(s, ":;, \t"); i >= 0 {
+		// A colon could be the MAC separator OR the name/MAC delimiter. Take the
+		// first token either way: for "AA:BB:CC:.." that yields "AA", which no
+		// server name matches, and looksLikeMAC below discards it anyway.
+		s = s[:i]
+	}
+	if looksLikeMAC(called) {
+		return ""
+	}
+	return s
+}
+
+// looksLikeMAC reports whether s is a bare MAC address (the Called-Station-Id a
+// router sends when no service/server name is configured).
+func looksLikeMAC(s string) bool {
+	s = strings.TrimSpace(s)
+	r := strings.NewReplacer(":", "", "-", "", ".", "")
+	hex := r.Replace(s)
+	if len(hex) != 12 {
+		return false
+	}
+	for _, c := range hex {
+		if !strings.ContainsRune("0123456789abcdefABCDEF", c) {
+			return false
+		}
+	}
+	return true
+}
+
 // omitted (MikroTik defaults them). This is the ONLY place the burst syntax is
 // assembled — the engine and CoA path stay vendor-neutral (FR-17).
 func (mikrotikAdapter) ComposeRate(spec RateSpec) string {

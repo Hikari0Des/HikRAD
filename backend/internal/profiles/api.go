@@ -36,8 +36,26 @@ type profileInput struct {
 	BurstTime      *string `json:"burst_time"`
 	RatePriority   *string `json:"rate_priority"`
 	MinRate        *string `json:"min_rate"`
+	// NASID/NASServiceID scope this profile's subscribers to a NAS / service
+	// instance (FR-64 / C9). null (or omitted) = any NAS.
+	NASID        *string `json:"nas_id"`
+	NASServiceID *string `json:"nas_service_id"`
 	// Archived is only honored on update (create always makes an active profile).
 	Archived bool `json:"archived"`
+}
+
+// nasScopeChanged reports whether an update moved the profile's FR-64
+// assignment. It decides whether the cached AuthViews MUST be invalidated even
+// under ?apply=next_renewal — see updateHandler.
+func nasScopeChanged(before Profile, after Profile) bool {
+	return !samePtr(before.NASID, after.NASID) || !samePtr(before.NASServiceID, after.NASServiceID)
+}
+
+func samePtr(a, b *string) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
 }
 
 // validate performs the cross-field checks the struct tags cannot express and
@@ -183,30 +201,52 @@ func (m *Module) updateHandler(w http.ResponseWriter, r *http.Request) {
 	// invalidate every affected subscriber's cached policy and surface the online
 	// ones for a CoA rate refresh. apply=next_renewal only persists the row —
 	// existing users pick it up on their next renewal (Phase 3).
+	//
+	// Exception (C11 / FR-64.4): a NAS-assignment change is invalidated
+	// unconditionally. next_renewal defers *plan* attributes (rate, quota,
+	// price), which is a billing decision; an assignment is access control, and
+	// the loader reads it fresh on the next cold load regardless. Honouring
+	// next_renewal for it would not defer anything — it would just leave the
+	// cached views stale for up to the 30 s TTL, so the scope would apply to
+	// some subscribers and not others for half a minute. That is
+	// indistinguishable from a flaky router, so the cache always follows the
+	// scope.
 	resp := map[string]any{"profile": after}
-	if r.URL.Query().Get("apply") != "next_renewal" {
+	switch {
+	case r.URL.Query().Get("apply") != "next_renewal":
 		online := m.applyNow(r.Context(), id, auth.ScopeFilter(r.Context()))
 		resp["applied"] = "now"
 		resp["online_affected"] = online
-	} else {
+	case nasScopeChanged(before, after):
+		m.invalidateProfileViews(r.Context(), id)
+		resp["applied"] = "next_renewal"
+		resp["nas_scope_applied"] = "now"
+		resp["online_affected"] = []onlineRef{}
+	default:
 		resp["applied"] = "next_renewal"
 		resp["online_affected"] = []onlineRef{}
 	}
 	httpapi.JSON(w, http.StatusOK, resp)
 }
 
+// invalidateProfileViews drops B's cached AuthView for every subscriber on the
+// profile (contract C11): the profile carries policy they inherit, so a change
+// to it must not be served from a stale view.
+func (m *Module) invalidateProfileViews(ctx context.Context, profileID string) {
+	ids, err := subscribersOnProfile(ctx, m.db, profileID)
+	if err != nil {
+		m.log.Error("profiles: load subscribers for invalidation", "error", err, "profile", profileID)
+		return
+	}
+	if err := radius.InvalidatePolicyByProfile(ids); err != nil {
+		m.log.Warn("profiles: invalidate policy failed", "error", err, "profile", profileID)
+	}
+}
+
 // applyNow invalidates B's policy cache for every subscriber on the profile and
 // returns the online sessions (scoped) so E can offer a CoA rate refresh.
 func (m *Module) applyNow(ctx context.Context, profileID string, scope *auth.ManagerScope) []onlineRef {
-	ids, err := subscribersOnProfile(ctx, m.db, profileID)
-	if err != nil {
-		m.log.Error("profiles: load subscribers for apply-now", "error", err, "profile", profileID)
-	}
-	for _, sid := range ids {
-		if err := radius.InvalidatePolicy(sid); err != nil {
-			m.log.Warn("profiles: invalidate policy failed", "error", err, "subscriber", sid)
-		}
-	}
+	m.invalidateProfileViews(ctx, profileID)
 	out := []onlineRef{}
 	sessions, err := live.List(ctx, live.Filter{ProfileID: profileID}, scope)
 	if err != nil {

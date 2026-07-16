@@ -228,13 +228,13 @@ type nasRegistry struct {
 	log *slog.Logger
 
 	mu       sync.RWMutex
-	byIP     map[string]struct{}
+	byIP     map[string]nasIdentity
 	loaded   bool
 	loadedAt time.Time
 }
 
 func newNASRegistry(db *pgxpool.Pool, log *slog.Logger) *nasRegistry {
-	return &nasRegistry{db: db, log: log, byIP: map[string]struct{}{}}
+	return &nasRegistry{db: db, log: log, byIP: map[string]nasIdentity{}}
 }
 
 // known reports whether an enabled NAS with source IP ip is registered. The
@@ -242,41 +242,50 @@ func newNASRegistry(db *pgxpool.Pool, log *slog.Logger) *nasRegistry {
 // error after a prior successful load falls back to the last snapshot so a
 // transient blip cannot black-hole all auth (NFR-1 resilience).
 func (r *nasRegistry) known(ctx context.Context, ip string) (bool, error) {
+	_, ok, err := r.lookup(ctx, ip)
+	return ok, err
+}
+
+// lookup returns the enabled NAS registered at ip, from the same cached
+// snapshot known() reads (the authorize path needs the row's id + vendor, not
+// just its existence — FR-64 scoping and C7 adapter selection).
+func (r *nasRegistry) lookup(ctx context.Context, ip string) (nasIdentity, bool, error) {
 	key := canonicalIP(ip)
 	r.mu.RLock()
 	fresh := r.loaded && time.Since(r.loadedAt) < nasCacheTTL
-	_, ok := r.byIP[key]
+	n, ok := r.byIP[key]
 	hadSnapshot := r.loaded
 	r.mu.RUnlock()
 	if fresh {
-		return ok, nil
+		return n, ok, nil
 	}
 	if err := r.reload(ctx); err != nil {
 		if hadSnapshot {
 			r.log.Warn("radius: nas registry reload failed; using stale snapshot", "error", err)
-			return ok, nil
+			return n, ok, nil
 		}
-		return false, err
+		return nasIdentity{}, false, err
 	}
 	r.mu.RLock()
-	_, ok = r.byIP[key]
+	n, ok = r.byIP[key]
 	r.mu.RUnlock()
-	return ok, nil
+	return n, ok, nil
 }
 
 func (r *nasRegistry) reload(ctx context.Context) error {
-	rows, err := r.db.Query(ctx, `SELECT host(ip) FROM nas WHERE enabled`)
+	rows, err := r.db.Query(ctx, `SELECT host(ip), id::text, vendor FROM nas WHERE enabled`)
 	if err != nil {
 		return err
 	}
 	defer rows.Close()
-	next := map[string]struct{}{}
+	next := map[string]nasIdentity{}
 	for rows.Next() {
 		var ip string
-		if err := rows.Scan(&ip); err != nil {
+		var n nasIdentity
+		if err := rows.Scan(&ip, &n.ID, &n.Vendor); err != nil {
 			return err
 		}
-		next[canonicalIP(ip)] = struct{}{}
+		next[canonicalIP(ip)] = n
 	}
 	if err := rows.Err(); err != nil {
 		return err

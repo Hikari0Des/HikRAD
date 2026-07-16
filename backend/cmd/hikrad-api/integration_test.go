@@ -116,8 +116,15 @@ func TestIntegration(t *testing.T) {
 			list.Items = nil
 			list.NextCursor = nil
 			body := getJSON(t, url, access, &list)
-			if bytes.Contains([]byte(body), []byte("password")) {
-				t.Fatalf("password material leaked in list response: %s", body)
+			// The read shape must never carry the credential itself (NFR-4.2).
+			// Match the sealed column and the seeded cleartext specifically — a
+			// bare "password" substring also matches the has_password BOOLEAN
+			// (v1.1 item 13), which is metadata, not material, and made this
+			// assertion fail on every real-DB run since migration 0412.
+			for _, leak := range []string{"password_enc", "testpass"} {
+				if bytes.Contains([]byte(body), []byte(leak)) {
+					t.Fatalf("password material (%s) leaked in list response: %s", leak, body)
+				}
 			}
 			for _, it := range list.Items {
 				if it.Username == "testuser" {

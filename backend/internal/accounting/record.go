@@ -40,11 +40,22 @@ type Record struct {
 	Username         string `json:"username"`
 	FramedIP         string `json:"framed_ip"`
 	CallingStationID string `json:"calling_station_id"`
-	SessionTime      int64  `json:"session_time"`
-	BytesIn          uint64 `json:"bytes_in"`
-	BytesOut         uint64 `json:"bytes_out"`
-	GigawordsIn      uint64 `json:"gigawords_in"`
-	GigawordsOut     uint64 `json:"gigawords_out"`
+	// CalledStationID/NASPortType/NASPortID identify WHICH of a multi-service
+	// NAS's instances the session ran on (FR-62 / C7). Forwarded raw by the
+	// accounting bridge and interpreted only by the vendor adapter, exactly as
+	// on the authorize path. Absent (an older bridge, or a NAS that sends
+	// neither) degrades to the coarse ServiceType guess.
+	CalledStationID string `json:"called_station_id"`
+	NASPortType     string `json:"nas_port_type"`
+	NASPortID       string `json:"nas_port_id"`
+	// ServiceType is the bridge's coarse pppoe|hotspot hint (from Service-Type),
+	// mirroring the authorize bridge's `service` field.
+	ServiceType  string `json:"service_type"`
+	SessionTime  int64  `json:"session_time"`
+	BytesIn      uint64 `json:"bytes_in"`
+	BytesOut     uint64 `json:"bytes_out"`
+	GigawordsIn  uint64 `json:"gigawords_in"`
+	GigawordsOut uint64 `json:"gigawords_out"`
 	// EventTimeRaw is the raw NAS Event-Timestamp (string form or unix seconds).
 	EventTimeRaw   string `json:"event_time"`
 	TerminateCause string `json:"terminate_cause"`
@@ -54,6 +65,15 @@ type Record struct {
 	// server clock for liveness/reaper.
 	ReceiptTime     time.Time `json:"receipt_time"`
 	EventTimeParsed time.Time `json:"event_time_parsed"`
+}
+
+// coarseService is the record's pppoe|hotspot hint, defaulting to pppoe (what
+// every pre-v2 record and every non-hotspot NAS implies).
+func (r Record) coarseService() string {
+	if r.ServiceType == "hotspot" {
+		return "hotspot"
+	}
+	return "pppoe"
 }
 
 var errNoSession = errors.New("accounting: missing acct_session_id")

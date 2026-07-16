@@ -19,9 +19,9 @@ import (
 )
 
 const (
-	readCount   = 128
-	readBlock   = 2 * time.Second
-	dbBackoff   = 500 * time.Millisecond
+	readCount = 128
+	readBlock = 2 * time.Second
+	dbBackoff = 500 * time.Millisecond
 )
 
 func (s *Service) runConsumer(ctx context.Context) {
@@ -176,10 +176,11 @@ func (s *Service) processMessage(ctx context.Context, m redis.XMessage) (ack boo
 	}
 
 	nas := s.nas.byIP(ctx, rec.NASIP)
-	service := nas.Type
-	if service == "" {
-		service = livestate.ServicePPPoE
-	}
+	// FR-62: the session's service comes from the instance it ran on, resolved
+	// per record via the vendor seam — a NAS no longer has one service to
+	// inherit. serviceID is "" for an unregistered NAS or an unresolvable
+	// instance; the session is still recorded (M2 outranks attribution).
+	service, serviceID := nas.resolveService(rec)
 	sub := subscriberByUsername(ctx, s.db, rec.Username)
 
 	tx, err := s.db.Begin(ctx)
@@ -209,7 +210,9 @@ func (s *Service) processMessage(ctx context.Context, m redis.XMessage) (ack boo
 	}
 
 	// (b/c) Session upsert + usage point.
-	res, err := upsertSession(ctx, tx, rec, nas.ID, service, sub)
+	res, err := upsertSession(ctx, tx, rec, binding{
+		NASID: nas.ID, Service: service, ServiceID: serviceID, SubscriberID: sub,
+	})
 	if err != nil {
 		return false, err
 	}

@@ -36,7 +36,7 @@ func (Module) Name() string { return "radius" }
 func (Module) Register(r chi.Router, d httpapi.Deps) {
 	m := &module{db: d.DB, rdb: d.Redis, log: d.Log, settings: d.Settings, dialROS: vendor.DialROS}
 	m.nas = newNASRegistry(d.DB, d.Log)
-	m.eng = newEngine(d.Redis, d.Log, m.nas)
+	m.eng = newEngine(d.Redis, d.Log, m.nas, d.DB)
 	m.coa = newCoAService(d.DB, d.Redis, d.Log)
 	setDefaultEngine(m.eng)
 	setDefaultCoA(m.coa)

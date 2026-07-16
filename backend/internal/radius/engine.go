@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/hikrad/hikrad/internal/platform/crypto"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -26,6 +27,21 @@ type engine struct {
 	// nasKnown reports whether an enabled NAS with this source IP is registered
 	// (FR-13.2). Backed by the DB-driven client registry; stubbed in tests.
 	nasKnown func(ctx context.Context, ip string) (bool, error)
+	// nasByIP returns the enabled NAS registered at this source IP. The
+	// authorize path needs the row itself from v2 phase 1 on: its id is what an
+	// FR-64 scope is compared against, and its vendor selects the adapter that
+	// resolves the request's service instance (C7). Stubbed in tests.
+	nasByIP func(ctx context.Context, ip string) (nasIdentity, bool, error)
+	// servicesOf returns a NAS's enabled service instances — the candidate set
+	// for C7 resolution. Stubbed in tests.
+	servicesOf func(ctx context.Context, nasID string) ([]serviceRow, error)
+}
+
+// nasIdentity is the slice of a NAS the authorize path needs: enough to scope
+// and to pick a vendor adapter, and nothing sensitive (no secret).
+type nasIdentity struct {
+	ID     string
+	Vendor string
 }
 
 var (
@@ -46,13 +62,17 @@ func defaultEngine() *engine {
 }
 
 // newEngine builds the production engine from the wired NAS registry.
-func newEngine(rdb *redis.Client, log *slog.Logger, reg *nasRegistry) *engine {
+func newEngine(rdb *redis.Client, log *slog.Logger, reg *nasRegistry, db *pgxpool.Pool) *engine {
 	return &engine{
 		rdb:      rdb,
 		log:      log,
 		now:      time.Now,
 		decrypt:  crypto.Decrypt,
 		nasKnown: reg.known,
+		nasByIP:  reg.lookup,
+		servicesOf: func(ctx context.Context, nasID string) ([]serviceRow, error) {
+			return enabledServices(ctx, db, nasID)
+		},
 	}
 }
 

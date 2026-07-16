@@ -34,17 +34,29 @@ type applyResult struct {
 	OrphanStop   bool
 }
 
+// binding is who/where a record belongs to: the NAS, the FR-62 service instance
+// it resolved to, its coarse service, and the subscriber. Grouped rather than
+// passed as four adjacent positional strings, which the writers below would
+// happily accept in the wrong order.
+type binding struct {
+	NASID        string
+	Service      string // pppoe | hotspot
+	ServiceID    string // nas_services.id; "" when unresolved (unregistered NAS)
+	SubscriberID string
+}
+
 // upsertSession applies one accounting record to the sessions table and inserts
-// the usage-point delta. tx is the consumer's transaction; nasID/service come
-// from the NAS resolver, subscriberID from the username lookup.
-func upsertSession(ctx context.Context, tx pgx.Tx, rec Record, nasID, service, subscriberID string) (applyResult, error) {
+// the usage-point delta. tx is the consumer's transaction; the binding comes
+// from the NAS resolver + username lookup.
+func upsertSession(ctx context.Context, tx pgx.Tx, rec Record, b binding) (applyResult, error) {
+	nasID, service, subscriberID := b.NASID, b.Service, b.SubscriberID
 	var (
-		haveRow      bool
-		lastIn       int64
-		lastOut      int64
-		startedAt    *time.Time
-		lastInterim  *time.Time
-		wasStopped   bool
+		haveRow     bool
+		lastIn      int64
+		lastOut     int64
+		startedAt   *time.Time
+		lastInterim *time.Time
+		wasStopped  bool
 	)
 	err := tx.QueryRow(ctx,
 		`SELECT bytes_in, bytes_out, started_at, last_interim_at, (stopped_at IS NOT NULL)
@@ -79,16 +91,16 @@ func upsertSession(ctx context.Context, tx pgx.Tx, rec Record, nasID, service, s
 
 	switch rec.RecordType {
 	case RecordStart:
-		if err := writeStart(ctx, tx, rec, nasID, service, subscriberID, newIn, newOut, evt); err != nil {
+		if err := writeStart(ctx, tx, rec, b, newIn, newOut, evt); err != nil {
 			return applyResult{}, err
 		}
 	case RecordInterim:
-		if err := writeInterim(ctx, tx, rec, nasID, service, subscriberID, newIn, newOut, evt, haveRow); err != nil {
+		if err := writeInterim(ctx, tx, rec, b, newIn, newOut, evt, haveRow); err != nil {
 			return applyResult{}, err
 		}
 	case RecordStop:
 		res.OrphanStop = !haveRow
-		if err := writeStop(ctx, tx, rec, nasID, service, subscriberID, newIn, newOut, evt, haveRow); err != nil {
+		if err := writeStop(ctx, tx, rec, b, newIn, newOut, evt, haveRow); err != nil {
 			return applyResult{}, err
 		}
 		res.Closed = true
@@ -143,12 +155,12 @@ func upsertSession(ctx context.Context, tx pgx.Tx, rec Record, nasID, service, s
 	return res, nil
 }
 
-func writeStart(ctx context.Context, tx pgx.Tx, rec Record, nasID, service, sub string, in, out uint64, evt time.Time) error {
+func writeStart(ctx context.Context, tx pgx.Tx, rec Record, b binding, in, out uint64, evt time.Time) error {
 	_, err := tx.Exec(ctx,
 		`INSERT INTO sessions
 		   (nas_id, acct_session_id, subscriber_id, username, ip, mac, started_at,
-		    last_interim_at, stopped_at, bytes_in, bytes_out, service, stale, reaped)
-		 VALUES ($1,$2,$3,$4,NULLIF($5::text,'')::inet,$6,$7,$8,NULL,$9,$10,$11,false,false)
+		    last_interim_at, stopped_at, bytes_in, bytes_out, service, nas_service_id, stale, reaped)
+		 VALUES ($1,$2,$3,$4,NULLIF($5::text,'')::inet,$6,$7,$8,NULL,$9,$10,$11,$12::uuid,false,false)
 		 ON CONFLICT (nas_id, acct_session_id) DO UPDATE SET
 		    subscriber_id = EXCLUDED.subscriber_id,
 		    username = EXCLUDED.username,
@@ -161,24 +173,25 @@ func writeStart(ctx context.Context, tx pgx.Tx, rec Record, nasID, service, sub 
 		    bytes_in = EXCLUDED.bytes_in,
 		    bytes_out = EXCLUDED.bytes_out,
 		    service = EXCLUDED.service,
+		    nas_service_id = EXCLUDED.nas_service_id,
 		    stale = false,
 		    reaped = false`,
-		nasID, rec.AcctSessionID, nullUUID(sub), rec.Username, rec.FramedIP, rec.CallingStationID,
-		evt, rec.ReceiptTime, int64(in), int64(out), service)
+		b.NASID, rec.AcctSessionID, nullUUID(b.SubscriberID), rec.Username, rec.FramedIP, rec.CallingStationID,
+		evt, rec.ReceiptTime, int64(in), int64(out), b.Service, nullUUID(b.ServiceID))
 	return err
 }
 
-func writeInterim(ctx context.Context, tx pgx.Tx, rec Record, nasID, service, sub string, in, out uint64, evt time.Time, haveRow bool) error {
+func writeInterim(ctx context.Context, tx pgx.Tx, rec Record, b binding, in, out uint64, evt time.Time, haveRow bool) error {
 	if !haveRow {
 		// Interim before Start (NAS reboot race): synthesize an open session.
 		_, err := tx.Exec(ctx,
 			`INSERT INTO sessions
 			   (nas_id, acct_session_id, subscriber_id, username, ip, mac, started_at,
-			    last_interim_at, bytes_in, bytes_out, service, stale, reaped)
-			 VALUES ($1,$2,$3,$4,NULLIF($5::text,'')::inet,$6,$7,$8,$9,$10,$11,false,false)
+			    last_interim_at, bytes_in, bytes_out, service, nas_service_id, stale, reaped)
+			 VALUES ($1,$2,$3,$4,NULLIF($5::text,'')::inet,$6,$7,$8,$9,$10,$11,$12::uuid,false,false)
 			 ON CONFLICT (nas_id, acct_session_id) DO NOTHING`,
-			nasID, rec.AcctSessionID, nullUUID(sub), rec.Username, rec.FramedIP, rec.CallingStationID,
-			evt, rec.ReceiptTime, int64(in), int64(out), service)
+			b.NASID, rec.AcctSessionID, nullUUID(b.SubscriberID), rec.Username, rec.FramedIP, rec.CallingStationID,
+			evt, rec.ReceiptTime, int64(in), int64(out), b.Service, nullUUID(b.ServiceID))
 		return err
 	}
 	_, err := tx.Exec(ctx,
@@ -194,22 +207,22 @@ func writeInterim(ctx context.Context, tx pgx.Tx, rec Record, nasID, service, su
 		    stale = false,
 		    reaped = false
 		  WHERE nas_id = $1 AND acct_session_id = $2`,
-		nasID, rec.AcctSessionID, nullUUID(sub), rec.Username, rec.FramedIP, rec.CallingStationID,
+		b.NASID, rec.AcctSessionID, nullUUID(b.SubscriberID), rec.Username, rec.FramedIP, rec.CallingStationID,
 		rec.ReceiptTime, int64(in), int64(out))
 	return err
 }
 
-func writeStop(ctx context.Context, tx pgx.Tx, rec Record, nasID, service, sub string, in, out uint64, evt time.Time, haveRow bool) error {
+func writeStop(ctx context.Context, tx pgx.Tx, rec Record, b binding, in, out uint64, evt time.Time, haveRow bool) error {
 	if !haveRow {
 		// Stop for an unknown session: record a closed row (orphan_stops++).
 		_, err := tx.Exec(ctx,
 			`INSERT INTO sessions
 			   (nas_id, acct_session_id, subscriber_id, username, ip, mac, started_at,
-			    last_interim_at, stopped_at, terminate_cause, bytes_in, bytes_out, service, stale, reaped)
-			 VALUES ($1,$2,$3,$4,NULLIF($5::text,'')::inet,$6,$7,$8,$9,$10,$11,$12,$13,false,false)
+			    last_interim_at, stopped_at, terminate_cause, bytes_in, bytes_out, service, nas_service_id, stale, reaped)
+			 VALUES ($1,$2,$3,$4,NULLIF($5::text,'')::inet,$6,$7,$8,$9,$10,$11,$12,$13,$14::uuid,false,false)
 			 ON CONFLICT (nas_id, acct_session_id) DO NOTHING`,
-			nasID, rec.AcctSessionID, nullUUID(sub), rec.Username, rec.FramedIP, rec.CallingStationID,
-			evt, rec.ReceiptTime, evt, rec.TerminateCause, int64(in), int64(out), service)
+			b.NASID, rec.AcctSessionID, nullUUID(b.SubscriberID), rec.Username, rec.FramedIP, rec.CallingStationID,
+			evt, rec.ReceiptTime, evt, rec.TerminateCause, int64(in), int64(out), b.Service, nullUUID(b.ServiceID))
 		return err
 	}
 	// A Stop does not rewrite identity fields (username/ip/mac) — only closes the
@@ -226,7 +239,7 @@ func writeStop(ctx context.Context, tx pgx.Tx, rec Record, nasID, service, sub s
 		    stale = false,
 		    reaped = false
 		  WHERE nas_id = $1 AND acct_session_id = $2`,
-		nasID, rec.AcctSessionID, nullUUID(sub),
+		b.NASID, rec.AcctSessionID, nullUUID(b.SubscriberID),
 		evt, rec.TerminateCause, rec.ReceiptTime, int64(in), int64(out))
 	return err
 }

@@ -39,16 +39,22 @@ type Profile struct {
 	BurstTime      *string `json:"burst_time"`
 	RatePriority   *string `json:"rate_priority"`
 	MinRate        *string `json:"min_rate"`
-	Archived       bool    `json:"archived"`
-	CreatedAt      string  `json:"created_at"`
-	UpdatedAt      string  `json:"updated_at"`
+	// NASID/NASServiceID scope every subscriber on this profile to one NAS /
+	// service instance (FR-64), unless the subscriber overrides it. Both nil =
+	// any NAS (the v1 default).
+	NASID        *string `json:"nas_id"`
+	NASServiceID *string `json:"nas_service_id"`
+	Archived     bool    `json:"archived"`
+	CreatedAt    string  `json:"created_at"`
+	UpdatedAt    string  `json:"updated_at"`
 }
 
 const profileColumns = `id::text, name, price_iqd, duration_days, rate_down_kbps, rate_up_kbps,
 	pool_id::text, session_limit_default, quota_mode, quota_total_bytes, quota_down_bytes,
 	quota_up_bytes, throttle_rate, expiry_behavior, quota_behavior,
 	hotspot_rate_down_kbps, hotspot_rate_up_kbps,
-	burst_rate, burst_threshold, burst_time, rate_priority, min_rate, archived,
+	burst_rate, burst_threshold, burst_time, rate_priority, min_rate,
+	nas_id::text, nas_service_id::text, archived,
 	to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
 	to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')`
 
@@ -59,6 +65,7 @@ func scanProfile(row pgx.Row) (Profile, error) {
 		&p.QuotaUpBytes, &p.ThrottleRate, &p.ExpiryBehavior, &p.QuotaBehavior,
 		&p.HotspotRateDownKbps, &p.HotspotRateUpKbps,
 		&p.BurstRate, &p.BurstThreshold, &p.BurstTime, &p.RatePriority, &p.MinRate,
+		&p.NASID, &p.NASServiceID,
 		&p.Archived, &p.CreatedAt, &p.UpdatedAt)
 	return p, err
 }
@@ -99,14 +106,16 @@ func insertProfile(ctx context.Context, db *pgxpool.Pool, in profileInput) (Prof
 		    session_limit_default, quota_mode, quota_total_bytes, quota_down_bytes,
 		    quota_up_bytes, throttle_rate, expiry_behavior, quota_behavior,
 		    hotspot_rate_down_kbps, hotspot_rate_up_kbps,
-		    burst_rate, burst_threshold, burst_time, rate_priority, min_rate)
-		 VALUES ($1,$2,$3,$4,$5,$6::uuid,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
+		    burst_rate, burst_threshold, burst_time, rate_priority, min_rate,
+		    nas_id, nas_service_id)
+		 VALUES ($1,$2,$3,$4,$5,$6::uuid,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22::uuid,$23::uuid)
 		 RETURNING `+profileColumns,
 		in.Name, in.PriceIQD, in.DurationDays, in.RateDownKbps, in.RateUpKbps, in.PoolID,
 		in.SessionLimitDefault, in.QuotaMode, in.QuotaTotalBytes, in.QuotaDownBytes,
 		in.QuotaUpBytes, in.ThrottleRate, in.ExpiryBehavior, in.QuotaBehavior,
 		in.HotspotRateDownKbps, in.HotspotRateUpKbps,
-		in.BurstRate, in.BurstThreshold, in.BurstTime, in.RatePriority, in.MinRate))
+		in.BurstRate, in.BurstThreshold, in.BurstTime, in.RatePriority, in.MinRate,
+		in.NASID, in.NASServiceID))
 }
 
 func updateProfile(ctx context.Context, db *pgxpool.Pool, id string, in profileInput) (Profile, error) {
@@ -117,6 +126,7 @@ func updateProfile(ctx context.Context, db *pgxpool.Pool, id string, in profileI
 		    quota_down_bytes=$11, quota_up_bytes=$12, throttle_rate=$13, expiry_behavior=$14,
 		    quota_behavior=$15, hotspot_rate_down_kbps=$16, hotspot_rate_up_kbps=$17,
 		    burst_rate=$19, burst_threshold=$20, burst_time=$21, rate_priority=$22, min_rate=$23,
+		    nas_id=$24::uuid, nas_service_id=$25::uuid,
 		    archived=$18
 		  WHERE id=$1::uuid
 		 RETURNING `+profileColumns,
@@ -124,7 +134,8 @@ func updateProfile(ctx context.Context, db *pgxpool.Pool, id string, in profileI
 		in.SessionLimitDefault, in.QuotaMode, in.QuotaTotalBytes, in.QuotaDownBytes,
 		in.QuotaUpBytes, in.ThrottleRate, in.ExpiryBehavior, in.QuotaBehavior,
 		in.HotspotRateDownKbps, in.HotspotRateUpKbps, in.Archived,
-		in.BurstRate, in.BurstThreshold, in.BurstTime, in.RatePriority, in.MinRate))
+		in.BurstRate, in.BurstThreshold, in.BurstTime, in.RatePriority, in.MinRate,
+		in.NASID, in.NASServiceID))
 }
 
 func archiveProfile(ctx context.Context, db *pgxpool.Pool, id string) (Profile, error) {
