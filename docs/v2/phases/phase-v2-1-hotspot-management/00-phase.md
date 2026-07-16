@@ -101,7 +101,11 @@ NASPortID       string `json:"nas_port_id"`
     - pppoe request (pppoe/dual) → unchanged (count pppoe against `SessionLimit`).
 11. MAC lock — unchanged (`if !hotspot` guard already excludes hotspot).
 
-**Reply pool precedence (FR-64.3)** in `replyIntents`: `static_ip` (subscriber) → `PoolName` (profile) → resolved service instance's pool → **omit `address_pool`**. Already true that an empty pool omits the intent (`add()` skips ""); this phase adds the service-instance fallback tier and **locks the omit-behavior with a test** (C-gate leg).
+**Reply pool precedence (FR-64.3) is SERVICE-AWARE** in `replyIntents` (corrected 2026-07-16 after a pilot bug — see [known-issues.md](../../../ops/known-issues.md), "no more free addresses in the pool"):
+- **pppoe request:** `static_ip` → resolved pppoe-service instance's `ip_pool_id` (if set) → profile `PoolName` → **omit**.
+- **hotspot request:** `static_ip` → resolved hotspot-service instance's `ip_pool_id` (if set) → **omit**. The profile's `PoolName` is a PPPoE pool and is **NEVER** applied to a hotspot session — omitting `address_pool` lets the MikroTik Hotspot assign from its own interface/DHCP pool (a hotspot-only router's normal behaviour).
+
+Rationale: v1 unconditionally emitted the profile's `Framed-Pool` on hotspot logins, so the router tried to allocate from a (often nonexistent/empty) named pool and failed. Hotspot addresses now come from the hotspot **service instance** (operator-configured) or the router's local pool — never the PPPoE profile pool. Already true that an empty pool omits the intent (`add()` skips ""); this phase makes the fallback service-aware and **locks it with tests** (gate item 6). Document this on the pools screen: "profile pools are PPPoE; hotspot pools are per-service or router-local."
 
 ### C7. Vendor service-instance resolution seam (FR-17 — the isolation boundary)
 New adapter method on `vendor.Adapter`:
@@ -140,7 +144,7 @@ Green when all pass (scriptable legs in `scripts/gate-v2-phase-1.sh`; human/harn
 3. **Service matrix (harness-driven)** — the RADIUS packet harness drives, per the C6 table: pppoe-only rejects hotspot `service_not_allowed`; hotspot-only rejects pppoe `service_not_allowed` and accepts hotspot with hotspot rate + quota enforced + `session_limit`-capped concurrency; dual accepts both with FR-58 semantics; voucher still bypasses.
 4. **Multi-service NAS (harness-driven)** — one NAS with 2 hotspot + 1 pppoe `nas_services` rows: each request resolves to its own instance and gets that instance's pool; the config-snippet covers all three; live sessions carry the service instance.
 5. **NAS scoping** — a subscriber assigned to NAS A rejects `nas_not_allowed` on NAS B (and on a non-assigned service instance) and accepts on the assigned one; profile-level assignment applies unless the subscriber overrides (subscriber-over-profile).
-6. **No-pool-anywhere** — static-IP unset + profile pool null + service pool null ⇒ accept reply contains **no** `address_pool` intent; setting any tier restores it with the C6 precedence. (Locks item 24; documented on the pools screen.)
+6. **Service-aware pools (the pilot-bug lock)** — (a) a **dual/hotspot** subscriber whose profile HAS a PPPoE pool but whose resolved hotspot service has none ⇒ the hotspot accept reply contains **no** `address_pool` intent (router-local pool used; the v1 "no free addresses" bug cannot recur); (b) the same subscriber's **pppoe** login still gets the profile pool; (c) setting a hotspot-service pool makes hotspot emit that pool; (d) no-pool-anywhere on pppoe omits it too. (Locks item 24 + the pilot bug; documented on the pools screen.)
 7. **Vendor isolation** — `scripts/lint-vendor-isolation` green: service-instance resolution + any new RADIUS-attribute parsing live only under `internal/radius/vendor/`.
 8. **Panel** — `frontend/panel` build + lint + vitest green; `frontend` `i18n:check` green (0 missing keys, 0 hardcoded strings) incl. the service-type selector, filters, assignment pickers, `nas_not_allowed`.
 9. **Docs accuracy** (Decision 27) — PRD/sub-PRD/index reflect FR-61–64; `known-issues.md` carries any bug found while building.
