@@ -189,12 +189,18 @@ func updateProfile(ctx context.Context, tx pgx.Tx, id string, in profileInput) (
 //
 // pending_profile_id is included: a scheduled plan change at next renewal is a
 // live reference even though nobody is on the plan yet.
+//
+// The voucher reference is on voucher_batches, NOT vouchers: a code inherits its
+// plan from its batch (0202). Querying vouchers.profile_id raised 42703 on every
+// call, so this guard returned an error rather than an answer and no profile
+// could be deleted at all — see docs/ops/known-issues.md.
 func profileInUse(ctx context.Context, db *pgxpool.Pool, id string) (bool, error) {
 	var inUse bool
 	err := db.QueryRow(ctx,
 		`SELECT EXISTS (SELECT 1 FROM subscribers WHERE profile_id = $1::uuid OR pending_profile_id = $1::uuid)
-		     OR EXISTS (SELECT 1 FROM vouchers WHERE profile_id = $1::uuid)
-		     OR EXISTS (SELECT 1 FROM payment_intents WHERE profile_id = $1::uuid)`,
+		     OR EXISTS (SELECT 1 FROM voucher_batches WHERE profile_id = $1::uuid)
+		     OR EXISTS (SELECT 1 FROM payment_intents WHERE profile_id = $1::uuid)
+		     OR EXISTS (SELECT 1 FROM card_payments WHERE profile_id = $1::uuid)`,
 		id).Scan(&inUse)
 	return inUse, err
 }
