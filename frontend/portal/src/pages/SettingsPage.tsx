@@ -13,6 +13,7 @@ import { useAsync } from '../hooks/useAsync'
 export function SettingsPage() {
   const t = useT()
   const me = useAsync(getMe, [])
+  const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -30,7 +31,11 @@ export function SettingsPage() {
     }
     setSubmitting(true)
     try {
-      await updateMe({ phone: phone || undefined, password: password || undefined })
+      await updateMe({
+        name: name || undefined,
+        phone: phone || undefined,
+        password: password || undefined,
+      })
       setSaved(true)
       setPassword('')
       setConfirmPassword('')
@@ -54,6 +59,16 @@ export function SettingsPage() {
         onSubmit={onSubmit}
         className="flex flex-col gap-4 rounded-xl bg-surface-raised p-4 shadow-sm"
       >
+        <label className="flex flex-col gap-1 text-sm">
+          {t('portal.settings.nameLabel')}
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className="rounded-md border border-surface-sunken bg-surface px-3 py-2 text-base"
+          />
+        </label>
+
         <label className="flex flex-col gap-1 text-sm">
           {t('portal.settings.phoneLabel')}
           <input

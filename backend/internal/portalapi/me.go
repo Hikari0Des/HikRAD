@@ -110,6 +110,7 @@ func (m *Module) meHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 type updateMeRequest struct {
+	Name     *string `json:"name,omitempty"`
 	Phone    *string `json:"phone,omitempty"`
 	Password *string `json:"password,omitempty" audit:"secret"`
 }
@@ -126,6 +127,13 @@ func (m *Module) updateMeHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	changed := map[string]any{}
+	if in.Name != nil {
+		if err := subscribers.SetName(ctx, m.db, sub.ID, *in.Name); err != nil {
+			m.internalError(w, "update name", err)
+			return
+		}
+		changed["name"] = *in.Name
+	}
 	if in.Phone != nil {
 		if err := subscribers.SetPhone(ctx, m.db, sub.ID, *in.Phone); err != nil {
 			m.internalError(w, "update phone", err)
