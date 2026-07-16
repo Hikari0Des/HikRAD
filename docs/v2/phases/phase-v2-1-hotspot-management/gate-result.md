@@ -10,7 +10,33 @@ phase's real risk lives. The backend suite was run with **CI's own invocation**
 (`go test -p 1`) against a **fresh** database — both details matter and both are
 recorded under "Test-harness traps" below.
 
-`scripts/gate-v2-phase-1.sh`: **all 35 scripted legs PASS, 0 FAIL.**
+`scripts/gate-v2-phase-1.sh`: **all 37 scripted legs PASS, 0 FAIL.**
+(35 at the original run; +2 from the post-gate C4 amendment below.)
+
+## Post-gate amendments (2026-07-16, after the owner reviewed the shipped phase)
+
+Two changes landed after this gate first went GREEN. Both were re-gated.
+
+1. **FR-62.6 service discovery** (`d77e272`) — "Detect from router" reads the
+   router's real PPPoE/Hotspot instances over the RouterOS API (read-only) so
+   `ros_server_name` and pool names stop being hand-typed. Added because the two
+   things this phase struggled with — instance names and pool names — are the
+   same failure: a human retyping a string that must match a box exactly.
+2. **C4 amended: the NAS scope is a SET** (`a563240`) — owner-requested
+   multi-select. The single `(nas_id, nas_service_id)` pair could only say "this
+   NAS" or "everywhere", so operators picked everywhere and FR-64 bought nothing.
+   Migration 0504 moves it to `subscriber_nas_scopes` / `profile_nas_scopes`,
+   backfills, and drops the pair columns. Gate item 5's legs still pass unchanged
+   (a one-element set behaves exactly as the pair did); the two new legs assert
+   the amended AuthView shape and that an **empty set means ANY NAS**, which is
+   the one inversion that would lock out every subscriber at once.
+
+A third finding is recorded but is **not** a code change: the pilot's recurring
+"no address from ip pool" is **not** this phase's fixed bug. Their pool has 1002
+of 1013 addresses free — nothing is exhausted; the pool *name* HikRAD sends does
+not exist on that router, and RouterOS reports that as if the pool were full. The
+debug tail now shows the reply (`address_pool = <name>`) so the mismatch is
+visible (`c89b6e1`). See `docs/ops/known-issues.md`.
 
 ## Gate items 1–9
 
