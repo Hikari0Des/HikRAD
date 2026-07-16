@@ -6,6 +6,7 @@ import { Ltr, LoadingState, ErrorState, StatusBadge, useFormatters, useT } from 
 import { listProfiles } from '../../api/profiles'
 import { listManagers, type ManagerView } from '../../api/managers'
 import { listSubscribers } from '../../api/subscribers'
+import { SERVICE_TYPES } from '../../api/types'
 import type { BulkFilter, Profile, Subscriber, SubscriberStatus } from '../../api/types'
 import { useAuth } from '../../auth/AuthContext'
 import { Button } from '../../components/Button'
@@ -25,9 +26,17 @@ interface Filters {
   profileId: string
   ownerId: string
   expiringDays: string
+  /** FR-61/63: how hotspot-only accounts are found in the ONE unified list. */
+  serviceType: string
 }
 
-const EMPTY: Filters = { status: '', profileId: '', ownerId: '', expiringDays: '' }
+const EMPTY: Filters = {
+  status: '',
+  profileId: '',
+  ownerId: '',
+  expiringDays: '',
+  serviceType: '',
+}
 
 /**
  * User list (FR-1/4). The browse view is cursor-paginated over all subscribers;
@@ -75,6 +84,10 @@ export function UserListPage() {
     if (filters.status) f.status = filters.status
     if (filters.profileId) f.profile_id = filters.profileId
     if (filters.ownerId) f.owner_manager_id = filters.ownerId
+    // Must mirror the client-side filter: a bulk action runs against THIS
+    // filter server-side, so omitting it here would apply the action to every
+    // service type while the operator is looking at one.
+    if (filters.serviceType) f.service_type = filters.serviceType
     if (filters.expiringDays) {
       const d = new Date()
       d.setDate(d.getDate() + Number(filters.expiringDays))
@@ -130,6 +143,20 @@ export function UserListPage() {
             {STATUSES.map((s) => (
               <option key={s} value={s}>
                 {t(`common.status.${s}`)}
+              </option>
+            ))}
+          </Select>
+        </label>
+        <label className="text-sm">
+          <span className="mb-1 block text-xs text-ink-muted">{t('users.filterServiceType')}</span>
+          <Select
+            value={filters.serviceType}
+            onChange={(e) => setFilters({ ...filters, serviceType: e.target.value })}
+          >
+            <option value="">{t('ui.all')}</option>
+            {SERVICE_TYPES.map((v) => (
+              <option key={v} value={v}>
+                {t(`serviceType.${v}`)}
               </option>
             ))}
           </Select>
@@ -333,6 +360,7 @@ function applyFilters(items: Subscriber[], f: Filters): Subscriber[] {
   if (f.status) out = out.filter((s) => s.status === f.status)
   if (f.profileId) out = out.filter((s) => s.profile_id === f.profileId)
   if (f.ownerId) out = out.filter((s) => s.owner_manager_id === f.ownerId)
+  if (f.serviceType) out = out.filter((s) => s.service_type === f.serviceType)
   if (f.expiringDays) {
     const cutoff = new Date()
     cutoff.setDate(cutoff.getDate() + Number(f.expiringDays))
@@ -351,6 +379,7 @@ function buildChips(
   if (f.status) chips.push({ key: 'status', label: t(`common.status.${f.status}`) })
   if (f.profileId) chips.push({ key: 'profileId', label: profileName(f.profileId) })
   if (f.ownerId) chips.push({ key: 'ownerId', label: ownerName(f.ownerId) })
+  if (f.serviceType) chips.push({ key: 'serviceType', label: t(`serviceType.${f.serviceType}`) })
   if (f.expiringDays)
     chips.push({ key: 'expiringDays', label: t('users.chipExpiring', { days: f.expiringDays }) })
   return chips

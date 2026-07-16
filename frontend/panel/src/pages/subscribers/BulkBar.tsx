@@ -3,7 +3,8 @@ import { useEffect, useRef, useState } from 'react'
 import { Ltr, useT } from '@hikrad/shared'
 
 import { exportCsv, getBulkJob, startBulk } from '../../api/subscribers'
-import type { BulkAction, BulkFilter, BulkJob, Profile } from '../../api/types'
+import { SERVICE_TYPES } from '../../api/types'
+import type { BulkAction, BulkFilter, BulkJob, Profile, ServiceType } from '../../api/types'
 import type { ManagerView } from '../../api/managers'
 import { useAuth } from '../../auth/AuthContext'
 import { PERM_EXPORT } from '../../auth/permissions'
@@ -108,8 +109,8 @@ export function BulkBar({
             <Button size="sm" variant="secondary" onClick={() => setPrompt('extend_expiry')}>
               {t('bulk.extendExpiry')}
             </Button>
-            <Button size="sm" variant="secondary" onClick={() => setPrompt('set_allow_hotspot')}>
-              {t('bulk.setAllowHotspot')}
+            <Button size="sm" variant="secondary" onClick={() => setPrompt('set_service_type')}>
+              {t('bulk.setServiceType')}
             </Button>
             {managers.length > 0 && (
               <Button size="sm" variant="secondary" onClick={() => setPrompt('move_owner')}>
@@ -186,7 +187,7 @@ function BulkPrompt({
   const [days, setDays] = useState('30')
   const [ownerId, setOwnerId] = useState('')
   const [reason, setReason] = useState('')
-  const [allowHotspot, setAllowHotspot] = useState('true')
+  const [serviceType, setServiceType] = useState<ServiceType>('pppoe')
 
   if (!action || action === 'enable' || action === 'export') return null
 
@@ -195,7 +196,7 @@ function BulkPrompt({
     change_profile: t('bulk.changeProfile'),
     extend_expiry: t('bulk.extendExpiry'),
     move_owner: t('bulk.moveOwner'),
-    set_allow_hotspot: t('bulk.setAllowHotspot'),
+    set_service_type: t('bulk.setServiceType'),
   }
 
   function submit() {
@@ -212,8 +213,8 @@ function BulkPrompt({
       case 'move_owner':
         onSubmit('move_owner', { owner_manager_id: ownerId })
         break
-      case 'set_allow_hotspot':
-        onSubmit('set_allow_hotspot', { allow_hotspot: allowHotspot === 'true' })
+      case 'set_service_type':
+        onSubmit('set_service_type', { service_type: serviceType })
         break
     }
   }
@@ -260,11 +261,17 @@ function BulkPrompt({
             </Select>
           </Field>
         )}
-        {action === 'set_allow_hotspot' && (
-          <Field label={t('subscriber.allowHotspot')}>
-            <Select value={allowHotspot} onChange={(e) => setAllowHotspot(e.target.value)}>
-              <option value="true">{t('ui.yes')}</option>
-              <option value="false">{t('ui.no')}</option>
+        {action === 'set_service_type' && (
+          <Field label={t('subscriber.serviceType')}>
+            <Select
+              value={serviceType}
+              onChange={(e) => setServiceType(e.target.value as ServiceType)}
+            >
+              {SERVICE_TYPES.map((v) => (
+                <option key={v} value={v}>
+                  {t(`serviceType.${v}`)}
+                </option>
+              ))}
             </Select>
           </Field>
         )}

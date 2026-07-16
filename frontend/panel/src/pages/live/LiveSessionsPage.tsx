@@ -47,6 +47,7 @@ export function LiveSessionsPage() {
   const [nasId, setNasId] = useState('')
   const [profileId, setProfileId] = useState('')
   const [managerId, setManagerId] = useState('')
+  const [service, setService] = useState('')
   const [q, setQ] = useState('')
   const debouncedQ = useDebouncedValue(q.trim(), 300)
 
@@ -55,13 +56,14 @@ export function LiveSessionsPage() {
   const [confirm, setConfirm] = useState<LiveSession | null>(null)
   const mapRef = useRef<LiveMap>(new Map())
 
-  const filterKey = `${nasId}|${profileId}|${managerId}|${debouncedQ}`
+  const filterKey = `${nasId}|${profileId}|${managerId}|${service}|${debouncedQ}`
 
   useEffect(() => {
     const filter: LiveFilter = {}
     if (nasId) filter.nas_id = nasId
     if (profileId) filter.profile_id = profileId
     if (managerId) filter.manager_id = managerId
+    if (service) filter.service = service
     if (debouncedQ) filter.q = debouncedQ
 
     mapRef.current = new Map()
@@ -78,7 +80,7 @@ export function LiveSessionsPage() {
       onDisconnect: () => setStatus('reconnecting'),
     })
     return () => handle.close()
-  }, [filterKey, nasId, profileId, managerId, debouncedQ])
+  }, [filterKey, nasId, profileId, managerId, service, debouncedQ])
 
   const nasName = useMemo(() => {
     const m = new Map(nasList.map((n) => [n.id, n.name]))
@@ -125,6 +127,17 @@ export function LiveSessionsPage() {
               {n.name}
             </option>
           ))}
+        </Select>
+        {/* FR-63: filter by the session's own kind (a dual subscriber has both). */}
+        <Select
+          value={service}
+          onChange={(e) => setService(e.target.value)}
+          aria-label={t('live.col.service')}
+          className="max-w-[10rem]"
+        >
+          <option value="">{t('live.allServices')}</option>
+          <option value="pppoe">{t('live.service.pppoe')}</option>
+          <option value="hotspot">{t('live.service.hotspot')}</option>
         </Select>
         <Select
           value={profileId}

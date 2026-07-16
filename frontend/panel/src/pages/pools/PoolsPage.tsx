@@ -61,6 +61,13 @@ export function PoolsPage() {
         }
       />
 
+      {/* FR-64.3, documented here because this screen is where the pilot's "no
+          more free addresses in the pool" bug was invisible: a profile's pool
+          is a PPPoE pool and is never sent on a hotspot login. */}
+      <p className="mb-3 rounded-md border border-surface-sunken bg-surface-raised p-3 text-xs text-ink-muted">
+        {t('pools.serviceNote')}
+      </p>
+
       {error ? (
         <ErrorState onRetry={reload} />
       ) : loading ? (

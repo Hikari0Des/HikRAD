@@ -91,4 +91,59 @@ describe('BulkBar (FR-4)', () => {
     expect(screen.queryByText(en.bulk.disable)).not.toBeInTheDocument()
     expect(screen.queryByText(en.bulk.export)).not.toBeInTheDocument()
   })
+
+  // FR-61: the action that replaced v1's set_allow_hotspot. It must post the
+  // three-valued service_type, and it must carry the caller's filter through
+  // untouched — a bulk runs against the SERVER-side filter, so a dropped filter
+  // would silently retype every subscriber instead of the ones on screen.
+  it('posts set_service_type with the chosen type and the caller filter', async () => {
+    tokenStore.setManager({ id: 'm1', username: 'admin', role: 'admin' })
+    let posted: Record<string, unknown> | null = null
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      if ((init?.method ?? 'GET') === 'POST' && url.endsWith('/subscribers/bulk')) {
+        posted = JSON.parse(String(init?.body))
+        return Promise.resolve(
+          json(202, {
+            id: 'j2',
+            action: 'set_service_type',
+            status: 'completed',
+            total: 1,
+            done: 1,
+            succeeded: 1,
+            failed: 0,
+            failures: [],
+            started_at: '2026-07-16T10:00:00Z',
+          }),
+        )
+      }
+      throw new Error(`unexpected fetch ${url}`)
+    })
+
+    render(
+      <I18nProvider>
+        <AuthProvider>
+          <ToastProvider>
+            <BulkBar
+              filter={{ status: 'active', service_type: 'hotspot' }}
+              profiles={[]}
+              managers={[]}
+              onDone={() => {}}
+            />
+          </ToastProvider>
+        </AuthProvider>
+      </I18nProvider>,
+    )
+
+    fireEvent.click(screen.getByText(en.bulk.setServiceType))
+    // The prompt has exactly one select — the service-type picker.
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'dual' } })
+    fireEvent.click(screen.getByText(en.ui.apply))
+
+    await waitFor(() => expect(posted).not.toBeNull())
+    expect(posted).toMatchObject({
+      action: 'set_service_type',
+      params: { service_type: 'dual' },
+      filter: { status: 'active', service_type: 'hotspot' },
+    })
+  })
 })

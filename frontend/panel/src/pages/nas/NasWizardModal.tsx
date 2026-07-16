@@ -4,10 +4,10 @@ import { useT } from '@hikrad/shared'
 
 import { createNas, updateNas } from '../../api/nas'
 import { ApiError, type FieldError } from '../../api/client'
-import type { Nas, NasType, NasWrite } from '../../api/types'
+import type { Nas, NasServiceWrite, NasType, NasWrite } from '../../api/types'
 import { Button } from '../../components/Button'
 import { Modal } from '../../components/Modal'
-import { Field, Select, TextInput } from '../../components/form'
+import { Checkbox, Field, Select, TextInput } from '../../components/form'
 import { useToast } from '../../components/Toast'
 
 const TYPES: NasType[] = ['pppoe', 'hotspot']
@@ -19,10 +19,10 @@ export interface NasPrefill {
 }
 
 /**
- * NAS create/edit wizard (FR-14). Two type-aware steps: step 1 identity
- * (name/IP/service type), step 2 connection (shared secret, CoA port, ROS
- * version, SNMP community, location). Discovery pre-fills step 1. On edit the
- * secret/SNMP fields are left blank and only rotated when typed.
+ * NAS create/edit wizard (FR-14). Two steps: step 1 identity (name/IP + the
+ * FR-62 service instances this router runs), step 2 connection (shared secret,
+ * CoA port, ROS version, SNMP community, location). Discovery pre-fills step 1.
+ * On edit the secret/SNMP fields are left blank and only rotated when typed.
  */
 export function NasWizardModal({
   open,
@@ -97,15 +97,11 @@ export function NasWizardModal({
           <Field label={t('nas.ip')} error={errors.ip}>
             <TextInput value={form.ip} dir="ltr" onChange={(e) => set('ip', e.target.value)} />
           </Field>
-          <Field label={t('nas.type')} error={errors.type} hint={t('nas.typeHint')}>
-            <Select value={form.type} onChange={(e) => set('type', e.target.value)}>
-              {TYPES.map((ty) => (
-                <option key={ty} value={ty}>
-                  {t(`nas.typeName.${ty}`)}
-                </option>
-              ))}
-            </Select>
-          </Field>
+          <ServicesEditor
+            services={form.services}
+            onChange={(services) => set('services', services)}
+            errors={errors}
+          />
           <div className="flex justify-end gap-2 pt-2">
             <Button variant="ghost" onClick={() => onOpenChange(false)}>
               {t('ui.cancel')}
@@ -216,10 +212,101 @@ export function NasWizardModal({
   )
 }
 
+/**
+ * FR-62/63 services sub-list: the router's PPPoE server and each hotspot zone.
+ * The array is the whole truth for the NAS — removing a row here deletes that
+ * instance — so removing the last one is refused (a NAS with no service can
+ * authenticate nobody).
+ *
+ * ros_server_name matters more than it looks: it is how an Access-Request is
+ * matched to its zone (C7). With one hotspot it can stay empty (the sole
+ * instance resolves unambiguously); with several, an unnamed zone cannot be
+ * told apart from its neighbours, so the hint says so and the backend rejects
+ * duplicates.
+ */
+function ServicesEditor({
+  services,
+  onChange,
+  errors,
+}: {
+  services: NasServiceWrite[]
+  onChange: (next: NasServiceWrite[]) => void
+  errors: Record<string, string>
+}) {
+  const t = useT()
+  const patch = (i: number, next: Partial<NasServiceWrite>) =>
+    onChange(services.map((s, j) => (i === j ? { ...s, ...next } : s)))
+
+  return (
+    <Field label={t('nas.services')} error={errors.services} hint={t('nas.servicesHint')}>
+      <div className="space-y-2">
+        {services.map((s, i) => (
+          <div key={s.id ?? `new-${i}`} className="rounded border border-surface-sunken p-2">
+            <div className="grid gap-2 sm:grid-cols-2">
+              <Select
+                aria-label={t('nas.serviceKind')}
+                value={s.service}
+                onChange={(e) => patch(i, { service: e.target.value as NasType })}
+              >
+                {TYPES.map((ty) => (
+                  <option key={ty} value={ty}>
+                    {t(`nas.typeName.${ty}`)}
+                  </option>
+                ))}
+              </Select>
+              <TextInput
+                aria-label={t('nas.serviceLabel')}
+                placeholder={t('nas.serviceLabelPlaceholder')}
+                value={s.label ?? ''}
+                onChange={(e) => patch(i, { label: e.target.value })}
+              />
+              <TextInput
+                aria-label={t('nas.rosServerName')}
+                placeholder={t('nas.rosServerNamePlaceholder')}
+                dir="ltr"
+                value={s.ros_server_name ?? ''}
+                onChange={(e) => patch(i, { ros_server_name: e.target.value })}
+              />
+              <div className="flex items-center justify-between gap-2">
+                <Checkbox
+                  label={t('nas.serviceEnabled')}
+                  checked={s.enabled ?? true}
+                  onChange={(e) => patch(i, { enabled: e.target.checked })}
+                />
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={services.length === 1}
+                  title={services.length === 1 ? t('nas.serviceLastHint') : undefined}
+                  onClick={() => onChange(services.filter((_, j) => j !== i))}
+                >
+                  {t('ui.remove')}
+                </Button>
+              </div>
+            </div>
+            {errors[`services.${i}.ros_server_name`] && (
+              <p role="alert" className="mt-1 text-xs text-danger">
+                {errors[`services.${i}.ros_server_name`]}
+              </p>
+            )}
+          </div>
+        ))}
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={() => onChange([...services, { service: 'hotspot', enabled: true }])}
+        >
+          {t('nas.addService')}
+        </Button>
+      </div>
+    </Field>
+  )
+}
+
 interface NasForm {
   name: string
   ip: string
-  type: string
+  services: NasServiceWrite[]
   secret: string
   coaPort: string
   rosVersion: string
@@ -235,7 +322,17 @@ function initial(n?: Nas, prefill?: NasPrefill): NasForm {
   return {
     name: n?.name ?? prefill?.name ?? '',
     ip: n?.ip ?? prefill?.ip ?? '',
-    type: n?.type ?? 'pppoe',
+    // A new NAS starts with one PPPoE instance: the shape of the overwhelming
+    // majority of routers, and the one every v1 install upgraded into.
+    services: n?.services.map((s) => ({
+      id: s.id,
+      service: s.service,
+      label: s.label,
+      interface_note: s.interface_note,
+      ip_pool_id: s.ip_pool_id,
+      ros_server_name: s.ros_server_name,
+      enabled: s.enabled,
+    })) ?? [{ service: 'pppoe', enabled: true }],
     secret: '',
     coaPort: n?.coa_port != null ? String(n.coa_port) : '3799',
     rosVersion: n?.ros_version ?? prefill?.ros_version ?? '',
@@ -252,7 +349,7 @@ function toWrite(f: NasForm, editing: boolean): NasWrite {
   const body: NasWrite = {
     name: f.name,
     ip: f.ip,
-    type: f.type as NasType,
+    services: f.services,
     coa_port: f.coaPort ? Number(f.coaPort) : 3799,
     ros_version: f.rosVersion || null,
     location: f.location,

@@ -34,6 +34,11 @@ type bulkFilter struct {
 	OwnerManagerID string  `json:"owner_manager_id"`
 	Q              string  `json:"q"`
 	ExpiringBefore *string `json:"expiring_before"` // RFC3339
+	// ServiceType (FR-61) mirrors the panel's list filter. It MUST exist here:
+	// a bulk action runs against this server-side filter, not the visible rows,
+	// so a filter the panel offers but this struct ignores would silently apply
+	// the action to every service type instead of the one on screen.
+	ServiceType string `json:"service_type"`
 }
 
 type idUser struct {
@@ -286,6 +291,9 @@ func (m *Module) selectTargets(ctx context.Context, f bulkFilter, scope *auth.Ma
 	}
 	if f.OwnerManagerID != "" {
 		push(" AND owner_manager_id = $%d::uuid", f.OwnerManagerID)
+	}
+	if f.ServiceType != "" {
+		push(" AND service_type = $%d", f.ServiceType)
 	}
 	if f.Q != "" {
 		sql += fmt.Sprintf(" AND (subscriber_fold(username::text) ILIKE '%%'||subscriber_fold($%d)||'%%' OR subscriber_fold(name) ILIKE '%%'||subscriber_fold($%d)||'%%')", n, n)

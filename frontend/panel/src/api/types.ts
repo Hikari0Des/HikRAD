@@ -9,6 +9,15 @@
 
 export type SubscriberStatus = 'active' | 'expired' | 'disabled'
 export type MacLockMode = 'off' | 'learn' | 'fixed'
+/**
+ * FR-61: which service(s) a subscriber may use. 'hotspot' is a full account
+ * with no PPPoE access (quota and session limit apply); 'dual' is v1's
+ * allow_hotspot=true (FR-58); 'pppoe' its false, and the default.
+ */
+export type ServiceType = 'pppoe' | 'hotspot' | 'dual'
+
+/** Every service type, in the order the panel offers them. */
+export const SERVICE_TYPES: ServiceType[] = ['pppoe', 'hotspot', 'dual']
 
 export interface Subscriber {
   id: string
@@ -28,8 +37,12 @@ export interface Subscriber {
   rate_override: string | null
   price_override: number | null
   disabled_reason: string | null
-  allow_hotspot: boolean
+  /** FR-61: which service(s) this account may use. Replaced v1's allow_hotspot. */
+  service_type: ServiceType
   whatsapp_opt_in: boolean
+  /** FR-64 scope: null = any NAS (the default). */
+  nas_id: string | null
+  nas_service_id: string | null
   pending_profile_id: string | null
   /** false = deliberately passwordless hotspot login (item 13). */
   has_password: boolean
@@ -55,8 +68,11 @@ export interface SubscriberWrite {
   rate_override?: string | null
   price_override?: number | null
   disabled_reason?: string | null
-  allow_hotspot?: boolean
+  service_type?: ServiceType
   whatsapp_opt_in?: boolean
+  /** FR-64 scope; '' or null clears it back to "any NAS". */
+  nas_id?: string | null
+  nas_service_id?: string | null
   /** true clears/omits the credential — the NAS then sends password="". */
   no_password?: boolean
 }
@@ -114,6 +130,8 @@ export interface BulkFilter {
   owner_manager_id?: string
   q?: string
   expiring_before?: string | null
+  /** FR-61. Must mirror the list's own service_type filter — see UserListPage. */
+  service_type?: string
 }
 
 export type BulkAction =
@@ -122,7 +140,7 @@ export type BulkAction =
   | 'change_profile'
   | 'extend_expiry'
   | 'move_owner'
-  | 'set_allow_hotspot'
+  | 'set_service_type'
   | 'export'
 
 export interface BulkRequest {
@@ -184,6 +202,9 @@ export interface Profile {
   quota_behavior: QuotaBehavior
   hotspot_rate_down_kbps: number | null
   hotspot_rate_up_kbps: number | null
+  /** FR-64 scope inherited by this profile's subscribers; null = any NAS. */
+  nas_id: string | null
+  nas_service_id: string | null
   archived: boolean
   created_at: string
   updated_at: string
@@ -206,6 +227,9 @@ export interface ProfileWrite {
   quota_behavior: QuotaBehavior
   hotspot_rate_down_kbps?: number | null
   hotspot_rate_up_kbps?: number | null
+  /** FR-64 scope; null clears it back to "any NAS". */
+  nas_id?: string | null
+  nas_service_id?: string | null
   archived?: boolean
 }
 
@@ -225,13 +249,41 @@ export interface ProfileUpdateResult {
 
 // --- NAS (C7-B) -----------------------------------------------------------
 
+/** The kind of one service instance a NAS runs (FR-62). */
 export type NasType = 'pppoe' | 'hotspot'
+
+/** One service instance on a NAS (FR-62 / C3). */
+export interface NasService {
+  id: string
+  service: NasType
+  /** Zone / SSID / friendly name. */
+  label: string
+  interface_note: string
+  ip_pool_id: string | null
+  ip_pool_name: string
+  /** The router's own name for this instance (hotspot server / PPPoE service-name). */
+  ros_server_name: string
+  enabled: boolean
+  live_sessions: number
+}
+
+/** One service instance in a NAS write body; id identifies an existing row. */
+export interface NasServiceWrite {
+  id?: string
+  service: NasType
+  label?: string
+  interface_note?: string
+  ip_pool_id?: string | null
+  ros_server_name?: string
+  enabled?: boolean
+}
 
 export interface Nas {
   id: string
   name: string
   ip: string
-  type: NasType
+  /** Every service instance this NAS runs (FR-62); replaced v1's single `type`. */
+  services: NasService[]
   vendor: string
   coa_port: number
   has_snmp: boolean
@@ -250,7 +302,11 @@ export interface NasWrite {
   name: string
   ip: string
   secret?: string
-  type?: NasType
+  /**
+   * The whole truth for this NAS's services: an omitted row is deleted, and at
+   * least one is required.
+   */
+  services: NasServiceWrite[]
   vendor?: string
   coa_port?: number
   snmp_community?: string

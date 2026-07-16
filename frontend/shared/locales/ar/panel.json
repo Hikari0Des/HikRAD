@@ -156,7 +156,8 @@
       "d3": "٣ أيام",
       "d7": "٧ أيام",
       "d30": "٣٠ يومًا"
-    }
+    },
+    "filterServiceType": "الخدمة"
   },
   "subscriber": {
     "username": "اسم المستخدم",
@@ -191,8 +192,6 @@
     "sessionLimitOverride": "تجاوز حد الجلسات",
     "priceOverride": "تجاوز السعر (دينار)",
     "disabledReason": "سبب التعطيل",
-    "allowHotspot": "السماح بـ Hotspot",
-    "allowHotspotHint": "السماح لهذا المشترك بتسجيل الدخول أيضًا على أجهزة Hotspot.",
     "whatsappOptIn": "موافقة رسائل واتساب",
     "whatsappHint": "يتطلب رقم هاتف صالحًا.",
     "whatsappOn": "واتساب مفعّل",
@@ -218,7 +217,9 @@
     "macReset": "تمت إعادة تعيين MAC.",
     "disableDisconnectTitle": "فصل الآن؟",
     "disableDisconnectBody": "هذا المشترك متصل. هل تريد فصل جلساته الحية الآن عبر CoA بدلاً من الانتظار حتى إعادة المصادقة التالية؟",
-    "disconnectedCount": "تم فصل {count} جلسة."
+    "disconnectedCount": "تم فصل {count} جلسة.",
+    "serviceType": "الخدمة",
+    "serviceTypeHint": "الخدمة التي يُسمح لهذا الحساب بالدخول عبرها. حسابات Hotspot فقط هي مشتركون كاملون — تُطبَّق باقتهم وحصتهم وحد الجلسات."
   },
   "profiles": {
     "add": "إضافة باقة",
@@ -275,8 +276,6 @@
     "discover": "اكتشاف",
     "name": "الاسم",
     "ip": "عنوان IP",
-    "type": "نوع الخدمة",
-    "typeHint": "الخدمة التي ينهيها هذا الموجّه.",
     "typeName": {
       "pppoe": "PPPoE‏",
       "hotspot": "Hotspot‏"
@@ -356,7 +355,18 @@
       "apiPort": "منفذ API",
       "apiPassword": "كلمة مرور API",
       "apiPasswordSetHint": "اتركه فارغًا للإبقاء على كلمة المرور الحالية."
-    }
+    },
+    "services": "الخدمات",
+    "servicesHint": "خادم PPPoE ومناطق Hotspot التي يشغّلها هذا الموجّه. حذف أي منها هنا يحذفها فعليًا.",
+    "serviceKind": "نوع الخدمة",
+    "serviceLabel": "التسمية",
+    "serviceLabelPlaceholder": "المنطقة أو SSID، مثل: الاستقبال",
+    "rosServerName": "اسم الخادم في RouterOS",
+    "rosServerNamePlaceholder": "مثل hotspot1 — مطلوب عند وجود أكثر من واحدة",
+    "serviceEnabled": "مفعّلة",
+    "serviceLastHint": "يجب أن يبقى لجهاز NAS خدمة واحدة على الأقل.",
+    "serviceSessions": "{count} متصل",
+    "addService": "إضافة خدمة"
   },
   "pools": {
     "add": "إضافة مجمّع",
@@ -381,7 +391,8 @@
     "nameTaken": "يوجد بالفعل مجمّع بهذا الاسم.",
     "deleted": "تم حذف المجمّع.",
     "deleteTitle": "حذف هذا المجمّع؟",
-    "deleteBody": "ستفقد الباقات التي تشير إلى هذا المجمّع تخصيصها."
+    "deleteBody": "ستفقد الباقات التي تشير إلى هذا المجمّع تخصيصها.",
+    "serviceNote": "مجمّعات الباقات هي مجمّعات PPPoE. عناوين Hotspot تأتي من مجمّع خدمة Hotspot نفسها، أو من مجمّع الموجّه المحلي عند عدم تعيين أي منها."
   },
   "live": {
     "search": "بحث الجلسات",
@@ -417,7 +428,8 @@
       "usage": "الاستهلاك / السرعة",
       "service": "الخدمة",
       "actions": "إجراءات"
-    }
+    },
+    "allServices": "كل الخدمات"
   },
   "usage": {
     "daily": "يومي",
@@ -451,7 +463,6 @@
     "changeProfile": "تغيير الباقة",
     "extendExpiry": "تمديد الانتهاء",
     "moveOwner": "نقل المالك",
-    "setAllowHotspot": "ضبط وصول Hotspot",
     "export": "تصدير CSV",
     "exported": "تم تنزيل التصدير.",
     "disabledReason": "السبب (اختياري)",
@@ -466,7 +477,8 @@
       "extend_expiry": "تمديد الانتهاء",
       "move_owner": "نقل المالك",
       "set_allow_hotspot": "ضبط وصول Hotspot"
-    }
+    },
+    "setServiceType": "تعيين الخدمة"
   },
   "renew": {
     "title": "تجديد {username}",
@@ -834,13 +846,16 @@
     },
     "reason": {
       "ok": "موافق",
-      "no_such_user": "لا يوجد مستخدم",
-      "wrong_password": "كلمة مرور خاطئة",
       "expired": "منتهٍ",
       "mac_mismatch": "عدم تطابق MAC",
       "session_limit": "بلغ حد الجلسات",
       "quota_exhausted": "نفدت الحصة",
-      "disabled": "معطّل"
+      "disabled": "معطّل",
+      "unknown_user": "لا يوجد مستخدم",
+      "bad_password": "كلمة مرور خاطئة",
+      "unknown_nas": "جهاز NAS غير مسجّل",
+      "service_not_allowed": "الخدمة غير مسموحة لهذا المشترك",
+      "nas_not_allowed": "غير مسموح على هذا الجهاز أو هذه الخدمة"
     }
   },
   "pwa": {
@@ -1214,5 +1229,18 @@
       },
       "goToDashboard": "الذهاب إلى لوحة المعلومات"
     }
+  },
+  "serviceType": {
+    "pppoe": "PPPoE فقط",
+    "hotspot": "Hotspot فقط",
+    "dual": "PPPoE و Hotspot"
+  },
+  "nasScope": {
+    "nas": "جهاز NAS المسموح",
+    "service": "الخدمة المسموحة",
+    "hint": "حصر الدخول بموجّه واحد. الافتراضي هو أي جهاز NAS.",
+    "anyNas": "أي جهاز NAS",
+    "anyService": "أي خدمة على هذا الجهاز",
+    "loadFailed": "تعذّر تحميل قائمة أجهزة NAS."
   }
 }

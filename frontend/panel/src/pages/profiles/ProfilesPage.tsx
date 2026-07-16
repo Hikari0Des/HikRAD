@@ -15,6 +15,7 @@ import { useAuth } from '../../auth/AuthContext'
 import { Button } from '../../components/Button'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
 import { Modal } from '../../components/Modal'
+import { NasScopePicker } from '../../components/NasScopePicker'
 import { Field, Select, TextInput } from '../../components/form'
 import { useToast } from '../../components/Toast'
 import { useAsync } from '../../hooks/useAsync'
@@ -311,6 +312,15 @@ function ProfileFormModal({
           />
         </Field>
 
+        {/* FR-64: every subscriber on this profile inherits this scope, unless
+            their own is set (subscriber-over-profile). */}
+        <NasScopePicker
+          nasId={f.nasId}
+          nasServiceId={f.nasServiceId}
+          onChange={({ nasId, nasServiceId }) => setF((prev) => ({ ...prev, nasId, nasServiceId }))}
+          errors={errors}
+        />
+
         <Field label={t('profiles.quotaModeLabel')}>
           <Select
             value={f.quotaMode}
@@ -429,6 +439,8 @@ interface ProfileForm {
   expiryBehavior: ExpiryBehavior
   quotaBehavior: QuotaBehavior
   throttleRate: string
+  nasId: string
+  nasServiceId: string
 }
 
 function initial(p?: Profile): ProfileForm {
@@ -448,6 +460,8 @@ function initial(p?: Profile): ProfileForm {
     expiryBehavior: p?.expiry_behavior ?? 'block',
     quotaBehavior: p?.quota_behavior ?? 'block',
     throttleRate: p?.throttle_rate ?? '',
+    nasId: p?.nas_id ?? '',
+    nasServiceId: p?.nas_service_id ?? '',
   }
 }
 
@@ -473,5 +487,8 @@ function toWrite(f: ProfileForm): ProfileWrite {
     expiry_behavior: f.expiryBehavior,
     quota_behavior: f.quotaBehavior,
     throttle_rate: f.quotaBehavior === 'throttle' ? f.throttleRate || null : null,
+    // null = any NAS (FR-64); the picker yields '' for that.
+    nas_id: f.nasId || null,
+    nas_service_id: f.nasServiceId || null,
   }
 }

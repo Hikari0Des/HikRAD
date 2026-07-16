@@ -157,7 +157,8 @@
       "d3": "٣ ڕۆژ",
       "d7": "٧ ڕۆژ",
       "d30": "٣٠ ڕۆژ"
-    }
+    },
+    "filterServiceType": "خزمەتگوزاری"
   },
   "subscriber": {
     "username": "ناوی بەکارهێنەر",
@@ -192,8 +193,6 @@
     "sessionLimitOverride": "گۆڕینی سنووری دانیشتن",
     "priceOverride": "گۆڕینی نرخ (بە دینار)",
     "disabledReason": "هۆکاری ناچالاککردن",
-    "allowHotspot": "ڕێگەدان بە Hotspot",
-    "allowHotspotHint": "ڕێگە بدە ئەم بەشداربووە هەروەها لەسەر ئامێرەکانی Hotspot NAS بچێتە ژوورەوە.",
     "whatsappOptIn": "ڕەزامەندی پەیامی WhatsApp",
     "whatsappHint": "پێویستی بە ژمارەیەکی مۆبایلی دروستە.",
     "whatsappOn": "WhatsApp چالاکە",
@@ -219,7 +218,9 @@
     "macReset": "MAC ڕێکخرایەوە.",
     "disableDisconnectTitle": "ئێستا پەیوەندی بپچڕێت؟",
     "disableDisconnectBody": "ئەم بەشداربووە سەرهێڵە. دانیشتنە زیندووەکانی لە ڕێگەی CoA بپچڕێنە، لەبری چاوەڕوانکردنی دووبارە-پشتڕاستکردنەوەی داهاتوو؟",
-    "disconnectedCount": "{count} دانیشتن پچڕا."
+    "disconnectedCount": "{count} دانیشتن پچڕا.",
+    "serviceType": "خزمەتگوزاری",
+    "serviceTypeHint": "ئەو خزمەتگوزاریەی ئەم هەژمارە دەتوانێت پێیدا بچێتە ژوورەوە. هەژماری تەنها Hotspot بەشداربووی تەواون — پلان و بڕ و سنووری دانیشتنیان جێبەجێ دەبێت."
   },
   "profiles": {
     "add": "زیادکردنی پاکێج",
@@ -276,8 +277,6 @@
     "discover": "دۆزینەوە",
     "name": "ناو",
     "ip": "ناونیشانی ئای‌پی",
-    "type": "جۆری خزمەتگوزاری",
-    "typeHint": "ئەم ڕاوتەرە کام خزمەتگوزاری کۆتایی پێدەهێنێت.",
     "typeName": {
       "pppoe": "PPPoE‏",
       "hotspot": "Hotspot‏"
@@ -357,7 +356,18 @@
       "apiPort": "پۆرتی API",
       "apiPassword": "وشەی نهێنی API",
       "apiPasswordSetHint": "بەتاڵی بهێڵەرەوە بۆ هێشتنەوەی وشەی نهێنی ئێستا."
-    }
+    },
+    "services": "خزمەتگوزاریەکان",
+    "servicesHint": "ڕاژەی PPPoE و ناوچەکانی Hotspot کە ئەم ڕوتەرە کاریان پێدەکات. لابردنیان لێرە دەیانسڕێتەوە.",
+    "serviceKind": "جۆری خزمەتگوزاری",
+    "serviceLabel": "ناونیشان",
+    "serviceLabelPlaceholder": "ناوچە یان SSID، وەک: پێشوازی",
+    "rosServerName": "ناوی ڕاژە لە RouterOS",
+    "rosServerNamePlaceholder": "وەک hotspot1 — پێویستە کاتێک زیاتر لە یەک هەیە",
+    "serviceEnabled": "چالاک",
+    "serviceLastHint": "دەبێت NAS بەلایەنی کەمەوە یەک خزمەتگوزاری بمێنێتەوە.",
+    "serviceSessions": "{count} سەرهێڵ",
+    "addService": "زیادکردنی خزمەتگوزاری"
   },
   "pools": {
     "add": "زیادکردنی مەجمووعە",
@@ -382,7 +392,8 @@
     "nameTaken": "مەجمووعەیەک بەو ناوە پێشتر هەیە.",
     "deleted": "مەجمووعە سڕایەوە.",
     "deleteTitle": "ئەم مەجمووعەیە بسڕدرێتەوە؟",
-    "deleteBody": "پاکێجەکانی سەبارەت بەم مەجمووعەیە دیاریکردنیان لەدەست دەدەن."
+    "deleteBody": "پاکێجەکانی سەبارەت بەم مەجمووعەیە دیاریکردنیان لەدەست دەدەن.",
+    "serviceNote": "کۆگاکانی پلان کۆگای PPPoE ـن. ناونیشانی Hotspot لە کۆگای خودی خزمەتگوزاری Hotspot دێت، یان لە کۆگای ناوخۆیی ڕوتەر کاتێک هیچ دانەنراوە."
   },
   "live": {
     "search": "گەڕان بۆ دانیشتنەکان",
@@ -418,7 +429,8 @@
       "usage": "بەکارهێنان / خێرایی",
       "service": "خزمەتگوزاری",
       "actions": "کردارەکان"
-    }
+    },
+    "allServices": "هەموو خزمەتگوزاریەکان"
   },
   "usage": {
     "daily": "ڕۆژانە",
@@ -452,7 +464,6 @@
     "changeProfile": "گۆڕینی پاکێج",
     "extendExpiry": "درێژکردنەوەی بەسەرچوون",
     "moveOwner": "گواستنەوەی خاوەن",
-    "setAllowHotspot": "ڕێکخستنی دەستپێگەیشتنی Hotspot",
     "export": "هەناردەکردنی CSV",
     "exported": "هەناردەکراو داگیرا.",
     "disabledReason": "هۆکار (هەڵبژاردەیی)",
@@ -467,7 +478,8 @@
       "extend_expiry": "درێژکردنەوەی بەسەرچوون",
       "move_owner": "گواستنەوەی خاوەن",
       "set_allow_hotspot": "ڕێکخستنی دەستپێگەیشتنی Hotspot"
-    }
+    },
+    "setServiceType": "دانانی خزمەتگوزاری"
   },
   "renew": {
     "title": "نوێکردنەوەی {username}",
@@ -835,13 +847,16 @@
     },
     "reason": {
       "ok": "باشە",
-      "no_such_user": "ئەم بەکارهێنەرە بوونی نییە",
-      "wrong_password": "وشەی نهێنی هەڵەیە",
       "expired": "بەسەرچووە",
       "mac_mismatch": "MAC نەگونجاوە",
       "session_limit": "سنووری دانیشتن گەیشتووەتە کۆتایی",
       "quota_exhausted": "بڕی مۆڵەت تەواوبووە",
-      "disabled": "ناچالاکە"
+      "disabled": "ناچالاکە",
+      "unknown_user": "ئەم بەکارهێنەرە بوونی نییە",
+      "bad_password": "وشەی نهێنی هەڵەیە",
+      "unknown_nas": "NAS ـی تۆمارنەکراو",
+      "service_not_allowed": "خزمەتگوزاری بۆ ئەم بەشداربووە ڕێگەپێدراو نییە",
+      "nas_not_allowed": "لەم NAS یان خزمەتگوزاریەدا ڕێگەپێدراو نییە"
     }
   },
   "pwa": {
@@ -1215,5 +1230,18 @@
       },
       "goToDashboard": "بڕۆ بۆ داشبۆرد"
     }
+  },
+  "serviceType": {
+    "pppoe": "تەنها PPPoE",
+    "hotspot": "تەنها Hotspot",
+    "dual": "PPPoE و Hotspot"
+  },
+  "nasScope": {
+    "nas": "ئەو NAS ـەی ڕێگەپێدراوە",
+    "service": "خزمەتگوزاری ڕێگەپێدراو",
+    "hint": "چوونەژوورەوە بە یەک ڕوتەر سنووردار بکە. بنەڕەت هەر NAS ـێکە.",
+    "anyNas": "هەر NAS ـێک",
+    "anyService": "هەر خزمەتگوزاریەک لەم NAS ـە",
+    "loadFailed": "نەتوانرا لیستی NAS باربکرێت."
   }
 }

@@ -173,5 +173,6 @@ func filterFromQuery(r *http.Request) Filter {
 		ProfileID: q.Get("profile_id"),
 		ManagerID: q.Get("manager_id"),
 		Q:         q.Get("q"),
+		Service:   q.Get("service"),
 	}
 }

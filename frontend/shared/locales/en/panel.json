@@ -156,7 +156,8 @@
       "d3": "3 days",
       "d7": "7 days",
       "d30": "30 days"
-    }
+    },
+    "filterServiceType": "Service"
   },
   "subscriber": {
     "username": "Username",
@@ -191,8 +192,6 @@
     "sessionLimitOverride": "Session limit override",
     "priceOverride": "Price override (IQD)",
     "disabledReason": "Disabled reason",
-    "allowHotspot": "Allow Hotspot",
-    "allowHotspotHint": "Let this subscriber also log in on Hotspot NAS devices.",
     "whatsappOptIn": "WhatsApp messaging consent",
     "whatsappHint": "Requires a valid phone number.",
     "whatsappOn": "WhatsApp on",
@@ -218,7 +217,9 @@
     "macReset": "MAC reset.",
     "disableDisconnectTitle": "Disconnect now?",
     "disableDisconnectBody": "This subscriber is online. Drop their live sessions now via CoA, rather than waiting for the next re-authentication?",
-    "disconnectedCount": "Disconnected {count} session(s)."
+    "disconnectedCount": "Disconnected {count} session(s).",
+    "serviceType": "Service",
+    "serviceTypeHint": "Which service this account may log in on. Hotspot-only accounts are full subscribers — their plan, quota and session limit all apply."
   },
   "profiles": {
     "add": "Add profile",
@@ -275,8 +276,6 @@
     "discover": "Discover",
     "name": "Name",
     "ip": "IP address",
-    "type": "Service type",
-    "typeHint": "Which service this router terminates.",
     "typeName": {
       "pppoe": "PPPoE",
       "hotspot": "Hotspot"
@@ -356,7 +355,18 @@
       "apiPort": "API port",
       "apiPassword": "API password",
       "apiPasswordSetHint": "Leave blank to keep the current password."
-    }
+    },
+    "services": "Services",
+    "servicesHint": "The PPPoE server and hotspot zones this router runs. Removing one here deletes it.",
+    "serviceKind": "Service kind",
+    "serviceLabel": "Label",
+    "serviceLabelPlaceholder": "Zone or SSID, e.g. Lobby",
+    "rosServerName": "RouterOS server name",
+    "rosServerNamePlaceholder": "e.g. hotspot1 — required with more than one",
+    "serviceEnabled": "Enabled",
+    "serviceLastHint": "A NAS must keep at least one service.",
+    "serviceSessions": "{count} online",
+    "addService": "Add service"
   },
   "pools": {
     "add": "Add pool",
@@ -381,7 +391,8 @@
     "nameTaken": "A pool with that name already exists.",
     "deleted": "Pool deleted.",
     "deleteTitle": "Delete this pool?",
-    "deleteBody": "Profiles referencing this pool will lose their assignment."
+    "deleteBody": "Profiles referencing this pool will lose their assignment.",
+    "serviceNote": "Profile pools are PPPoE pools. Hotspot addresses come from the hotspot service’s own pool, or the router’s local pool when none is set."
   },
   "live": {
     "search": "Search sessions",
@@ -417,7 +428,8 @@
       "usage": "Usage / rate",
       "service": "Service",
       "actions": "Actions"
-    }
+    },
+    "allServices": "All services"
   },
   "usage": {
     "daily": "Daily",
@@ -451,7 +463,6 @@
     "changeProfile": "Change profile",
     "extendExpiry": "Extend expiry",
     "moveOwner": "Move owner",
-    "setAllowHotspot": "Set Hotspot access",
     "export": "Export CSV",
     "exported": "Export downloaded.",
     "disabledReason": "Reason (optional)",
@@ -466,7 +477,8 @@
       "extend_expiry": "Extend expiry",
       "move_owner": "Move owner",
       "set_allow_hotspot": "Set Hotspot access"
-    }
+    },
+    "setServiceType": "Set service"
   },
   "renew": {
     "title": "Renew {username}",
@@ -834,13 +846,16 @@
     },
     "reason": {
       "ok": "OK",
-      "no_such_user": "No such user",
-      "wrong_password": "Wrong password",
       "expired": "Expired",
       "mac_mismatch": "MAC mismatch",
       "session_limit": "Session limit reached",
       "quota_exhausted": "Quota exhausted",
-      "disabled": "Disabled"
+      "disabled": "Disabled",
+      "unknown_user": "No such user",
+      "bad_password": "Wrong password",
+      "unknown_nas": "Unregistered NAS",
+      "service_not_allowed": "Service not allowed for this subscriber",
+      "nas_not_allowed": "Not allowed on this NAS or service"
     }
   },
   "pwa": {
@@ -1214,5 +1229,18 @@
       },
       "goToDashboard": "Go to dashboard"
     }
+  },
+  "serviceType": {
+    "pppoe": "PPPoE only",
+    "hotspot": "Hotspot only",
+    "dual": "PPPoE + Hotspot"
+  },
+  "nasScope": {
+    "nas": "Allowed NAS",
+    "service": "Allowed service",
+    "hint": "Restrict logins to one router. Any NAS is the default.",
+    "anyNas": "Any NAS",
+    "anyService": "Any service on this NAS",
+    "loadFailed": "Could not load the NAS list."
   }
 }

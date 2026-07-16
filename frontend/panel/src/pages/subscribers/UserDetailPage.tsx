@@ -146,7 +146,9 @@ export function UserDetailPage() {
             <Ltr>{s.static_ip}</Ltr>
           </Info>
         )}
-        {s.allow_hotspot && <Info label={t('subscriber.allowHotspot')}>{t('ui.yes')}</Info>}
+        {/* Always shown, not just for hotspot-capable accounts: with three
+            service types the answer is never implied (FR-61/63). */}
+        <Info label={t('subscriber.serviceType')}>{t(`serviceType.${s.service_type}`)}</Info>
         {overrideList(data, t).length > 0 && (
           <Info label={t('subscriber.overrides')}>
             <span className="flex flex-wrap gap-1">

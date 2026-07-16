@@ -8,6 +8,7 @@ import type { Nas } from '../../api/types'
 import { useAuth } from '../../auth/AuthContext'
 import { Button } from '../../components/Button'
 import { Modal } from '../../components/Modal'
+import { serviceLabel } from '../../components/NasScopePicker'
 import { PageHeader } from '../../components/PageHeader'
 import { useToast } from '../../components/Toast'
 import { useAsync } from '../../hooks/useAsync'
@@ -147,7 +148,7 @@ export function NasListPage() {
                 <div className="min-w-0">
                   <h3 className="truncate font-semibold">{n.name}</h3>
                   <p className="text-xs text-ink-muted">
-                    <Ltr>{n.ip}</Ltr> · {t(`nas.typeName.${n.type}`)}
+                    <Ltr>{n.ip}</Ltr>
                   </p>
                 </div>
                 {/* Health color slot arrives Phase 3; enabled/disabled for now. */}
@@ -159,6 +160,30 @@ export function NasListPage() {
                   {n.enabled ? t('nas.enabledTag') : t('nas.disabledTag')}
                 </span>
               </div>
+              {/* FR-63 services sub-list: which instances this router runs,
+                  each with its own enabled state and live-session count. */}
+              <ul className="mt-3 space-y-1">
+                {n.services.map((s) => (
+                  <li
+                    key={s.id}
+                    className="flex items-center justify-between gap-2 rounded bg-surface-sunken/40 px-2 py-1 text-xs"
+                  >
+                    <span className="min-w-0 truncate">
+                      {serviceLabel(s.label, s.ros_server_name, t(`nas.typeName.${s.service}`))}
+                    </span>
+                    <span className="flex shrink-0 items-center gap-2">
+                      <span className="text-ink-muted">
+                        {t('nas.serviceSessions', { count: s.live_sessions })}
+                      </span>
+                      {!s.enabled && (
+                        <span className="rounded-full bg-ink-muted/15 px-1.5 text-ink-muted">
+                          {t('nas.disabledTag')}
+                        </span>
+                      )}
+                    </span>
+                  </li>
+                ))}
+              </ul>
               <dl className="mt-3 space-y-1 text-xs text-ink-muted">
                 {n.location ? (
                   <div className="flex justify-between gap-2">

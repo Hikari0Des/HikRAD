@@ -4,9 +4,11 @@ import { useT } from '@hikrad/shared'
 
 import { createSubscriber, updateSubscriber } from '../../api/subscribers'
 import type { ManagerView } from '../../api/managers'
+import { SERVICE_TYPES } from '../../api/types'
 import type {
   MacLockMode,
   Profile,
+  ServiceType,
   Subscriber,
   SubscriberStatus,
   SubscriberWrite,
@@ -14,6 +16,7 @@ import type {
 import { ApiError, type FieldError } from '../../api/client'
 import { Button } from '../../components/Button'
 import { Modal } from '../../components/Modal'
+import { NasScopePicker } from '../../components/NasScopePicker'
 import { Checkbox, Field, Select, TextInput, Textarea } from '../../components/form'
 import { useToast } from '../../components/Toast'
 
@@ -30,8 +33,9 @@ function toLocalInput(iso: string | null): string {
 
 /**
  * Create/edit a subscriber (FR-1). The WhatsApp-consent toggle sits next to the
- * phone (FR-1.5) and the Hotspot toggle carries the FR-58.1 flag. Field-level
- * validation errors from the C2 envelope render inline against their field.
+ * phone (FR-1.5); the service-type radio carries FR-61 and the NAS pickers the
+ * FR-64 scope. Field-level validation errors from the C2 envelope render inline
+ * against their field.
  */
 export function SubscriberFormModal({
   open,
@@ -266,13 +270,18 @@ export function SubscriberFormModal({
           </div>
         )}
         <div className="sm:col-span-2">
-          <Checkbox
-            label={t('subscriber.allowHotspot')}
-            description={t('subscriber.allowHotspotHint')}
-            checked={form.allowHotspot}
-            onChange={(e) => set('allowHotspot', e.target.checked)}
+          <ServiceTypeRadio
+            value={form.serviceType}
+            onChange={(v) => set('serviceType', v)}
+            error={errors.service_type}
           />
         </div>
+        <NasScopePicker
+          nasId={form.nasId}
+          nasServiceId={form.nasServiceId}
+          onChange={({ nasId, nasServiceId }) => setForm((f) => ({ ...f, nasId, nasServiceId }))}
+          errors={errors}
+        />
       </div>
 
       <div className="mt-5 flex justify-end gap-2">
@@ -284,6 +293,42 @@ export function SubscriberFormModal({
         </Button>
       </div>
     </Modal>
+  )
+}
+
+/**
+ * FR-63 service selector. A radio, not a checkbox: the three types are
+ * exclusive, and "Hotspot only" is a real choice v1's allow_hotspot tickbox
+ * could not express — a checkbox would keep implying "PPPoE, plus hotspot".
+ */
+function ServiceTypeRadio({
+  value,
+  onChange,
+  error,
+}: {
+  value: ServiceType
+  onChange: (v: ServiceType) => void
+  error?: string
+}) {
+  const t = useT()
+  return (
+    <Field label={t('subscriber.serviceType')} hint={t('subscriber.serviceTypeHint')} error={error}>
+      <div className="flex flex-wrap gap-4">
+        {SERVICE_TYPES.map((v) => (
+          <label key={v} className="flex items-center gap-2 text-sm">
+            <input
+              type="radio"
+              name="service_type"
+              value={v}
+              checked={value === v}
+              onChange={() => onChange(v)}
+              className="h-4 w-4"
+            />
+            <span>{t(`serviceType.${v}`)}</span>
+          </label>
+        ))}
+      </div>
+    </Field>
   )
 }
 
@@ -306,7 +351,9 @@ interface FormState {
   sessionLimitOverride: string
   priceOverride: string
   disabledReason: string
-  allowHotspot: boolean
+  serviceType: ServiceType
+  nasId: string
+  nasServiceId: string
 }
 
 function initialForm(s?: Subscriber): FormState {
@@ -329,7 +376,9 @@ function initialForm(s?: Subscriber): FormState {
     sessionLimitOverride: s?.session_limit_override != null ? String(s.session_limit_override) : '',
     priceOverride: s?.price_override != null ? String(s.price_override) : '',
     disabledReason: s?.disabled_reason ?? '',
-    allowHotspot: s?.allow_hotspot ?? false,
+    serviceType: s?.service_type ?? 'pppoe',
+    nasId: s?.nas_id ?? '',
+    nasServiceId: s?.nas_service_id ?? '',
   }
 }
 
@@ -348,8 +397,12 @@ function toWrite(f: FormState, editing: boolean): SubscriberWrite {
     session_limit_override: f.sessionLimitOverride ? Number(f.sessionLimitOverride) : null,
     price_override: f.priceOverride ? Number(f.priceOverride) : null,
     disabled_reason: f.status === 'disabled' ? f.disabledReason || null : null,
-    allow_hotspot: f.allowHotspot,
+    service_type: f.serviceType,
     whatsapp_opt_in: f.whatsappOptIn,
+    // '' is the API's explicit "any NAS" (it clears the column); null would be
+    // read as "field omitted" and leave the existing scope in place.
+    nas_id: f.nasId,
+    nas_service_id: f.nasServiceId,
     owner_manager_id: f.ownerId || null,
   }
   if (!editing) body.username = f.username

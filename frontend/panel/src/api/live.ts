@@ -15,6 +15,8 @@ export interface LiveFilter {
   profile_id?: string
   manager_id?: string
   q?: string
+  /** FR-61/63: the SESSION's service (pppoe|hotspot), not the subscriber's type. */
+  service?: string
 }
 
 export function listSessionHistory(params: {

@@ -18,6 +18,10 @@ type Filter struct {
 	ProfileID string
 	ManagerID string
 	Q         string
+	// Service (FR-61/63) filters by the SESSION's own service (pppoe|hotspot),
+	// not the subscriber's service_type: a dual subscriber has both kinds of
+	// session, and "show me the hotspot sessions" is the question this answers.
+	Service string
 }
 
 // subjectAttrs are the subscriber attributes needed for profile/manager
@@ -36,6 +40,9 @@ func matchState(s livestate.State, f Filter, scope *auth.ManagerScope, attrs sub
 		return false
 	}
 	if f.ProfileID != "" && attrs.ProfileID != f.ProfileID {
+		return false
+	}
+	if f.Service != "" && s.Service != f.Service {
 		return false
 	}
 	if f.ManagerID != "" && attrs.OwnerManagerID != f.ManagerID {
