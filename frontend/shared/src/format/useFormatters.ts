@@ -4,7 +4,9 @@ import { useLocale } from '../i18n/I18nProvider'
 import {
   formatDate,
   formatIQD,
+  formatMoney,
   formatNumber,
+  type CurrencyCode,
   type FormatDateOptions,
   type FormatOptions,
 } from './format'
@@ -22,6 +24,8 @@ export function useFormatters() {
         formatNumber(value, locale, { numerals, ...opts }),
       formatIQD: (amount: number, opts: FormatOptions = {}) =>
         formatIQD(amount, locale, { numerals, ...opts }),
+      formatMoney: (amount: number, currency: CurrencyCode, opts: FormatOptions = {}) =>
+        formatMoney(amount, currency, locale, { numerals, ...opts }),
       formatDate: (date: Date | string, opts: FormatDateOptions = {}) =>
         formatDate(date, locale, { numerals, ...opts }),
     }),

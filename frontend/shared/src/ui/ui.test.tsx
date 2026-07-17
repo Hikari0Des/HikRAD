@@ -59,4 +59,11 @@ describe('IQDAmount', () => {
     expect(el.tagName.toLowerCase()).toBe('bdi')
     expect(el.textContent).toContain('IQD')
   })
+
+  it('renders a non-IQD currency via the currency prop (v2 phase 4)', () => {
+    withI18n(<IQDAmount amount={150.5} currency="USD" />)
+    const el = screen.getByText(/150\.50/)
+    expect(el.tagName.toLowerCase()).toBe('bdi')
+    expect(el.textContent).toContain('$')
+  })
 })

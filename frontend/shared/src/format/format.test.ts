@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { formatDate, formatIQD, formatNumber } from './format'
+import { formatDate, formatIQD, formatMoney, formatNumber } from './format'
 
 const EASTERN = /[٠-٩]/
 const WESTERN = /[0-9]/
@@ -26,6 +26,38 @@ describe('formatIQD', () => {
 
   it('defaults to en', () => {
     expect(formatIQD(500)).toContain('IQD')
+  })
+})
+
+// AC-70a regression lock (v2 phase 4, contract C8): formatMoney(amount, 'IQD', ...)
+// must be byte-identical to formatIQD's output for every case above.
+describe('formatMoney (AC-70a regression lock + multi-currency)', () => {
+  it('is byte-identical to formatIQD for IQD, every existing case', () => {
+    expect(formatMoney(15000, 'IQD', 'en')).toBe(formatIQD(15000, 'en'))
+    expect(formatMoney(15000, 'IQD', 'ar', { numerals: 'arab' })).toBe(
+      formatIQD(15000, 'ar', { numerals: 'arab' }),
+    )
+    expect(formatMoney(15000, 'IQD', 'ar', { numerals: 'latn' })).toBe(
+      formatIQD(15000, 'ar', { numerals: 'latn' }),
+    )
+    expect(formatMoney(500, 'IQD')).toBe(formatIQD(500))
+  })
+
+  it('formats USD with 2 minor-unit digits in en', () => {
+    const out = formatMoney(150.5, 'USD', 'en')
+    expect(out).toContain('$')
+    expect(out).toMatch(/150\.50/)
+  })
+
+  it('formats EUR with 2 minor-unit digits in en', () => {
+    const out = formatMoney(99.9, 'EUR', 'en')
+    expect(out).toMatch(/99\.90/)
+  })
+
+  it('uses Eastern Arabic numerals for USD when forced (NFR-6.3)', () => {
+    const out = formatMoney(150.5, 'USD', 'ar', { numerals: 'arab' })
+    expect(out).toMatch(EASTERN)
+    expect(out).not.toMatch(WESTERN)
   })
 })
 
