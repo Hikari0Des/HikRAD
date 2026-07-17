@@ -468,6 +468,81 @@ EOF
     log "to remove it too: apt-get purge docker-ce docker-ce-cli containerd.io"
 }
 
+# --- factory-reset (owner request 2026-07-17) --------------------------------
+# Empties the system without uninstalling it: wipes the database, Redis state,
+# accounting spill and generated RADIUS clients, then boots a fresh stack
+# (migrations run, first-run wizard collects license + admin again). The
+# installation itself — images, .env, backups, cron, CLI — is untouched.
+# Contrast with `hikrad uninstall`: uninstall removes the system, this empties
+# it. Wipe-by-delete of the data dir is deliberate: the ledger/audit tables are
+# append-only at the DB level, so a fresh cluster is the only clean zero state.
+cmd_factory_reset() {
+    local yes=0 no_backup=0
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --yes) yes=1; shift ;;
+            --no-backup) no_backup=1; shift ;;
+            *) die "unknown factory-reset argument: $1 (usage: hikrad factory-reset [--yes] [--no-backup])" ;;
+        esac
+    done
+
+    local d; d="$(data_dir)"
+    if [ "$yes" != 1 ]; then
+        [ -t 0 ] || die "refusing to factory-reset non-interactively without --yes"
+        cat <<EOF
+This will ERASE ALL DATA at $d and start HikRAD fresh:
+  - every subscriber, profile, NAS, session, ledger entry, report and manager
+  - the installed license (the first-run wizard will ask for it again)
+$( [ "$no_backup" = 1 ] \
+    && echo "  - NO safety backup will be taken (--no-backup)" \
+    || echo "  - a final backup is taken first and kept in $(backup_dir)" )
+The installation itself (images, .env, backups, hikrad CLI, cron) is kept.
+
+Type exactly 'factory reset' to continue:
+EOF
+        local answer
+        read -r answer
+        [ "$answer" = "factory reset" ] || { log "Aborted. Nothing changed."; exit 0; }
+    fi
+
+    if [ "$no_backup" != 1 ]; then
+        log "Taking a safety backup before the wipe (kept in $(backup_dir))…"
+        cmd_backup_now pre_factory_reset \
+            || die "the safety backup failed — fix that first, or pass --no-backup to explicitly skip it"
+    fi
+
+    log "Stopping the stack…"
+    compose_tunnel down --remove-orphans 2>/dev/null || compose down --remove-orphans
+
+    log "Wiping data directory $d…"
+    rm -rf "$d"
+
+    # Recreate the bind-mount targets exactly as install.sh prepares them —
+    # Docker would otherwise auto-create them root-owned, which is the
+    # documented acct-spill crash-loop (see scripts/install.sh §3d/3d2).
+    mkdir -p "$d/acct-spill" "$d/radius-control"
+    chown 10002:10002 "$d/acct-spill" 2>/dev/null \
+        || log "WARNING: could not chown $d/acct-spill (not root?) — hikrad-acct may crash-loop; run: chown 10002:10002 $d/acct-spill"
+    chmod 777 "$d/radius-control"
+
+    # The generated FreeRADIUS client list reflects the (now wiped) NAS table;
+    # empty it so routers from the previous life can't keep talking to us.
+    local clients; clients="$(dirname "$HIKRAD_COMPOSE_FILE")/freeradius/clients-generated.conf"
+    if [ -f "$clients" ]; then
+        : > "$clients"
+        chown 10001:10001 "$clients" 2>/dev/null || true
+    fi
+
+    log "Starting the stack (fresh database; migrations run on boot)…"
+    compose up -d
+    if ! wait_for_api_health 180; then
+        die "hikrad-api did not become healthy after the reset — check: docker compose logs hikrad-api"
+    fi
+
+    log "Factory reset complete. Open the panel to run the first-run wizard"
+    log "(license, admin account, branding, NAS, profile — same as a fresh install)."
+}
+
 usage() {
     cat <<'EOF'
 Usage: hikrad <command>
@@ -484,6 +559,11 @@ Usage: hikrad <command>
   update [--bundle F] pre-backup, update images, migrate, rollback on failure
 
   tunnel enable|disable   start/stop the optional Cloudflare tunnel (FR-57)
+
+  factory-reset [--yes] [--no-backup]
+              ERASE all data (subscribers, ledger, license, managers) and boot
+              a fresh, empty system — the install itself is kept. Takes a
+              safety backup first unless --no-backup.
 
   uninstall [--yes] [--keep-data] [--purge]
               remove HikRAD completely: stack, images, cron, CLI. Takes a
@@ -507,6 +587,7 @@ case "${1:-}" in
     restore)  shift; cmd_restore "${1:-}" ;;
     update)   shift; cmd_update "$@" ;;
     tunnel)   shift; cmd_tunnel "${1:-}" ;;
+    factory-reset) shift; cmd_factory_reset "$@" ;;
     uninstall) shift; cmd_uninstall "$@" ;;
     -h|--help|help|"") usage ;;
     *)

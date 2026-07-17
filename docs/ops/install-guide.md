@@ -152,6 +152,24 @@ only works when this server shares the routers' L2 segment; the panel's
 IP-range scan works regardless). Nothing else is reachable from outside the
 compose network.
 
+## Factory reset (wipe all data, keep the install)
+
+```sh
+sudo hikrad factory-reset              # interactive: type 'factory reset' to confirm
+sudo hikrad factory-reset --yes        # non-interactive
+sudo hikrad factory-reset --no-backup  # skip the safety backup (explicit only)
+```
+
+Erases **all data** — subscribers, profiles, NAS, sessions, the ledger,
+managers, and the installed license — and boots a fresh, empty system on the
+same VM: the data directory is deleted (the append-only ledger/audit tables
+make a fresh cluster the only clean zero state), the bind-mount targets are
+recreated with the ownerships install.sh uses, the generated FreeRADIUS client
+list is emptied, and the stack starts with a clean database. A safety backup is
+taken first unless `--no-backup`; backups, `.env`, images, cron and the CLI are
+all kept. Afterwards the panel runs the first-run wizard again (license, admin,
+branding, NAS, profile).
+
 ## Uninstalling
 
 ```sh
