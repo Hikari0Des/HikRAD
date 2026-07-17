@@ -10,18 +10,22 @@
 
 ## 2. Requirements (draft — renumber as FR-6x/7x at kickoff)
 
-### FR-A — Provider catalog + per-manager account details
+### FR-A — Provider catalog, per-manager accounts, per-manager method enablement
 - `payment_providers`: owner-managed catalog — name (trilingual-capable label), optional logo asset (local file, NFR-7), free-text transfer instructions template, enabled. No API fields; a provider is just a *name* subscribers recognize.
 - `manager_provider_accounts`: per manager (admin/operator/agent/reseller), per provider — the receiving account details shown to the subscriber (account number / phone / IBAN / exact recipient name, plus optional per-manager instruction override). CRUD by the manager themselves (`me/...`) and by admins for anyone; encrypted at rest like other secrets is NOT required (these are deliberately shown to subscribers) but audit-logged.
-- **Visibility rule**: a subscriber sees exactly the providers for which their **owning manager** (`subscribers.owner_manager_id`) has enabled account details. Open at kickoff: fallback when the owner has none (inherit admin/global accounts vs. show nothing) — owner decides in the phase brief.
+- **Per-manager method enablement (owner clarification 2026-07-17)**: each manager chooses which payment methods their subscribers can use and specifies their details — every catalog provider they have an account for, plus the built-in methods (scratch card FR-59, voucher redeem FR-23) as toggles. A method a manager disables never appears to their subscribers.
+- **Visibility rule**: a subscriber sees exactly the methods their **owning manager** (`subscribers.owner_manager_id`) has enabled (for providers: enabled + account details present). Open at kickoff: fallback when the owner has none (inherit admin/global accounts vs. show nothing) — owner decides in the phase brief.
 
-### FR-B — Portal submission with attachments
-- Portal "Pay" flow: pick provider → see the owner's account details + instructions → form: amount, transfer reference/date, note, **file attachments** (receipt screenshot/PDF; local disk storage under the data dir, size/type limits, virus-free by construction: never executed, served back only to authorized reviewers with `Content-Disposition: attachment`).
-- On submit: exactly the FR-59 machinery — **1-day provisional renewal immediately** ("test internet", CoA-applied), request goes `pending`, one pending request per subscriber, rejected attempts trigger the configurable cooldown, every step audit-logged and notified (portal + FR-55 channels).
+### FR-B — One unified portal payment screen, submissions with attachments
+- **One combined "Pay" surface (owner clarification 2026-07-17)**: the portal shows all enabled methods together — transfer providers, scratch card, voucher — as one picker; scratch-card entry stops being a separate screen and becomes a method tile in the same flow. Per-method form after picking.
+- Provider (transfer-proof) form: amount, transfer reference/date, note, **file attachments** (receipt screenshot/PDF; local disk storage under the data dir, size/type limits, virus-free by construction: never executed, served back only to authorized reviewers with `Content-Disposition: attachment`).
+- **Trial-day rule (owner clarification 2026-07-17, amends FR-59's cooldown)**: the **first** submission in a payment cycle grants the **1-day provisional renewal immediately** ("test internet", CoA-applied). If a request is **rejected, the subscriber may retry right away — but retries get NO free day** (they just go `pending` until reviewed). Trial eligibility resets when a request is approved (the next cycle's first attempt earns a day again). One pending request per subscriber at a time; every state change audit-logged and notified (portal + FR-55 channels).
 
-### FR-C — Review queue for the owning manager
-- The request lands in the **owning manager's** queue (falls back to any holder of the verify permission; admins see all). Reviewer sees the submission + attachments, checks their own wallet/bank statement out-of-band, then **approves** (→ full renewal from the trial's start, standard FR-19 path, ledger entries booked per the v2-3b wholesale/retail model against the owning agent) or **rejects** (→ reversing entries, expiry rolled back per FR-9, cooldown starts).
-- Panel: queue screen (badge count), per-request detail with attachment viewer, approve/reject with required note on reject.
+### FR-C — Ticket-style review with hierarchy-wide visibility
+- A payment request behaves like a **P2P ticket**: a timeline/log of every event (submitted, attachments added, provisional granted, approved/rejected with the reviewer's note, who acted, when).
+- The ticket lands in the **owning manager's** queue (falls back to any holder of the verify permission). **Managers above see everything (owner clarification 2026-07-17)**: admins/global managers get the full payment log across all agents — every ticket, searchable/filterable (by agent, provider, state, date), not just their own queue; scoped agents see only their own subscribers' tickets (normal `auth.ScopeFilter` semantics).
+- Reviewer sees the submission + attachments, checks their own wallet/bank statement out-of-band, then **approves** (→ full renewal from the trial's start, standard FR-19 path, ledger entries booked per the v2-3b wholesale/retail model against the owning agent) or **rejects** with a required note (→ reversing entries, expiry rolled back per FR-9; subscriber may resubmit, without a new free day).
+- Panel: queue screen (badge count), the all-payments log view for global managers, per-ticket detail with attachment viewer + timeline.
 
 ### FR-D — Retire the gateway surface
 - The Phase-4 `PaymentGateway` interface and any gateway config UI are removed or clearly quarantined (owner's call at kickoff — Decision 29 kept the interface, but with this feature there is no consumer left). E-wallet references in docs/NFR-7's "only online-dependent feature" caveat are cleaned up: after this phase HikRAD is 100% offline-capable.
@@ -38,8 +42,10 @@
 
 ## 4. Acceptance sketch
 
-- Owner creates provider "AsiaHawala"; agent Hassan adds his AsiaHawala wallet number. A subscriber owned by Hassan sees AsiaHawala (with Hassan's number); a subscriber owned by agent Zainab does not, until Zainab adds hers.
-- Subscriber submits a transfer proof (photo) → is online within seconds on a 1-day provisional window → Hassan approves next morning → subscriber is renewed a full month **from the trial's start**, ledger consistent with a normal Hassan renewal; rejecting instead rolls expiry back and starts the cooldown.
+- Owner creates provider "AsiaHawala"; agent Hassan adds his AsiaHawala wallet number and enables it + scratch cards, disables vouchers. His subscribers' portal shows one Pay screen with exactly those two tiles (Hassan's wallet number under AsiaHawala); a subscriber owned by agent Zainab sees Zainab's method set, not Hassan's.
+- Subscriber submits a transfer proof (photo) → is online within seconds on a 1-day provisional window → Hassan approves next morning → subscriber is renewed a full month **from the trial's start**, ledger consistent with a normal Hassan renewal.
+- Hassan rejects a fake proof with a note → expiry rolls back; the subscriber resubmits a real proof immediately — allowed, but **no second free day** — and gets the full month on approval. After that approval, next cycle's first attempt earns the trial day again.
+- An admin opens the payments log and sees every ticket across all agents with its full timeline (who submitted, who granted the provisional, who approved/rejected and why); Hassan sees only his own subscribers' tickets.
 - Attachments are stored locally, only reviewers can fetch them, and nothing about the flow touches the internet.
 
 ## 5. AI kickoff prompt (paste into a fresh Claude Code session at repo root)
@@ -51,9 +57,9 @@ Read, in this order and nothing else yet: CLAUDE.md, docs/v2/phases/00-v2-execut
 
 Step 1 — Amend the docs (single commit): new FR rows + Decisions Log row in docs/PRD.md, update sub-PRDs 05 and 07, docs/prd/00-index.md. Resolve the open question (owner-has-no-account fallback) with me before freezing.
 
-Step 2 — Create docs/v2/phases/phase-v2-7-manual-payments/00-phase.md with frozen contracts (provider + manager-account schemas, submission request/response with upload limits, request states + queue scoping rule, ledger booking on approve/reject) and the integration gate (trial-window grant/rollback tests, owner-scoping test, attachment authz test; migration budget 0580–0589 — but numbers are linear, take the next free ones). Scriptable gate items → scripts/gate-v2-phase-7.sh.
+Step 2 — Create docs/v2/phases/phase-v2-7-manual-payments/00-phase.md with frozen contracts (provider + manager-account + per-manager method-enablement schemas, unified portal Pay contract listing all enabled methods incl. scratch/voucher tiles, submission request/response with upload limits, ticket states + timeline events, trial-eligibility rule — first attempt per cycle only, reset on approval — queue/log scoping rules, ledger booking on approve/reject) and the integration gate (trial grant on first attempt + NO trial on post-rejection retry + reset-on-approval tests, owner-scoping + admin-sees-all-log tests, attachment authz test, unified-Pay-screen test; migration budget 0580–0589 — but numbers are linear, take the next free ones). Scriptable gate items → scripts/gate-v2-phase-7.sh.
 
 Step 3 — Stop and present the phase brief for my confirmation before writing feature code.
 
-Constraints: reuse the FR-59 trial-window machinery — do not invent a second provisional-renewal path; money always flows through the ledger (append-only, derived balances); attachments never leave local disk (NFR-7); portal/panel strings trilingual. Update every doc invalidated; record bugs in docs/ops/known-issues.md.
+Constraints: reuse the FR-59 trial-window machinery — do not invent a second provisional-renewal path — but amend its rejection rule: retries are allowed immediately and simply carry no free day (the old cooldown-blocks-submissions behavior is superseded); the portal has ONE payment surface (scratch cards fold into it, no separate screen); money always flows through the ledger (append-only, derived balances); attachments never leave local disk (NFR-7); portal/panel strings trilingual. Update every doc invalidated; record bugs in docs/ops/known-issues.md.
 ```
