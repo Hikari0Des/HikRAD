@@ -27,7 +27,12 @@
 - Reviewer sees the submission + attachments, checks their own wallet/bank statement out-of-band, then **approves** (→ full renewal from the trial's start, standard FR-19 path, ledger entries booked per the v2-3b wholesale/retail model against the owning agent) or **rejects** with a required note (→ reversing entries, expiry rolled back per FR-9; subscriber may resubmit, without a new free day).
 - Panel: queue screen (badge count), the all-payments log view for global managers, per-ticket detail with attachment viewer + timeline.
 
-### FR-D — Retire the gateway surface
+### FR-D — Notifications on both sides (owner clarification 2026-07-17)
+- **Subscriber**: notified at every ticket state change — submitted/pending received (with the provisional-day status), approved (renewed until X), rejected (with the reviewer's note, and that a retry earns no free day) — via portal notifications + the FR-55 channels (WhatsApp etc.).
+- **Manager**: the **owning manager** is notified the moment a new ticket lands in their queue (in-app + panel web push; badge count), and on any action another manager takes on their ticket (e.g. an admin approves it). Above-managers can opt into all-tickets notifications via their v2-4 `notification_prefs`.
+- Same delivery machinery as existing alerts/notifications (FR-55 + panel push) — no new channel infrastructure; every notification corresponds to a timeline event, never invented separately.
+
+### FR-E — Retire the gateway surface
 - The Phase-4 `PaymentGateway` interface and any gateway config UI are removed or clearly quarantined (owner's call at kickoff — Decision 29 kept the interface, but with this feature there is no consumer left). E-wallet references in docs/NFR-7's "only online-dependent feature" caveat are cleaned up: after this phase HikRAD is 100% offline-capable.
 
 ## 3. Impact map
@@ -37,7 +42,8 @@
 | `internal/billing` (card_payments, FR-59 flow) | Phase 3/4 (D) | generalize to provider-based requests + attachments + owner-scoped review |
 | `internal/portalapi` | Phase 4 (D) | provider list (owner-scoped), submission endpoint, upload handling |
 | Panel billing screens | Phase 3/5 (E) | provider catalog CRUD, my-accounts screen, review queue upgrade |
-| Portal pay flow | Phase 4 (F) | provider picker + transfer form + attachment upload + state tracking |
+| Portal pay flow | Phase 4 (F) | unified method picker + transfer form + attachment upload + state tracking |
+| Notifications (FR-55 channels + panel push) | Phases 3/4 (C/E) | ticket-event notification matrix, both sides; manager prefs via v2-4 |
 | `docs/prd/05-billing-payments-vouchers.md`, 07-portal | — | own the new FRs; amend FR-59's scope note |
 
 ## 4. Acceptance sketch
@@ -46,6 +52,7 @@
 - Subscriber submits a transfer proof (photo) → is online within seconds on a 1-day provisional window → Hassan approves next morning → subscriber is renewed a full month **from the trial's start**, ledger consistent with a normal Hassan renewal.
 - Hassan rejects a fake proof with a note → expiry rolls back; the subscriber resubmits a real proof immediately — allowed, but **no second free day** — and gets the full month on approval. After that approval, next cycle's first attempt earns the trial day again.
 - An admin opens the payments log and sees every ticket across all agents with its full timeline (who submitted, who granted the provisional, who approved/rejected and why); Hassan sees only his own subscribers' tickets.
+- Every state change notifies both sides: the subscriber sees pending/approved/rejected (with the note) in the portal and over the FR-55 channels; Hassan gets an in-app + push notification the moment the ticket arrives, and another if an admin acts on it instead of him.
 - Attachments are stored locally, only reviewers can fetch them, and nothing about the flow touches the internet.
 
 ## 5. AI kickoff prompt (paste into a fresh Claude Code session at repo root)
@@ -57,7 +64,7 @@ Read, in this order and nothing else yet: CLAUDE.md, docs/v2/phases/00-v2-execut
 
 Step 1 — Amend the docs (single commit): new FR rows + Decisions Log row in docs/PRD.md, update sub-PRDs 05 and 07, docs/prd/00-index.md. Resolve the open question (owner-has-no-account fallback) with me before freezing.
 
-Step 2 — Create docs/v2/phases/phase-v2-7-manual-payments/00-phase.md with frozen contracts (provider + manager-account + per-manager method-enablement schemas, unified portal Pay contract listing all enabled methods incl. scratch/voucher tiles, submission request/response with upload limits, ticket states + timeline events, trial-eligibility rule — first attempt per cycle only, reset on approval — queue/log scoping rules, ledger booking on approve/reject) and the integration gate (trial grant on first attempt + NO trial on post-rejection retry + reset-on-approval tests, owner-scoping + admin-sees-all-log tests, attachment authz test, unified-Pay-screen test; migration budget 0580–0589 — but numbers are linear, take the next free ones). Scriptable gate items → scripts/gate-v2-phase-7.sh.
+Step 2 — Create docs/v2/phases/phase-v2-7-manual-payments/00-phase.md with frozen contracts (provider + manager-account + per-manager method-enablement schemas, unified portal Pay contract listing all enabled methods incl. scratch/voucher tiles, submission request/response with upload limits, ticket states + timeline events, trial-eligibility rule — first attempt per cycle only, reset on approval — queue/log scoping rules, notification matrix — which timeline event notifies whom on which channel — ledger booking on approve/reject) and the integration gate (trial grant on first attempt + NO trial on post-rejection retry + reset-on-approval tests, owner-scoping + admin-sees-all-log tests, both-sides notification tests per state change, attachment authz test, unified-Pay-screen test; migration budget 0580–0589 — but numbers are linear, take the next free ones). Scriptable gate items → scripts/gate-v2-phase-7.sh.
 
 Step 3 — Stop and present the phase brief for my confirmation before writing feature code.
 
