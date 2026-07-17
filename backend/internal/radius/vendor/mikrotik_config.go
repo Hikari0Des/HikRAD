@@ -1,6 +1,6 @@
 package vendor
 
-// RouterOS config inspection for the MikroTik adapter (v2 phase 2, FR-65,
+// RouterOS config inspection for the MikroTik adapter (v2 phase 3, FR-65,
 // contract C2). ReadConfig issues exactly the same print sentences
 // PlanAutoSetup's planXXX helpers already read — it exists so the panel can
 // show the operator what the router has BEFORE they fill in the FR-66 values

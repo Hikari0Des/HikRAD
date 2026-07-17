@@ -1,6 +1,6 @@
 package radius
 
-// DB-backed suite for v2 phase 2 (FR-65/66/67), gated on HIKRAD_TEST_DB_URL
+// DB-backed suite for v2 phase 3 (FR-65/66/67), gated on HIKRAD_TEST_DB_URL
 // like db_phase4_test.go, whose helpers (autoSetupTestModule, mustInsertNAS,
 // fakeRouter, dialFakeRouter, autoSetupRequest, decodeJSON) this file reuses.
 

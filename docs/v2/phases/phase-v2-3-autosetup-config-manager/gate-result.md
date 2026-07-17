@@ -1,4 +1,4 @@
-# Phase v2-2 — NAS Auto-Setup Config Manager + Hotspot/PPPoE Server Management — Integration Gate Result
+# Phase v2-3 — NAS Auto-Setup Config Manager + Hotspot/PPPoE Server Management — Integration Gate Result
 
 Run date: 2026-07-17. Executed **solo + sequential** per Decision 25 / the v2
 execution plan, in six reviewable chunks (docs / schema+vendor-FR65-66 /
@@ -10,7 +10,7 @@ to a fresh schema before the final gate run (this repo's own documented
 trap — a DB-gated legs suite proves nothing running against a database
 another run already migrated).
 
-`scripts/gate-v2-phase-2.sh`: **all 27 scripted legs PASS, 0 FAIL.**
+`scripts/gate-v2-phase-3.sh`: **all 27 scripted legs PASS, 0 FAIL.**
 
 ## Gate items 1–12
 

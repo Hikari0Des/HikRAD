@@ -194,5 +194,6 @@ Same sanctioned handling as the v1 gates' device-dependent items:
    still only targets the stock `default` profile and refuses (writing nothing)
    on a router whose zones carry their own profiles — the copy-paste snippet
    handles that router today, and teaching auto-setup to read the real profile
-   layout is precisely **v2 phase 2**'s subject, which the execution plan
-   already sequences next.
+   layout is precisely **v2 phase 3**'s subject (label corrected 2026-07-17,
+   PRD Decision 35 — was v2 phase 2 at the time this gate ran), which the
+   execution plan already sequences next.

@@ -1,6 +1,6 @@
 package radius
 
-// NAS config inspection (v2 phase 2, FR-65, contract C2):
+// NAS config inspection (v2 phase 3, FR-65, contract C2):
 //
 //	GET /api/v1/nas/{id}/config -> read-only RADIUS-relevant router state
 //

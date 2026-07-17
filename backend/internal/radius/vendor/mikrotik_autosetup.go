@@ -68,7 +68,7 @@ func (mikrotikAdapter) SupportsInPlace(rosVersion, nasType, intent string) bool 
 
 // PlanAutoSetup implements Adapter.PlanAutoSetup for MikroTik.
 //
-// resolutions (v2 phase 2, FR-66.2) resolves a conflict.Key to "update" or
+// resolutions (v2 phase 3, FR-66.2) resolves a conflict.Key to "update" or
 // "keep"; anything else (including absent) means "abort" — an empty/nil map
 // reproduces pre-FR-66 behavior exactly (C1's non-invalidation guarantee),
 // because resolveConflict's default case is unchanged from the old

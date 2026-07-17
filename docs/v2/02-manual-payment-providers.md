@@ -24,12 +24,12 @@
 ### FR-C — Ticket-style review with hierarchy-wide visibility
 - A payment request behaves like a **P2P ticket**: a timeline/log of every event (submitted, attachments added, provisional granted, approved/rejected with the reviewer's note, who acted, when).
 - The ticket lands in the **owning manager's** queue (falls back to any holder of the verify permission). **Managers above see everything (owner clarification 2026-07-17)**: admins/global managers get the full payment log across all agents — every ticket, searchable/filterable (by agent, provider, state, date), not just their own queue; scoped agents see only their own subscribers' tickets (normal `auth.ScopeFilter` semantics).
-- Reviewer sees the submission + attachments, checks their own wallet/bank statement out-of-band, then **approves** (→ full renewal from the trial's start, standard FR-19 path, ledger entries booked per the v2-3b wholesale/retail model against the owning agent) or **rejects** with a required note (→ reversing entries, expiry rolled back per FR-9; subscriber may resubmit, without a new free day).
+- Reviewer sees the submission + attachments, checks their own wallet/bank statement out-of-band, then **approves** (→ full renewal from the trial's start, standard FR-19 path, ledger entries booked per the v2-9 wholesale/retail model against the owning agent) or **rejects** with a required note (→ reversing entries, expiry rolled back per FR-9; subscriber may resubmit, without a new free day).
 - Panel: queue screen (badge count), the all-payments log view for global managers, per-ticket detail with attachment viewer + timeline.
 
 ### FR-D — Notifications on both sides (owner clarification 2026-07-17)
 - **Subscriber**: notified at every ticket state change — submitted/pending received (with the provisional-day status), approved (renewed until X), rejected (with the reviewer's note, and that a retry earns no free day) — via portal notifications + the FR-55 channels (WhatsApp etc.).
-- **Manager**: the **owning manager** is notified the moment a new ticket lands in their queue (in-app + panel web push; badge count), and on any action another manager takes on their ticket (e.g. an admin approves it). Above-managers can opt into all-tickets notifications via their v2-4 `notification_prefs`.
+- **Manager**: the **owning manager** is notified the moment a new ticket lands in their queue (in-app + panel web push; badge count), and on any action another manager takes on their ticket (e.g. an admin approves it). Above-managers can opt into all-tickets notifications via their v2-6 `notification_prefs`.
 - Same delivery machinery as existing alerts/notifications (FR-55 + panel push) — no new channel infrastructure; every notification corresponds to a timeline event, never invented separately.
 
 ### FR-E — Retire the gateway surface
@@ -43,7 +43,7 @@
 | `internal/portalapi` | Phase 4 (D) | provider list (owner-scoped), submission endpoint, upload handling |
 | Panel billing screens | Phase 3/5 (E) | provider catalog CRUD, my-accounts screen, review queue upgrade |
 | Portal pay flow | Phase 4 (F) | unified method picker + transfer form + attachment upload + state tracking |
-| Notifications (FR-55 channels + panel push) | Phases 3/4 (C/E) | ticket-event notification matrix, both sides; manager prefs via v2-4 |
+| Notifications (FR-55 channels + panel push) | Phases 3/4 (C/E) | ticket-event notification matrix, both sides; manager prefs via v2-6 |
 | `docs/prd/05-billing-payments-vouchers.md`, 07-portal | — | own the new FRs; amend FR-59's scope note |
 
 ## 4. Acceptance sketch
@@ -58,13 +58,13 @@
 ## 5. AI kickoff prompt (paste into a fresh Claude Code session at repo root)
 
 ```text
-You are working in the HikRAD repo. We are starting v2 phase 7: manual payment providers (transfer-proof payments replacing gateway adapters — PRD Decisions 29/30). You work SOLO — no parallel agents; execute sequentially (schema → billing core → portal → panel queue), committing in reviewable chunks.
+You are working in the HikRAD repo. We are starting v2 phase 2: manual payment providers (transfer-proof payments replacing gateway adapters — PRD Decisions 29/30). You work SOLO — no parallel agents; execute sequentially (schema → billing core → portal → panel queue), committing in reviewable chunks.
 
-Read, in this order and nothing else yet: CLAUDE.md, docs/v2/phases/00-v2-execution-plan.md, docs/v2/02-manual-payment-providers.md, docs/prd/05-billing-payments-vouchers.md (FR-59 + FR-19), docs/prd/07-subscriber-portal-pwa.md, backend/internal/billing/ (card-payment/trial-window flow), and the v2-3b phase result (wholesale/retail ledger semantics).
+Read, in this order and nothing else yet: CLAUDE.md, docs/v2/phases/00-v2-execution-plan.md, docs/v2/02-manual-payment-providers.md, docs/prd/05-billing-payments-vouchers.md (FR-59 + FR-19), docs/prd/07-subscriber-portal-pwa.md, backend/internal/billing/ (card-payment/trial-window flow), and the v2-9 phase result (wholesale/retail ledger semantics).
 
 Step 1 — Amend the docs (single commit): new FR rows + Decisions Log row in docs/PRD.md, update sub-PRDs 05 and 07, docs/prd/00-index.md. Resolve the open question (owner-has-no-account fallback) with me before freezing.
 
-Step 2 — Create docs/v2/phases/phase-v2-7-manual-payments/00-phase.md with frozen contracts (provider + manager-account + per-manager method-enablement schemas, unified portal Pay contract listing all enabled methods incl. scratch/voucher tiles, submission request/response with upload limits, ticket states + timeline events, trial-eligibility rule — first attempt per cycle only, reset on approval — queue/log scoping rules, notification matrix — which timeline event notifies whom on which channel — ledger booking on approve/reject) and the integration gate (trial grant on first attempt + NO trial on post-rejection retry + reset-on-approval tests, owner-scoping + admin-sees-all-log tests, both-sides notification tests per state change, attachment authz test, unified-Pay-screen test; migration budget 0580–0589 — but numbers are linear, take the next free ones). Scriptable gate items → scripts/gate-v2-phase-7.sh.
+Step 2 — Create docs/v2/phases/phase-v2-2-manual-payments/00-phase.md with frozen contracts (provider + manager-account + per-manager method-enablement schemas, unified portal Pay contract listing all enabled methods incl. scratch/voucher tiles, submission request/response with upload limits, ticket states + timeline events, trial-eligibility rule — first attempt per cycle only, reset on approval — queue/log scoping rules, notification matrix — which timeline event notifies whom on which channel — ledger booking on approve/reject) and the integration gate (trial grant on first attempt + NO trial on post-rejection retry + reset-on-approval tests, owner-scoping + admin-sees-all-log tests, both-sides notification tests per state change, attachment authz test, unified-Pay-screen test; migration budget 0580–0589 — but numbers are linear, take the next free ones). Scriptable gate items → scripts/gate-v2-phase-2.sh.
 
 Step 3 — Stop and present the phase brief for my confirmation before writing feature code.
 

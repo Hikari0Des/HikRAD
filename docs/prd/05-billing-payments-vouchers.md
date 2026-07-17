@@ -1,6 +1,6 @@
 # HikRAD — Sub-PRD 05: Billing, Payments & Vouchers
 
-> Derived from [docs/PRD.md](../PRD.md) v1.0 on 2026-07-08; updated 2026-07-11 for master v1.3 (FR-59 scratch-card payments added — Decision 22); updated 2026-07-17 for master v1.6 (FR-68–70 full multi-currency billing — Decision 34, v2 phase 3; supersedes the implicit-IQD assumption stated in §1 below). Owns: FR-19, FR-20, FR-21, FR-22, FR-23, FR-24, FR-25, FR-26, FR-59, FR-68, FR-69, FR-70 · Risk: e-wallet gateway availability · Open question 1 (gateway priority)
+> Derived from [docs/PRD.md](../PRD.md) v1.0 on 2026-07-08; updated 2026-07-11 for master v1.3 (FR-59 scratch-card payments added — Decision 22); updated 2026-07-17 for master v1.6 (FR-68–70 full multi-currency billing — Decision 34, v2 phase 4; supersedes the implicit-IQD assumption stated in §1 below). Owns: FR-19, FR-20, FR-21, FR-22, FR-23, FR-24, FR-25, FR-26, FR-59, FR-68, FR-69, FR-70 · Risk: e-wallet gateway availability · Open question 1 (gateway priority)
 > Depends on: [04-subscribers-profiles](04-subscribers-profiles.md) (profile price/duration, expiry updates, per-user overrides), [02-radius-nas-aaa](02-radius-nas-aaa.md) (CoA after renewal, Hotspot voucher login), [06-managers-roles-security](06-managers-roles-security.md) (manager accounts, permissions, audit) · Depended on by: [07-subscriber-portal-pwa](07-subscriber-portal-pwa.md) (portal renewal + payment UI), [08-reports](08-reports.md) (financial reports read the ledger), [03-lossless-accounting-live-monitoring](03-lossless-accounting-live-monitoring.md) (revenue tile, low-balance alerts)
 
 ## 1. Scope & context
@@ -145,7 +145,7 @@ All money movement: prepaid renewals, the immutable transaction ledger, manager/
 
 **Consumes:** profile price/duration/currency + expiry mutation + policy invalidation from [04](04-subscribers-profiles.md); CoA from [02](02-radius-nas-aaa.md); permissions (`renew`, `top-up`, `export`, **`currency_rates.manage`**) + audit from [06](06-managers-roles-security.md); billing-default settings, default display currency, and branding (receipts) from [01](01-platform-install-licensing.md).
 
-Full request/response shapes, the migration sequence, and the exchange-pair ledger contract are frozen in [docs/v2/phases/phase-v2-3-multi-currency/00-phase.md](../v2/phases/phase-v2-3-multi-currency/00-phase.md) once written at that phase's kickoff.
+Full request/response shapes, the migration sequence, and the exchange-pair ledger contract are frozen in [docs/v2/phases/phase-v2-4-multi-currency/00-phase.md](../v2/phases/phase-v2-4-multi-currency/00-phase.md).
 
 ## 5. UX notes
 
@@ -157,7 +157,7 @@ Renew dialog: opens pre-filled with current profile + resolved price (key flow 2
 - Report layouts over ledger data → [08](08-reports.md).
 - Manager account CRUD/permissions themselves → [06](06-managers-roles-security.md).
 - **Deferred by master:** prepaid card system with drag-and-drop designer (Phase 2 — vouchers here are code batches only); reseller tree with balance transfer down the chain (Phase 2 — balances here are flat); postpaid invoicing (non-goal).
-- **Cost, margin and reseller (wholesale) pricing → v2-3b**, briefed at [docs/v2/09-cost-margin-and-reseller-pricing.md](../v2/09-cost-margin-and-reseller-pricing.md) (owner request 2026-07-16). v1 deliberately has **no concept of cost**: `profiles.price_iqd` is what the subscriber is charged, and a renewal debits the owning manager's balance **that same amount** — so every reseller pays retail and margin is unrepresentable. That is a real limitation, not an oversight to patch here: adding a cost price and a wholesale price changes what a renewal ledger row *means* (one debit at one price becomes a retail charge + a wholesale debit + a cost stamp), which is the contract Phase 3 froze and [08](08-reports.md) reconciles against. It lands with v2-3's multi-currency rework so the ledger is migrated once.
+- **Cost, margin and reseller (wholesale) pricing → v2-9**, briefed at [docs/v2/09-cost-margin-and-reseller-pricing.md](../v2/09-cost-margin-and-reseller-pricing.md) (owner request 2026-07-16). v1 deliberately has **no concept of cost**: `profiles.price_iqd` is what the subscriber is charged, and a renewal debits the owning manager's balance **that same amount** — so every reseller pays retail and margin is unrepresentable. That is a real limitation, not an oversight to patch here: adding a cost price and a wholesale price changes what a renewal ledger row *means* (one debit at one price becomes a retail charge + a wholesale debit + a cost stamp), which is the contract Phase 3 froze and [08](08-reports.md) reconciles against. It lands with v2-4's multi-currency rework so the ledger is migrated once.
 
 ## 7. Risks & open questions (owned)
 

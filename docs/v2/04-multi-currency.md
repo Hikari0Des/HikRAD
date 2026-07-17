@@ -20,7 +20,7 @@ Every amount in v1 is an implicit-IQD integer (`*_iqd` columns, `formatIQD`, IQD
 - Receipts print amount + currency; refunds reverse in the original currency at the original rate.
 
 ### FR-C — Display & reports
-- Currency dropdown in Settings (default display currency) and per-manager preference (v2-06); `formatIQD` generalizes to `formatMoney(amount, currency)` (shared package, all three locales, IQD keeps Arabic-Indic digit rules).
+- Currency dropdown in Settings (default display currency) and per-manager preference (v2-6); `formatIQD` generalizes to `formatMoney(amount, currency)` (shared package, all three locales, IQD keeps Arabic-Indic digit rules).
 - Reports gain per-currency columns + an optional "converted to display currency" view that labels the rate date; ledger reconciliation (M-series metrics) runs **per currency** — never across a conversion.
 
 ## 3. Impact map (why this is v2)
@@ -43,13 +43,13 @@ Every amount in v1 is an implicit-IQD integer (`*_iqd` columns, `formatIQD`, IQD
 ## 5. AI kickoff prompt (paste into a fresh Claude Code session at repo root)
 
 ```text
-You are working in the HikRAD repo. v1 is complete; we are starting v2 phase 3: full multi-currency billing (IQD/USD/EUR). You work SOLO — no parallel agents; execute sequentially (schema/ledger core → flows → display/reports), committing in reviewable chunks.
+You are working in the HikRAD repo. v1 is complete; we are starting v2 phase 4: full multi-currency billing (IQD/USD/EUR). You work SOLO — no parallel agents; execute sequentially (schema/ledger core → flows → display/reports), committing in reviewable chunks.
 
 Read, in this order and nothing else yet: CLAUDE.md, docs/v2/phases/00-v2-execution-plan.md, docs/v2/04-multi-currency.md, docs/prd/05-billing-money.md, backend/internal/billing/ledger.go, backend/internal/billing/renew.go.
 
 Step 1 — Amend the docs (single commit): new FR rows + a Decisions Log row in docs/PRD.md (this supersedes the implicit-IQD assumption; cite the owner's 2026-07-16 choice of full multi-currency), update sub-PRD 05 and docs/prd/00-index.md.
 
-Step 2 — Create docs/v2/phases/phase-v2-3-multi-currency/00-phase.md with frozen contracts (currency enum + minor-unit rules, ledger schema delta + backfill, per-currency balance shape, rate-table schema, formatMoney signature, API response deltas) and the integration gate (per-currency reconciliation invariant, exchange-pair test, migration backfill test on a seeded Phase-3 dataset; migration range 0530–0549). Scriptable gate items → scripts/gate-v2-phase-3.sh.
+Step 2 — Create docs/v2/phases/phase-v2-4-multi-currency/00-phase.md with frozen contracts (currency enum + minor-unit rules, ledger schema delta + backfill, per-currency balance shape, rate-table schema, formatMoney signature, API response deltas) and the integration gate (per-currency reconciliation invariant, exchange-pair test, migration backfill test on a seeded Phase-3 dataset; migration range 0530–0549). Scriptable gate items → scripts/gate-v2-phase-4.sh.
 
 Step 3 — Stop and present the phase brief for my confirmation before writing feature code.
 

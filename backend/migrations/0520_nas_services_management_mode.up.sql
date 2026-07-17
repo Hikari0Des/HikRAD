@@ -1,4 +1,4 @@
--- v2 phase 2 / FR-67 (contract C5, Decision 31): every nas_services instance
+-- v2 phase 3 / FR-67 (contract C5, Decision 31): every nas_services instance
 -- carries a management mode. 'router' means HikRAD discovered or was told
 -- about a service instance the router already had (v2 phase 1's migration
 -- 0501 backfill, manual entry, or FR-62.6 discovery/merge) — HikRAD can read

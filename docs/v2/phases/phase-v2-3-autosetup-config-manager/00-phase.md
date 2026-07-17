@@ -1,4 +1,4 @@
-# Phase v2-2 — NAS Auto-Setup Config Manager + Hotspot/PPPoE Server Management
+# Phase v2-3 — NAS Auto-Setup Config Manager + Hotspot/PPPoE Server Management
 
 > Goal: replace the FR-56 auto-setup wizard's fixed, additive-only plan with a **form-driven** one that can read the router's current RADIUS-relevant config first (FR-65), and let the operator resolve a conflicting item as `keep` / `update` / `abort` instead of only `abort` (FR-66) — abort stays the default, nothing is ever deleted. On top of that pipeline, add **Hotspot/PPPoE server management** (FR-67, Decision 31): every `nas_services` instance carries a management mode (`router` = discovered/adopted, `system` = HikRAD-created/owned), and operators can list live router config per instance, create a new system-managed server, edit a system-managed one, or adopt a router-managed one — from a panel form, never Winbox.
 >
@@ -13,7 +13,7 @@
 3. **Vendor layer (FR-67)** — `PlanService`/service-scoped provisioning sentences (C8), reusing C4/C5's PlanItem/PlanConflict/AutoSetupPlan vocabulary; the FR-62.7 `address-pool=none` guard folded into every new hotspot server plan from creation, not bolted on after.
 4. **API** — `GET /nas/{id}/config` (C2); extend the two existing auto-setup endpoints (C6); the four new service-management endpoints (C9).
 5. **Panel** — "Current config" tab; values-form step; per-conflict radio choice UI; server create/edit/adopt screens; NAS services sub-list shows live router config per instance (C10).
-6. **Gate** — fake-router unit matrix + `scripts/gate-v2-phase-2.sh`; live-router checklist item (create a real hotspot zone end-to-end); `gate-result.md`.
+6. **Gate** — fake-router unit matrix + `scripts/gate-v2-phase-3.sh`; live-router checklist item (create a real hotspot zone end-to-end); `gate-result.md`.
 
 Commit in reviewable chunks along these boundaries (schema / vendor-FR65-66 / vendor-FR67 / API / panel / gate).
 
@@ -211,7 +211,7 @@ POST /api/v1/nas/{id}/services/{serviceId}/adopt             (nas.edit)   — bo
 
 ## Integration gate
 
-Green when all pass (scriptable legs in `scripts/gate-v2-phase-2.sh`; human/hardware legs noted):
+Green when all pass (scriptable legs in `scripts/gate-v2-phase-3.sh`; human/hardware legs noted):
 
 1. **Migration** — `0520_nas_services_management_mode` present; adds the column with `DEFAULT 'router'` and a `CHECK` constraint; no `.down.sql`; no migration number outside the verified-free budget at implementation time.
 2. **C1 non-invalidation** — the full existing `internal/radius/vendor` auto-setup suite (`mikrotik_autosetup_test.go`) passes unchanged when driven with empty `Values`/`Resolutions` (fake-`ROSConn` unit tests, no DB needed).

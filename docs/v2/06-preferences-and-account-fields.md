@@ -36,13 +36,13 @@
 ## 5. AI kickoff prompt (paste into a fresh Claude Code session at repo root)
 
 ```text
-You are working in the HikRAD repo. v1 is complete; we are starting v2 phase 4: per-manager preferences + subscriber email. You work SOLO — no parallel agents; execute sequentially (backend prefs → panel seeding → subscriber email end-to-end), committing in reviewable chunks.
+You are working in the HikRAD repo. v1 is complete; we are starting v2 phase 6: per-manager preferences + subscriber email. You work SOLO — no parallel agents; execute sequentially (backend prefs → panel seeding → subscriber email end-to-end), committing in reviewable chunks.
 
 Read, in this order and nothing else yet: CLAUDE.md, docs/v2/phases/00-v2-execution-plan.md, docs/v2/06-preferences-and-account-fields.md, docs/prd/01-platform-security.md (settings section), docs/prd/04-subscribers-profiles.md, frontend/shared/src/ui/theme.ts, frontend/shared/src/i18n/I18nProvider.tsx.
 
 Step 1 — Amend the docs (single commit): new FR rows + Decisions Log row in docs/PRD.md, update sub-PRDs 01 and 04, docs/prd/00-index.md.
 
-Step 2 — Create docs/v2/phases/phase-v2-4-preferences/00-phase.md with frozen contracts (preferences JSONB schema + versioning, /me/preferences shapes, subscribers.email column + validation rule, CSV mapping key) and the integration gate (cross-device seed test, cross-manager 403, import mapping test; migration range 0550–0559). Scriptable gate items → scripts/gate-v2-phase-4.sh.
+Step 2 — Create docs/v2/phases/phase-v2-6-preferences/00-phase.md with frozen contracts (preferences JSONB schema + versioning, /me/preferences shapes, subscribers.email column + validation rule, CSV mapping key) and the integration gate (cross-device seed test, cross-manager 403, import mapping test; migration range 0550–0559). Scriptable gate items → scripts/gate-v2-phase-6.sh.
 
 Step 3 — Stop and present the phase brief for my confirmation before writing feature code.
 

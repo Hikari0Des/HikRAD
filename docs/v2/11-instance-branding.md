@@ -1,4 +1,4 @@
-# v2-11 → phase v2-9 — Instance branding (company logo + name)
+# v2-11 — Instance branding (company logo + name)
 
 > Owner request 2026-07-17 (ex-v3.3, merged into v2 by PRD Decision 32): "per-company logo and instance name configuration." Each licensed installation belongs to one ISP; that ISP's identity should appear everywhere a customer or operator looks, not "HikRAD".
 
@@ -34,13 +34,13 @@ FR-43 promised portal ISP branding (logo, name, colors) via admin settings, and 
 ## 5. AI kickoff prompt (paste into a fresh Claude Code session at repo root)
 
 ```text
-You are working in the HikRAD repo. We are starting v2 phase 9: instance branding (PRD Decision 32). You work SOLO — no parallel agents; execute sequentially (settings + upload → shells/logins → PWA manifests → print surfaces), committing in reviewable chunks.
+You are working in the HikRAD repo. We are starting v2 phase 11: instance branding (PRD Decision 32). You work SOLO — no parallel agents; execute sequentially (settings + upload → shells/logins → PWA manifests → print surfaces), committing in reviewable chunks.
 
 Read, in this order and nothing else yet: CLAUDE.md, docs/v2/phases/00-v2-execution-plan.md, docs/v2/11-instance-branding.md, docs/prd/01-platform-security.md (settings), docs/prd/07-subscriber-portal-pwa.md (FR-43, PWA), the first-run wizard code, and one print surface (report header).
 
 Step 1 — Amend the docs (single commit): FR rows + Decisions Log row in docs/PRD.md, update owning sub-PRDs (01/07/08), docs/prd/00-index.md.
 
-Step 2 — Create docs/v2/phases/phase-v2-9-instance-branding/00-phase.md with frozen contracts (branding settings keys, upload constraints, public identity endpoint shape, manifest generation approach) and the integration gate (pre-auth login shows identity, PWA manifest reflects it, receipt/report header test, offline test — no external fetch; migrations linear, next free number). Scriptable items → scripts/gate-v2-phase-9.sh.
+Step 2 — Create docs/v2/phases/phase-v2-11-instance-branding/00-phase.md with frozen contracts (branding settings keys, upload constraints, public identity endpoint shape, manifest generation approach) and the integration gate (pre-auth login shows identity, PWA manifest reflects it, receipt/report header test, offline test — no external fetch; migrations linear, next free number). Scriptable items → scripts/gate-v2-phase-11.sh.
 
 Step 3 — Stop and present the phase brief for my confirmation before writing feature code.
 

@@ -43,13 +43,13 @@
 ## 5. AI kickoff prompt (paste into a fresh Claude Code session at repo root)
 
 ```text
-You are working in the HikRAD repo. v1 is complete; we are starting v2 phase 6: closed-source distribution & licensing hardening. You work SOLO — no parallel agents; execute sequentially (release pipeline → installer/update image-mode → license hardening → docs), committing in reviewable chunks.
+You are working in the HikRAD repo. v1 is complete; we are starting v2 phase 5: closed-source distribution & licensing hardening. You work SOLO — no parallel agents; execute sequentially (release pipeline → installer/update image-mode → license hardening → docs), committing in reviewable chunks.
 
 Read, in this order and nothing else yet: CLAUDE.md, docs/v2/phases/00-v2-execution-plan.md, docs/v2/05-closed-source-distribution.md, docs/prd/01-platform-security.md FR-49/FR-50/FR-51/FR-52, scripts/install.sh, scripts/hikrad, .github/workflows/ci.yml, backend/internal/platform/license/.
 
 Step 1 — Amend the docs (single commit): new FR rows + Decisions Log row in docs/PRD.md (delivery model changes from source-checkout to signed images/bundles), update sub-PRD 01 and docs/prd/00-index.md.
 
-Step 2 — Create docs/v2/phases/phase-v2-6-closed-source/00-phase.md with frozen contracts (bundle layout + signature scheme, registry naming, install.meta deltas, license re-verify cadence) and the integration gate (clean-VM no-source install, tamper-refusal test, dev-mode regression; migration range 0570–0579 if any). Scriptable gate items → scripts/gate-v2-phase-6.sh.
+Step 2 — Create docs/v2/phases/phase-v2-5-closed-source/00-phase.md with frozen contracts (bundle layout + signature scheme, registry naming, install.meta deltas, license re-verify cadence) and the integration gate (clean-VM no-source install, tamper-refusal test, dev-mode regression; migration range 0570–0579 if any). Scriptable gate items → scripts/gate-v2-phase-5.sh.
 
 Step 3 — Stop and present the phase brief for my confirmation before writing feature code.
 

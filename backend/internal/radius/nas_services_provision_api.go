@@ -1,6 +1,6 @@
 package radius
 
-// Hotspot/PPPoE server management HTTP handlers (v2 phase 2, FR-67, contract
+// Hotspot/PPPoE server management HTTP handlers (v2 phase 3, FR-67, contract
 // C9). Four endpoints:
 //
 //	GET  /api/v1/nas/{id}/services/{serviceId}/router-config

@@ -1,6 +1,6 @@
 package vendor
 
-// Hotspot/PPPoE server provisioning for the MikroTik adapter (v2 phase 2,
+// Hotspot/PPPoE server provisioning for the MikroTik adapter (v2 phase 3,
 // FR-67.3/67.4, contract C8). PlanService/ApplyService are deliberately
 // separate from PlanAutoSetup/ApplyAutoSetup: they describe ONE server
 // object's own existence (interface binding, address pool, profile) rather

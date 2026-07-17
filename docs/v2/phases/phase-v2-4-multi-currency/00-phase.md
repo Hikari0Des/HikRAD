@@ -1,23 +1,23 @@
-# Phase v2-3 — Full Multi-Currency Billing (IQD / USD / EUR)
+# Phase v2-4 — Full Multi-Currency Billing (IQD / USD / EUR)
 
 > Goal: replace v1's implicit-IQD money core with a real multi-currency one. Every monetary column becomes an integer **minor-unit** amount plus a `currency` code on the same row; manager/agent balances become **per-currency** with **no implicit conversion** — moving value between a manager's currencies is an explicit, ledger-visible **exchange** stamped with the admin-maintained rate used. No online rate feed (NFR-7 holds). This is the single largest rework of the money core since Phase 3 froze it — treat every contract below as touching real financial data, not a cosmetic rename.
 >
 > Requirements: **FR-68/69/70** (all owned by sub-PRD 05 — no split). Master PRD Decision 34. Owner: **SOLO + sequential** (Decision 25) — the C-numbers below are *contracts*, not agents.
 >
-> **This phase is immediately followed by v2-3b** (cost/margin/reseller pricing, `docs/v2/09-cost-margin-and-reseller-pricing.md`) against the **same** money core, so the ledger is migrated once, not twice — do not consider this phase "done, move on" until v2-3b's own kickoff has at least been read.
+> **This phase is immediately followed by v2-9** (cost/margin/reseller pricing, `docs/v2/09-cost-margin-and-reseller-pricing.md`) against the **same** money core, so the ledger is migrated once, not twice — do not consider this phase "done, move on" until v2-9's own kickoff has at least been read. (v2-N here is the source file number, `docs/v2/0N-*.md` — not the build sequence; see `docs/v2/phases/00-v2-execution-plan.md` for the actual order.)
 
 ## Execution ordering (one session, by dependency)
 
 1. **Schema + ledger core** — migrations 0530–0539 (below); `internal/billing/ledger.go` (`ledgerEntry.AmountIQD`→`Amount`+`Currency`, `insertLedger`, `lockBalance`, `recomputeBalance` all become currency-aware); the immutability trigger/REVOKE are untouched (already generic).
 2. **Money flows** — `renew.go` (profile currency threads through), `voucher.go` (batch currency), `refund.go` (reverses in the original entry's own currency, no re-resolution), `receipt.go` (prints currency), `cardpay.go` (currency flows from `renew()` automatically — verify, don't re-derive), the new **exchange** endpoint (FR-69.3), `balance_api.go`/`ledger_api.go` API deltas (C6/C7).
 3. **Display + reports** — `formatMoney` (shared package, C8), the 39 panel/portal call sites currently assuming IQD (audit each: does this field's row actually carry a currency now, or is it still genuinely IQD-only, e.g. a UI label?), `internal/reports` per-currency grouping (C9), the FR-40-style reconciliation invariant extended per-currency.
-4. **Gate** — DB-gated migration-backfill test against a seeded Phase-3-shaped dataset + reconciliation/exchange tests; `scripts/gate-v2-phase-3.sh`; `gate-result.md`.
+4. **Gate** — DB-gated migration-backfill test against a seeded Phase-3-shaped dataset + reconciliation/exchange tests; `scripts/gate-v2-phase-4.sh`; `gate-result.md`.
 
 Commit in reviewable chunks along these boundaries (schema+ledger / flows / display+reports / gate) — this phase is big enough that a single chunk would be unreviewable.
 
 ## Migration budget 0530–0539
 
-(v2-3b takes 0540–0549 immediately after, same money core — see the header note. Verify the repo's actual max migration number hasn't advanced past 0539 before implementing; if so, take the next free number instead per the standing linear-numbering rule.)
+(v2-9 takes 0540–0549 immediately after, same money core — see the header note. Verify the repo's actual max migration number hasn't advanced past 0539 before implementing; if so, take the next free number instead per the standing linear-numbering rule.)
 
 | Migration | Owns |
 |---|---|

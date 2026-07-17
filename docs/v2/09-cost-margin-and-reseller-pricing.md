@@ -1,6 +1,6 @@
 # v2-09 — Cost, margin and reseller pricing
 
-> Owner request 2026-07-16. Owner answers on record: cost is **per-plan buy price AND fixed monthly overheads** (both); resellers pay by **prepaid balance** (they top up, renewals deduct). Scheduled with v2-3 because both rework the same money core — doing them separately means reworking the ledger twice.
+> Owner request 2026-07-16. Owner answers on record: cost is **per-plan buy price AND fixed monthly overheads** (both); resellers pay by **prepaid balance** (they top up, renewals deduct). Scheduled with v2-4 because both rework the same money core — doing them separately means reworking the ledger twice.
 
 ## 1. Problem
 
@@ -21,14 +21,14 @@ This is the difference between a billing system and a reseller platform, and it 
 | What is your upstream cost attached to? | **Both** per-plan buy price and fixed monthly overheads | Two cost sources that must combine without double-counting — see FR-C |
 | How do resellers pay you? | **Prepaid balance**, renewals deduct | Builds on v1's existing agent balance + ledger; no credit/invoicing engine needed |
 | Sub-resellers (resellers under resellers)? | **OPEN — must be answered at kickoff** | Decides whether pricing is a 2-level override or an N-level tree. Do not start until answered; it is the single biggest fork in this brief |
-| Ship with or after multi-currency? | Together (v2-3 adjacent) | A cost price without a currency is the same bug as a sell price without one |
+| Ship with or after multi-currency? | Together (v2-4 adjacent) | A cost price without a currency is the same bug as a sell price without one |
 
 ## 3. Requirements (draft — renumber as FR-6x at kickoff)
 
 ### FR-A — Plan cost price
-- `profiles` gains `cost_price` (+ currency, per v2-3) — what **you** pay upstream for one subscriber-month of this plan.
+- `profiles` gains `cost_price` (+ currency, per v2-4) — what **you** pay upstream for one subscriber-month of this plan.
 - Nullable: a plan with no cost recorded reports margin as **unknown**, never as 100% profit. A missing cost must never silently render as zero — that is the difference between "I don't know" and "it's free", and only one of them is safe to put in a revenue report.
-- Cost is **versioned, not overwritten**: `profile_cost_history (profile_id, cost, currency, effective_from)`. A renewal's margin is computed against the cost in force **on the renewal date** and stamped onto the ledger row, so re-pricing a plan next month cannot retroactively rewrite last month's reported profit. Same rule the ledger already follows for exchange rates (v2-3 FR-A).
+- Cost is **versioned, not overwritten**: `profile_cost_history (profile_id, cost, currency, effective_from)`. A renewal's margin is computed against the cost in force **on the renewal date** and stamped onto the ledger row, so re-pricing a plan next month cannot retroactively rewrite last month's reported profit. Same rule the ledger already follows for exchange rates (v2-4 FR-A).
 
 ### FR-B — Margin on the ledger
 - Every renewal ledger row stamps `cost_at_sale` alongside the amount charged. Margin = `amount − cost_at_sale`, derived, never stored as its own editable number (the FR-19 append-only rule: balances and totals are always derived from the ledger).

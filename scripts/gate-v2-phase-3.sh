@@ -1,6 +1,6 @@
 #!/bin/sh
 # gate-v2-phase-2.sh — machine-checkable legs of the v2 phase-2 integration
-# gate (docs/v2/phases/phase-v2-2-autosetup-config-manager/00-phase.md). Each
+# gate (docs/v2/phases/phase-v2-3-autosetup-config-manager/00-phase.md). Each
 # check prints a label followed by PASS or FAIL; exit status is non-zero if
 # any leg fails. Human/hardware legs (creating a real hotspot zone end-to-end,
 # adopting a real pre-existing PPPoE server, an update resolution against a
@@ -44,7 +44,7 @@ command -v go >/dev/null 2>&1 || {
   done
 }
 
-echo "== v2 phase 2 gate (NAS auto-setup config manager + server management) =="
+echo "== v2 phase 3 gate (NAS auto-setup config manager + server management) =="
 
 # --- Schema & migration (item 1) --------------------------------------------
 echo "-- Schema & migration --"
@@ -123,12 +123,12 @@ echo "-- Docs --"
 check "PRD carries FR-65..FR-67" \
   sh -c 'grep -q "FR-65" docs/PRD.md && grep -q "FR-66" docs/PRD.md && grep -q "FR-67" docs/PRD.md'
 check "index coverage audit = 67/67" grep -q "67/67 owned" docs/prd/00-index.md
-check "phase brief present" test -f docs/v2/phases/phase-v2-2-autosetup-config-manager/00-phase.md
+check "phase brief present" test -f docs/v2/phases/phase-v2-3-autosetup-config-manager/00-phase.md
 
 echo
 if [ "$FAILED" -eq 0 ]; then
-  echo "== v2 phase 2 gate: ALL SCRIPTED LEGS PASSED =="
+  echo "== v2 phase 3 gate: ALL SCRIPTED LEGS PASSED =="
 else
-  echo "== v2 phase 2 gate: FAILURES ABOVE =="
+  echo "== v2 phase 3 gate: FAILURES ABOVE =="
 fi
 exit "$FAILED"

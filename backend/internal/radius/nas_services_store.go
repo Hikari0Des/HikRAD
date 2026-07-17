@@ -33,7 +33,7 @@ type serviceRow struct {
 	UpdatedAt       time.Time
 }
 
-// serviceView is the JSON read shape embedded in nasView (C3/C9; management_mode added by v2 phase 2 C9).
+// serviceView is the JSON read shape embedded in nasView (C3/C9; management_mode added by v2 phase 3 C9).
 type serviceView struct {
 	ID             string  `json:"id"`
 	Service        string  `json:"service"`

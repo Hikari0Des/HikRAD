@@ -1,7 +1,7 @@
 package radius
 
 // RouterOS API auto-setup HTTP handlers (FR-56.2-56.4, contract C6; extended
-// by v2 phase 2 FR-66, contracts C3-C6). Two endpoints:
+// by v2 phase 3 FR-66, contracts C3-C6). Two endpoints:
 //
 //	POST /api/v1/nas/{id}/auto-setup/preview  {values?, resolutions?} -> {items, conflicts, preview_hash}
 //	POST /api/v1/nas/{id}/auto-setup/apply    {preview_hash, values?, resolutions?} -> {results, seen}
@@ -16,7 +16,7 @@ package radius
 // non-empty Conflicts list aborts the whole apply before a single write
 // sentence is sent, so the router is provably untouched.
 //
-// v2 phase 2 (FR-66) extends this without weakening it: Values lets the
+// v2 phase 3 (FR-66) extends this without weakening it: Values lets the
 // operator override the FR-14.2 defaults (RADIUS server, CoA port, interim,
 // walled garden) instead of only accepting settings/NAS-derived ones, and
 // Resolutions lets a conflicting item be resolved "update" or "keep" instead
@@ -290,7 +290,7 @@ func (m *module) autoSetupConnectError(w http.ResponseWriter, err error) {
 // cross-NAS hash can never be replayed. Recomputed identically at apply time
 // over freshly-read router state — any drift changes the hash.
 //
-// v2 phase 2 (FR-66.3, contract C6): also folds in Values and Resolutions
+// v2 phase 3 (FR-66.3, contract C6): also folds in Values and Resolutions
 // directly, not only the plan.Items/Conflicts they produced — apply is tied
 // to the exact form values and per-conflict choices the operator approved in
 // preview, so resending a changed resolutions map (even one that happens to

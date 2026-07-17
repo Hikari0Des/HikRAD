@@ -56,7 +56,7 @@ func autoSetupTestModule(t *testing.T) *module {
 
 	// m.nas mirrors production's Register (module.go): a nil registry panics
 	// the instant any mutation handler calls afterNASChange -> invalidate().
-	// No test built through this helper exercised that path until v2 phase 2's
+	// No test built through this helper exercised that path until v2 phase 3's
 	// service-management handlers did — see known-issues.md.
 	m := &module{db: db, log: log}
 	m.nas = newNASRegistry(db, log)

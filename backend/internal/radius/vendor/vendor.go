@@ -195,7 +195,7 @@ type Adapter interface {
 	// RouterOS API traffic for auto-setup lives only here and in the conn
 	// implementation (FR-56.4/FR-17.1).
 	//
-	// resolutions (v2 phase 2, FR-66.2) maps a PlanConflict.Key to "update" or
+	// resolutions (v2 phase 3, FR-66.2) maps a PlanConflict.Key to "update" or
 	// "keep"; any other value (including absent) means "abort" — an empty or
 	// nil map reproduces PRE-FR-66 behavior exactly (C1). "update" only ever
 	// turns a Resolvable conflict into a PlanItem that /sets the router's
@@ -207,7 +207,7 @@ type Adapter interface {
 	// re-validated conflict-free by the caller) and reports a per-item
 	// result. Callers stop issuing further items after the first failure.
 	ApplyAutoSetup(conn ROSConn, plan AutoSetupPlan) []ApplyResult
-	// ReadConfig reads the router's current RADIUS-relevant state (v2 phase 2,
+	// ReadConfig reads the router's current RADIUS-relevant state (v2 phase 3,
 	// FR-65). Pure print sentences, same ROSConn seam as PlanAutoSetup/
 	// DiscoverServices/CheckHealth — never writes. Vendor-specific paths/
 	// fields live only here (FR-17).
@@ -302,7 +302,7 @@ type ApplyResult struct {
 }
 
 // ConfigSnapshot is FR-65's read-only view of a router's current
-// RADIUS-relevant state (v2 phase 2, C2). Every field comes from a print
+// RADIUS-relevant state (v2 phase 3, C2). Every field comes from a print
 // sentence; nothing here is ever written.
 type ConfigSnapshot struct {
 	RadiusEntries   []RadiusEntryConfig

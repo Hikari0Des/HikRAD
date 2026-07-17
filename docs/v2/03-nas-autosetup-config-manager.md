@@ -51,13 +51,13 @@
 ## 5. AI kickoff prompt (paste into a fresh Claude Code session at repo root)
 
 ```text
-You are working in the HikRAD repo. v1 is complete; we are starting v2 phase 2: NAS auto-setup config manager + hotspot/PPPoE server management (PRD Decision 31). You work SOLO — no parallel agents; execute sequentially (vendor layer → API → panel; config manager before server management, which builds on it), committing in reviewable chunks.
+You are working in the HikRAD repo. v1 is complete; we are starting v2 phase 3: NAS auto-setup config manager + hotspot/PPPoE server management (PRD Decision 31). You work SOLO — no parallel agents; execute sequentially (vendor layer → API → panel; config manager before server management, which builds on it), committing in reviewable chunks.
 
 Read, in this order and nothing else yet: CLAUDE.md, docs/v2/phases/00-v2-execution-plan.md, docs/v2/03-nas-autosetup-config-manager.md, docs/prd/02-radius-nas-aaa.md FR-56 + FR-62, backend/internal/radius/autosetup_api.go, backend/internal/radius/vendor/mikrotik_autosetup.go, and the v2-1 phase brief's nas_services contract.
 
 Step 1 — Amend the docs (single commit): new FR rows in docs/PRD.md §6 + Decisions Log row (per-item modify-or-create supersedes the abort-only half of Decision 17 — additively, abort stays the default), update sub-PRD 02, docs/prd/00-index.md.
 
-Step 2 — Create docs/v2/phases/phase-v2-2-autosetup-config-manager/00-phase.md with frozen contracts (GET /nas/{id}/config response shape, plan-input request body, preview item states + resolution enum, hash coverage, nas_services management-mode column + server create/edit/adopt endpoint shapes) and the integration gate (fake-router unit matrix + a live-router checklist item incl. creating a real hotspot zone end-to-end; migration budget 0520–0529 — numbers are linear, take the next free ones). Scriptable gate items go into scripts/gate-v2-phase-2.sh.
+Step 2 — Create docs/v2/phases/phase-v2-3-autosetup-config-manager/00-phase.md with frozen contracts (GET /nas/{id}/config response shape, plan-input request body, preview item states + resolution enum, hash coverage, nas_services management-mode column + server create/edit/adopt endpoint shapes) and the integration gate (fake-router unit matrix + a live-router checklist item incl. creating a real hotspot zone end-to-end; migration budget 0520–0529 — numbers are linear, take the next free ones). Scriptable gate items go into scripts/gate-v2-phase-3.sh.
 
 Step 3 — Stop and present the phase brief for my confirmation before writing feature code.
 

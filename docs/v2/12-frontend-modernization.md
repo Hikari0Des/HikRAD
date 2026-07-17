@@ -1,4 +1,4 @@
-# v2-12 → phase v2-10 — Frontend modernization pass (runs LAST)
+# v2-12 — Frontend modernization pass (runs LAST)
 
 > Owner request 2026-07-17 (ex-v3.1, merged into v2 by PRD Decision 32, scope broadened the same day): "improve the frontend, make it more responsive, remove its bugs — like the legacy scrollbar showing when the web can't fit the screen — and **completely fix legacy scrollbars and dropdowns and fields and ticks etc.** to make them modernized." This phase deliberately runs **after every other UI-touching v2 phase** so nothing un-modernizes it afterwards.
 
@@ -35,13 +35,13 @@ Touches `frontend/panel/**`, `frontend/portal/**`, `frontend/shared/**` broadly 
 ## 5. AI kickoff prompt (paste into a fresh Claude Code session at repo root)
 
 ```text
-You are working in the HikRAD repo. We are starting v2 phase 10 — the LAST v2 phase: the frontend modernization pass (PRD Decision 32). Confirm every other v2 phase is complete before proceeding. You work SOLO — no parallel agents; execute sequentially (shared control set → panel adoption → portal adoption → responsive audit → polish sweep), committing in reviewable chunks per screen-group so regressions bisect cleanly.
+You are working in the HikRAD repo. We are starting v2 phase 12 — the LAST v2 phase: the frontend modernization pass (PRD Decision 32). Confirm every other v2 phase is complete before proceeding. You work SOLO — no parallel agents; execute sequentially (shared control set → panel adoption → portal adoption → responsive audit → polish sweep), committing in reviewable chunks per screen-group so regressions bisect cleanly.
 
 Read, in this order and nothing else yet: CLAUDE.md, docs/v2/phases/00-v2-execution-plan.md, docs/v2/12-frontend-modernization.md, frontend/panel/src/components/form/, frontend/shared/src/ui/, and docs/ops/known-issues.md (the 2026-07-17 layout row).
 
 Step 1 — Amend the docs (single commit): FR rows + Decisions Log row in docs/PRD.md, update sub-PRD 07 + any UI-owning sub-PRDs, docs/prd/00-index.md.
 
-Step 2 — Create docs/v2/phases/phase-v2-10-frontend-modernization/00-phase.md with frozen contracts (the control-set component API, the no-native-controls lint rule, the responsive matrix) and the integration gate (grep-gate green, 360px matrix, RTL + dark parity spot-checks, all existing suites green; no migrations). Scriptable items → scripts/gate-v2-phase-10.sh.
+Step 2 — Create docs/v2/phases/phase-v2-12-frontend-modernization/00-phase.md with frozen contracts (the control-set component API, the no-native-controls lint rule, the responsive matrix) and the integration gate (grep-gate green, 360px matrix, RTL + dark parity spot-checks, all existing suites green; no migrations). Scriptable items → scripts/gate-v2-phase-12.sh.
 
 Step 3 — Stop and present the phase brief for my confirmation before writing feature code.
 
