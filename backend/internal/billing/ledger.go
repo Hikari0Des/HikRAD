@@ -30,6 +30,12 @@ type ledgerEntry struct {
 	// (FR-68.1: every rate actually used is stamped so history never
 	// re-values); "" -> NULL for every other entry type.
 	CurrencyRateID string
+	// CostAtSale is the plan cost in force at the moment of a renewal (v2
+	// phase 9, FR-72.1), in the same Currency as Amount. nil -> NULL, meaning
+	// the plan had no recorded cost at that moment (never defaulted to 0 —
+	// FR-71.1's "unknown, not free" requirement). Set only by the renewal
+	// path; every other entry type leaves this nil.
+	CostAtSale *int64
 }
 
 // insertLedger appends one entry within tx and returns its id.
@@ -40,10 +46,10 @@ func insertLedger(ctx context.Context, tx pgx.Tx, e ledgerEntry) (string, error)
 	var id string
 	err := tx.QueryRow(ctx,
 		`INSERT INTO ledger_transactions
-		   (type, amount, currency, actor_manager_id, subscriber_id, source, reference, reverses_id, note, currency_rate_id)
-		 VALUES ($1, $2, $3, NULLIF($4,'')::uuid, NULLIF($5,'')::uuid, $6, $7, NULLIF($8,'')::uuid, $9, NULLIF($10,'')::uuid)
+		   (type, amount, currency, actor_manager_id, subscriber_id, source, reference, reverses_id, note, currency_rate_id, cost_at_sale)
+		 VALUES ($1, $2, $3, NULLIF($4,'')::uuid, NULLIF($5,'')::uuid, $6, $7, NULLIF($8,'')::uuid, $9, NULLIF($10,'')::uuid, $11)
 		 RETURNING id::text`,
-		e.Type, e.Amount, e.Currency, e.ActorManagerID, e.SubscriberID, e.Source, e.Reference, e.ReversesID, e.Note, e.CurrencyRateID,
+		e.Type, e.Amount, e.Currency, e.ActorManagerID, e.SubscriberID, e.Source, e.Reference, e.ReversesID, e.Note, e.CurrencyRateID, e.CostAtSale,
 	).Scan(&id)
 	return id, err
 }

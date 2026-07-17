@@ -66,18 +66,20 @@ func (m *Module) refundHandler(w http.ResponseWriter, r *http.Request) {
 	// currency, at no rate at all — read here, never re-resolved from today's
 	// profile price or today's rate table.
 	var (
-		origType     string
-		origAmount   int64
-		origCurrency string
-		origActor    *string
-		origSub      *string
-		origGross    int64
+		origType       string
+		origAmount     int64
+		origCurrency   string
+		origActor      *string
+		origSub        *string
+		origGross      int64
+		origCostAtSale *int64
 	)
 	err = tx.QueryRow(ctx,
 		`SELECT l.type, l.amount, l.currency, l.actor_manager_id::text, l.subscriber_id::text,
-		        COALESCE((SELECT amount FROM payments WHERE ledger_tx_id = l.id LIMIT 1), 0)
+		        COALESCE((SELECT amount FROM payments WHERE ledger_tx_id = l.id LIMIT 1), 0),
+		        l.cost_at_sale
 		   FROM ledger_transactions l WHERE l.id = $1::uuid`, in.LedgerTxID).
-		Scan(&origType, &origAmount, &origCurrency, &origActor, &origSub, &origGross)
+		Scan(&origType, &origAmount, &origCurrency, &origActor, &origSub, &origGross, &origCostAtSale)
 	if errors.Is(err, pgx.ErrNoRows) {
 		httpapi.Error(w, http.StatusNotFound, "not_found", "transaction not found")
 		return
@@ -126,8 +128,17 @@ func (m *Module) refundHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Reversing entry: negate the original balance effect. The unique reverses_id
-	// index rejects a second refund of the same tx (23505).
+	// Reversing entry: negate the original balance effect, and (v2 phase 9,
+	// FR-72.2) the original cost_at_sale too, so a refunded renewal's margin
+	// nets to zero the same way its amount already does — read from the
+	// original row, never re-resolved from today's cost history (same
+	// no-re-resolution posture as the currency itself, FR-69.5). The unique
+	// reverses_id index rejects a second refund of the same tx (23505).
+	var refundCostAtSale *int64
+	if origCostAtSale != nil {
+		neg := -*origCostAtSale
+		refundCostAtSale = &neg
+	}
 	refundID, err := insertLedger(ctx, tx, ledgerEntry{
 		Type:           "refund",
 		Amount:         -origAmount,
@@ -137,6 +148,7 @@ func (m *Module) refundHandler(w http.ResponseWriter, r *http.Request) {
 		Source:         "panel",
 		ReversesID:     in.LedgerTxID,
 		Note:           in.Reason,
+		CostAtSale:     refundCostAtSale,
 	})
 	if isUniqueViolation(err) {
 		httpapi.Error(w, http.StatusConflict, "already_refunded", "this transaction has already been refunded")

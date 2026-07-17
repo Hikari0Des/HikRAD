@@ -32,6 +32,12 @@ func (m *Module) Register(r chi.Router, d httpapi.Deps) {
 	r.With(auth.Require("reports.view")).Get("/api/v1/reports/settlement", m.settlementHandler)
 	r.With(auth.Require("reports.view")).Get("/api/v1/reports/subscribers", m.subscribersReportHandler)
 	r.With(auth.Require("reports.view")).Get("/api/v1/reports/usage", m.usageReportHandler)
+	// v2 phase 9 (FR-72.3/FR-73/FR-75, contract C9): per-plan margin, scoped
+	// per ScopeFilter (a reseller sees only their own rows, cost fields
+	// omitted entirely — see margin.go's own doc comment for the field-level
+	// cut on top of the row-level ScopeFilter cut).
+	r.With(auth.Require("reports.view")).Get("/api/v1/reports/margin", m.marginHandler)
+	r.With(auth.Require("reports.view")).Get("/api/v1/reports/margin/sites", m.siteMarginHandler)
 
 	// Internal service surface (unproxied, like billing's /internal/stats):
 	// the FR-48 daily-digest composition C's scheduler consumes.

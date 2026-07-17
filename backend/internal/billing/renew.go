@@ -220,23 +220,59 @@ func (m *Module) renewInTx(ctx context.Context, tx pgx.Tx, dbNow time.Time, p re
 	// Price resolution: subscriber override → profile (FR-19.2). An override's
 	// currency is always the profile's current currency (v2 phase 4, C6) —
 	// overriding into a different currency is out of scope for this phase.
+	// FR-76.1: this is the subscriber's own charge, completely unaffected by
+	// any reseller wholesale arrangement below.
 	price := resolvePrice(priceOverride, profPrice)
 
+	// v2 phase 9 / FR-72.1: the plan cost in force at this exact moment,
+	// stamped onto the ledger row below. nil (unknown), never 0, when the
+	// plan has no recorded cost yet (FR-71.1).
+	var costAtSale *int64
+	if cost, costCurrency, ok, err := resolveCost(ctx, tx, targetProfile, dbNow); err != nil {
+		return renewResult{}, err
+	} else if ok && costCurrency == profCurrency {
+		c := cost
+		costAtSale = &c
+	}
+	// A cost recorded in a different currency than the plan sells in is a
+	// display-only concern for reports (C1/C9) — never converted onto this
+	// column, so it is treated the same as "no cost recorded" here.
+
 	// Balance: lock the actor's balance row (in the profile's currency),
-	// enforce when required.
+	// enforce when required. v2 phase 9 / FR-76.2: when the acting manager is
+	// a reseller with a resolvable wholesale price for this profile (most
+	// specific per-subscriber override first, else their plan-wide price),
+	// THAT price debits their balance instead of the subscriber's retail
+	// price — the subscriber's own charge (`price`, and the payment/receipt
+	// below) is completely unaffected either way (FR-74.3).
+	balanceAmount := price
+	if p.chargeBalance {
+		if wp, wc, ok, err := resolveWholesale(ctx, tx, p.actorManagerID, targetProfile, p.subscriberID, dbNow); err != nil {
+			return renewResult{}, err
+		} else if ok && wc == profCurrency {
+			balanceAmount = wp
+		}
+	}
+
 	balanceDelta := int64(0)
 	if p.chargeBalance {
-		balanceDelta = -price
+		balanceDelta = -balanceAmount
 		bal, err := lockBalance(ctx, tx, p.actorManagerID, profCurrency)
 		if err != nil {
 			return renewResult{}, err
 		}
-		if p.enforceBalance && bal < price {
+		if p.enforceBalance && bal < balanceAmount {
 			return renewResult{}, errInsufficientFunds
 		}
 	}
 
-	// Ledger entry.
+	// Ledger entry: Amount is the actor's actual balance effect (wholesale
+	// when a reseller price resolved, retail otherwise) — the payment/receipt
+	// row below always records the subscriber's retail charge separately.
+	// This IS the "explicit pair" FR-74.3 requires: one ledger row (balance
+	// movement) + one payment row (customer billing), the same decoupled
+	// shape this renewal path has always had, now fed two different resolved
+	// numbers instead of one number feeding both.
 	txID, err := insertLedger(ctx, tx, ledgerEntry{
 		Type:           p.ledgerType,
 		Amount:         balanceDelta,
@@ -246,6 +282,7 @@ func (m *Module) renewInTx(ctx context.Context, tx pgx.Tx, dbNow time.Time, p re
 		Source:         p.source,
 		Reference:      p.reference,
 		Note:           p.note,
+		CostAtSale:     costAtSale,
 	})
 	if err != nil {
 		return renewResult{}, err

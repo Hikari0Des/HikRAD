@@ -106,6 +106,16 @@ func (m *Module) Register(r chi.Router, d httpapi.Deps) {
 	r.With(auth.Require(permCardPaymentsVerify)).Post("/api/v1/card-payments/{id}/approve", m.approveCardPaymentHandler)
 	r.With(auth.Require(permCardPaymentsVerify)).Post("/api/v1/card-payments/{id}/reject", m.rejectCardPaymentHandler)
 
+	// v2 phase 9 (FR-71/73/74, contract C7): plan cost, overheads, reseller
+	// wholesale pricing. All three are admin-only writes; reads are admin-only
+	// too (business-cost/reseller data, never exposed to a reseller — C8).
+	r.With(auth.Require("profiles.edit")).Post("/api/v1/profiles/{id}/cost", m.createProfileCostHandler)
+	r.With(auth.Require("profiles.edit")).Get("/api/v1/profiles/{id}/cost-history", m.listProfileCostHistoryHandler)
+	r.With(auth.Require("overheads.manage")).Get("/api/v1/overheads", m.listOverheadsHandler)
+	r.With(auth.Require("overheads.manage")).Post("/api/v1/overheads", m.createOverheadHandler)
+	r.With(auth.Require("reseller_prices.manage")).Get("/api/v1/reseller-prices", m.listResellerPricesHandler)
+	r.With(auth.Require("reseller_prices.manage")).Post("/api/v1/reseller-prices", m.createResellerPriceHandler)
+
 	wireOnce.Do(func() {
 		// Reconciliation worker (C3): polls gateway QueryStatus for intents
 		// stuck pending/confirmed. Runs for the process lifetime.
