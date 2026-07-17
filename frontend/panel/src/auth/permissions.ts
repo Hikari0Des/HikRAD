@@ -32,8 +32,9 @@ export const PERM_SETTINGS_VIEW = 'settings.view'
 export const PERM_SETTINGS_EDIT = 'settings.edit'
 export const PERM_LICENSE_MANAGE = 'license.manage'
 export const PERM_BACKUPS_VIEW = 'backups.view'
-export const PERM_CARD_PAYMENTS_VERIFY = 'card_payments.verify'
-export const PERM_GATEWAYS_MANAGE = 'payment_gateways.manage'
+/** v2-2 (FR-79.2/77.1): generalizes card_payments.verify to every method. */
+export const PERM_PAYMENT_TICKETS_VERIFY = 'payment_tickets.verify'
+export const PERM_PAYMENT_PROVIDERS_MANAGE = 'payment_providers.manage'
 export const PERM_SUBSCRIBERS_CREATE = 'subscribers.create'
 export const PERM_NAS_EDIT = 'nas.edit'
 

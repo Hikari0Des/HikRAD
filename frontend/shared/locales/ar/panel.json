@@ -48,7 +48,9 @@
     "comingSoon": "قريبًا",
     "menu": "فتح القائمة",
     "close": "إغلاق القائمة",
-    "cardPayments": "مدفوعات الكروت",
+    "paymentTickets": "طلبات الدفع",
+    "paymentProviders": "مزوّدو الدفع",
+    "myPaymentMethods": "طرق الدفع الخاصة بي",
     "reports": "التقارير",
     "currencyRates": "أسعار الصرف",
     "pricingAdmin": "المصاريف وأسعار الموزّعين",
@@ -1118,7 +1120,6 @@
       "branding": "الهوية",
       "notifications": "الإشعارات",
       "billing": "الفوترة",
-      "gateways": "بوابات الدفع",
       "backups": "النسخ الاحتياطي",
       "dataRetention": "الاحتفاظ بالبيانات",
       "remoteAccess": "الوصول عن بُعد",
@@ -1191,17 +1192,8 @@
       "cardPayments": "مدفوعات الكروت",
       "cardTypes": "أنواع الكروت",
       "cardTypesHint": "مفصولة بفواصل، مثل zain, asiacell.",
-      "cooldownDays": "فترة الانتظار بعد الرفض (أيام)",
       "cardPaymentsPending": "غير متاح بعد",
       "cardPaymentsPendingBody": "يحتاج هذا القسم إلى مجموعة إعدادات في الخلفية لم تُشحن بعد."
-    },
-    "gateways": {
-      "enabled": "مفعّلة",
-      "configured": "مُهيّأة",
-      "notConfigured": "غير مُهيّأة",
-      "merchantId": "معرّف التاجر",
-      "secretKey": "المفتاح السري",
-      "hint": "mock متاحة دائمًا؛ ZainCash يحتاج حساب تاجر."
     },
     "backups": {
       "scheduleHour": "ساعة النسخ الاحتياطي (يوميًا)",
@@ -1233,42 +1225,84 @@
       "tokenSet": "تم ضبط رمز. أدخل رمزًا جديدًا لاستبداله."
     }
   },
-  "cardPayments": {
-    "title": "مدفوعات الكروت",
+  "paymentTickets": {
+    "title": "طلبات الدفع",
     "filter": "تصفية",
     "filter.all": "الكل",
+    "scope": "النطاق",
+    "scope.mine": "طابوري",
+    "scope.all": "كل الوكلاء",
     "state": {
       "pending": "قيد الانتظار",
       "approved": "موافَق عليه",
       "rejected": "مرفوض"
     },
+    "method": {
+      "provider": "تحويل بنكي/محفظة",
+      "scratchCard": "كرت خدش",
+      "voucher": "قسيمة"
+    },
     "empty": {
-      "title": "لا توجد مدفوعات كروت",
-      "body": "تظهر هنا طلبات مدفوعات الكروت للمراجعة."
+      "title": "لا توجد طلبات دفع",
+      "body": "تظهر هنا طلبات الدفع للمراجعة."
     },
     "col": {
       "subscriber": "المشترك",
-      "profile": "الباقة",
-      "cardType": "نوع الكرت",
+      "method": "الطريقة",
+      "amount": "المبلغ",
       "waiting": "الانتظار",
       "decided": "تاريخ القرار"
     },
     "waitingMinutes": "{n} د",
     "waitingHours": "{h} س {m} د",
+    "review": "مراجعة",
     "reveal": "إظهار الرمز",
     "approve": "موافقة",
     "reject": "رفض",
-    "revealTitle": "إظهار رمز الكرت",
-    "revealConfirm": "يُسجَّل إظهار الرمز في سجل التدقيق. المتابعة؟",
-    "revealedNote": "يظهر هذا الرمز مرة واحدة فقط.",
-    "approveTitle": "الموافقة على الدفع",
-    "approveConfirm": "الموافقة على هذا الطلب لباقة {profile}؟",
+    "detailTitle": "طلب الدفع",
+    "transferReference": "الرقم المرجعي للتحويل",
+    "note": "ملاحظة",
+    "attachments": "المرفقات",
+    "attachmentFile": "ملف",
+    "timeline": "المخطط الزمني",
+    "event": {
+      "submitted": "أُرسل",
+      "attachmentAdded": "أُضيف مرفق",
+      "attachmentFailed": "فشل رفع المرفق",
+      "trialGranted": "مُنحت التجربة",
+      "approved": "تمت الموافقة",
+      "rejected": "رُفض"
+    },
     "approveDone": "تمت الموافقة على الدفع.",
-    "approveResult": "تاريخ الانتهاء الجديد: {at}",
-    "rejectTitle": "رفض الدفع",
     "rejectConsequence": "الرفض ينهي تجربة المشترك المجانية ويرسل له إشعارًا.",
     "rejectReason": "السبب",
     "rejectDone": "تم رفض الدفع."
+  },
+  "paymentProviders": {
+    "title": "مزوّدو الدفع",
+    "subtitle": "الكتالوج الذي يهيّئ عليه كل مدير حسابه الخاص لاستلام الدفعات.",
+    "empty": "لا يوجد مزوّدو دفع بعد.",
+    "name": "الاسم",
+    "instructions": "التعليمات",
+    "enabled": "مفعّل",
+    "disabled": "معطّل",
+    "add": "إضافة مزوّد",
+    "created": "تم إنشاء المزوّد."
+  },
+  "myPaymentMethods": {
+    "title": "طرق الدفع الخاصة بي",
+    "subtitle": "ما يراه مشتركوك في شاشة الدفع — فقط ما تفعّله وتُهيّئه هنا.",
+    "builtinTitle": "الطرق المدمجة",
+    "builtin": {
+      "scratch_card": "كرت خدش",
+      "voucher": "قسيمة"
+    },
+    "noProviders": "لا يوجد مزوّدو دفع بعد. اطلب من المسؤول إضافة واحد.",
+    "enableProvider": "تفعيل لمشتركيّ",
+    "accountMissing": "مفعّل لكن لا يوجد حساب مُهيّأ — لن يراه المشتركون بعد",
+    "accountDetails": "تفاصيل الحساب (تظهر للمشتركين)",
+    "accountDetailsHint": "مثال: رقم هاتف، أو IBAN، أو معرّف محفظة.",
+    "instructionsOverride": "التعليمات (تجاوز اختياري)"
   },
   "import": {
     "title": "استيراد المشتركين",

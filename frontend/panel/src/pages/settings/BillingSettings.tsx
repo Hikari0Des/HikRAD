@@ -110,11 +110,12 @@ export function BillingSettings() {
 }
 
 /**
- * Card-payment types + rejection cooldown (Decision 22 amendment). Backend
- * key prefix is `card_payments.*` (internal/billing/cardpay.go) but that group
- * is not yet in setupapi's settingsGroups allowlist — this panel calls the
- * logical group name so it activates the moment Agent A wires it up; until
- * then GET/PUT 404 with `not_found` and this section shows a pending notice.
+ * Card-payment types (v2-2 amendment: the reject_cooldown_days field is
+ * retired — FR-78.3's trialEligible state machine replaced FR-59.4's fixed
+ * cooldown entirely, so the setting it once configured no longer exists).
+ * Backend key prefix is `card_payments.*`; until the settings group is
+ * wired up GET/PUT 404 with `not_found` and this section shows a pending
+ * notice.
  */
 function CardPaymentSettings() {
   const t = useT()
@@ -124,16 +125,14 @@ function CardPaymentSettings() {
   const pending = g.loadError instanceof ApiError && g.loadError.status === 404
 
   const types = (g.values.types as string[] | undefined) ?? []
-  const cooldown = (g.values.reject_cooldown_days as number | undefined) ?? 7
 
-  async function submit(typesText: string, cooldownText: string) {
+  async function submit(typesText: string) {
     await g.save(
       {
         types: typesText
           .split(',')
           .map((s) => s.trim())
           .filter(Boolean),
-        reject_cooldown_days: Number(cooldownText) || 7,
       },
       t('settings.saved'),
       t('common.error.body'),
@@ -158,7 +157,6 @@ function CardPaymentSettings() {
     <CardPaymentFields
       canEdit={canEdit}
       initialTypes={types.join(', ')}
-      initialCooldown={String(cooldown)}
       saving={g.saving}
       errors={g.errors}
       onSubmit={submit}
@@ -169,21 +167,18 @@ function CardPaymentSettings() {
 function CardPaymentFields({
   canEdit,
   initialTypes,
-  initialCooldown,
   saving,
   errors,
   onSubmit,
 }: {
   canEdit: boolean
   initialTypes: string
-  initialCooldown: string
   saving: boolean
   errors: Record<string, string>
-  onSubmit: (typesText: string, cooldownText: string) => void
+  onSubmit: (typesText: string) => void
 }) {
   const t = useT()
   const [typesText, setTypesText] = useState(initialTypes)
-  const [cooldown, setCooldown] = useState(initialCooldown)
 
   return (
     <div className="mt-8 border-t border-surface-sunken pt-6">
@@ -201,17 +196,8 @@ function CardPaymentFields({
             onChange={(e) => setTypesText(e.target.value)}
           />
         </Field>
-        <Field label={t('settings.billing.cooldownDays')} error={errors.reject_cooldown_days}>
-          <TextInput
-            type="number"
-            dir="ltr"
-            disabled={!canEdit}
-            value={cooldown}
-            onChange={(e) => setCooldown(e.target.value)}
-          />
-        </Field>
         {canEdit ? (
-          <Button disabled={saving} onClick={() => onSubmit(typesText, cooldown)}>
+          <Button disabled={saving} onClick={() => onSubmit(typesText)}>
             {saving ? t('ui.working') : t('ui.save')}
           </Button>
         ) : null}

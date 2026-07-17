@@ -3,11 +3,12 @@ import { NavLink } from 'react-router-dom'
 
 import { useT } from '@hikrad/shared'
 
-import { listCardPayments } from '../api/cardpayments'
+import { listTickets } from '../api/paymentTickets'
 import { useAuth } from '../auth/AuthContext'
 import {
   PERM_AUDIT_VIEW,
-  PERM_CARD_PAYMENTS_VERIFY,
+  PERM_PAYMENT_TICKETS_VERIFY,
+  PERM_PAYMENT_PROVIDERS_MANAGE,
   PERM_LIVE_VIEW,
   PERM_MANAGERS_VIEW,
   PERM_MONITORING_VIEW,
@@ -51,7 +52,13 @@ const NAV_GROUPS: readonly NavGroup[] = [
     items: [
       { key: 'nav.ledger', to: '/ledger', perm: PERM_REPORTS_VIEW },
       { key: 'nav.vouchers', to: '/vouchers', perm: PERM_VOUCHERS_VIEW },
-      { key: 'nav.cardPayments', to: '/card-payments', perm: PERM_CARD_PAYMENTS_VERIFY },
+      { key: 'nav.paymentTickets', to: '/payment-tickets', perm: PERM_PAYMENT_TICKETS_VERIFY },
+      {
+        key: 'nav.paymentProviders',
+        to: '/payment-providers',
+        perm: PERM_PAYMENT_PROVIDERS_MANAGE,
+      },
+      { key: 'nav.myPaymentMethods', to: '/my-payment-methods' },
       { key: 'nav.reports', to: '/reports', perm: PERM_REPORTS_VIEW },
       { key: 'nav.currencyRates', to: '/currency-rates', perm: PERM_TOPUP },
       { key: 'nav.pricingAdmin', to: '/pricing-admin', perm: PERM_OVERHEADS_MANAGE },
@@ -81,14 +88,15 @@ const NAV_GROUPS: readonly NavGroup[] = [
   },
 ]
 
-/** Polls the pending card-payment count for the nav badge (task 2c). */
-function usePendingCardPaymentCount(enabled: boolean): number {
+/** Polls the pending payment-ticket count for the nav badge (task 2c,
+ * generalized in v2-2 from card-payments to every method). */
+function usePendingTicketCount(enabled: boolean): number {
   const [count, setCount] = useState(0)
   useEffect(() => {
     if (!enabled) return
     let cancelled = false
     function load() {
-      listCardPayments('pending')
+      listTickets({ scope: 'mine', state: 'pending', limit: 100 })
         .then((res) => {
           if (!cancelled) setCount(res.items.length)
         })
@@ -109,7 +117,7 @@ function usePendingCardPaymentCount(enabled: boolean): number {
 export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const t = useT()
   const { can } = useAuth()
-  const pendingCardPayments = usePendingCardPaymentCount(can(PERM_CARD_PAYMENTS_VERIFY))
+  const pendingTickets = usePendingTicketCount(can(PERM_PAYMENT_TICKETS_VERIFY))
 
   return (
     <div className="flex h-full flex-col">
@@ -143,9 +151,9 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
                       }
                     >
                       <span>{t(item.key)}</span>
-                      {item.to === '/card-payments' && pendingCardPayments > 0 ? (
+                      {item.to === '/payment-tickets' && pendingTickets > 0 ? (
                         <span className="rounded-full bg-danger px-1.5 py-0.5 text-xs font-medium text-ink-inverse">
-                          {pendingCardPayments}
+                          {pendingTickets}
                         </span>
                       ) : null}
                     </NavLink>

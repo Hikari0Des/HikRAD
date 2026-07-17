@@ -48,7 +48,9 @@
     "comingSoon": "Coming soon",
     "menu": "Open menu",
     "close": "Close menu",
-    "cardPayments": "Card payments",
+    "paymentTickets": "Payment tickets",
+    "paymentProviders": "Payment providers",
+    "myPaymentMethods": "My payment methods",
     "reports": "Reports",
     "currencyRates": "Currency rates",
     "pricingAdmin": "Overheads & reseller pricing",
@@ -1118,7 +1120,6 @@
       "branding": "Branding",
       "notifications": "Notifications",
       "billing": "Billing",
-      "gateways": "Payment gateways",
       "backups": "Backups",
       "dataRetention": "Data retention",
       "remoteAccess": "Remote access",
@@ -1191,17 +1192,8 @@
       "cardPayments": "Card payments",
       "cardTypes": "Card types",
       "cardTypesHint": "Comma-separated, e.g. zain, asiacell.",
-      "cooldownDays": "Cooldown after rejection (days)",
       "cardPaymentsPending": "Not available yet",
       "cardPaymentsPendingBody": "This section needs a backend settings group that hasn't shipped yet."
-    },
-    "gateways": {
-      "enabled": "Enabled",
-      "configured": "Configured",
-      "notConfigured": "Not configured",
-      "merchantId": "Merchant ID",
-      "secretKey": "Secret key",
-      "hint": "mock always ships; ZainCash needs a merchant account."
     },
     "backups": {
       "scheduleHour": "Backup hour (daily)",
@@ -1233,42 +1225,84 @@
       "tokenSet": "A token is set. Enter a new one to replace it."
     }
   },
-  "cardPayments": {
-    "title": "Card payments",
+  "paymentTickets": {
+    "title": "Payment tickets",
     "filter": "Filter",
     "filter.all": "All",
+    "scope": "Scope",
+    "scope.mine": "My queue",
+    "scope.all": "All agents",
     "state": {
       "pending": "Pending",
       "approved": "Approved",
       "rejected": "Rejected"
     },
+    "method": {
+      "provider": "Bank/wallet transfer",
+      "scratchCard": "Scratch card",
+      "voucher": "Voucher"
+    },
     "empty": {
-      "title": "No card payments",
-      "body": "Card-payment submissions appear here for review."
+      "title": "No payment tickets",
+      "body": "Payment submissions appear here for review."
     },
     "col": {
       "subscriber": "Subscriber",
-      "profile": "Profile",
-      "cardType": "Card type",
+      "method": "Method",
+      "amount": "Amount",
       "waiting": "Waiting",
       "decided": "Decided"
     },
     "waitingMinutes": "{n}m",
     "waitingHours": "{h}h {m}m",
+    "review": "Review",
     "reveal": "Reveal code",
     "approve": "Approve",
     "reject": "Reject",
-    "revealTitle": "Reveal card code",
-    "revealConfirm": "Revealing the code is recorded in the audit log. Continue?",
-    "revealedNote": "This code is shown only this once.",
-    "approveTitle": "Approve payment",
-    "approveConfirm": "Approve this submission for the {profile} plan?",
+    "detailTitle": "Payment ticket",
+    "transferReference": "Transfer reference",
+    "note": "Note",
+    "attachments": "Attachments",
+    "attachmentFile": "File",
+    "timeline": "Timeline",
+    "event": {
+      "submitted": "Submitted",
+      "attachmentAdded": "Attachment added",
+      "attachmentFailed": "Attachment upload failed",
+      "trialGranted": "Trial granted",
+      "approved": "Approved",
+      "rejected": "Rejected"
+    },
     "approveDone": "Payment approved.",
-    "approveResult": "New expiry: {at}",
-    "rejectTitle": "Reject payment",
     "rejectConsequence": "Rejecting expires the subscriber's trial and notifies them.",
     "rejectReason": "Reason",
     "rejectDone": "Payment rejected."
+  },
+  "paymentProviders": {
+    "title": "Payment providers",
+    "subtitle": "The catalog every manager configures their own receiving account against.",
+    "empty": "No payment providers yet.",
+    "name": "Name",
+    "instructions": "Instructions",
+    "enabled": "Enabled",
+    "disabled": "Disabled",
+    "add": "Add provider",
+    "created": "Provider created."
+  },
+  "myPaymentMethods": {
+    "title": "My payment methods",
+    "subtitle": "What your subscribers see on their Pay screen — only what you enable and configure here.",
+    "builtinTitle": "Built-in methods",
+    "builtin": {
+      "scratch_card": "Scratch card",
+      "voucher": "Voucher"
+    },
+    "noProviders": "No payment providers are set up yet. Ask an admin to add one.",
+    "enableProvider": "Enable for my subscribers",
+    "accountMissing": "Enabled but no account set — subscribers won't see this yet",
+    "accountDetails": "Account details (shown to subscribers)",
+    "accountDetailsHint": "e.g. phone number, IBAN, or wallet ID.",
+    "instructionsOverride": "Instructions (optional override)"
   },
   "import": {
     "title": "Import subscribers",

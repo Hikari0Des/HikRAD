@@ -5,7 +5,8 @@ import { RequireAuth } from './auth/AuthContext'
 import { RequirePerm } from './auth/RequirePerm'
 import {
   PERM_AUDIT_VIEW,
-  PERM_CARD_PAYMENTS_VERIFY,
+  PERM_PAYMENT_TICKETS_VERIFY,
+  PERM_PAYMENT_PROVIDERS_MANAGE,
   PERM_LIVE_VIEW,
   PERM_MANAGERS_VIEW,
   PERM_MONITORING_VIEW,
@@ -25,10 +26,12 @@ import { DashboardPage } from './pages/DashboardPage'
 import { LoginPage } from './pages/LoginPage'
 import { NotFoundPage } from './pages/NotFoundPage'
 import { RtlSmokePage } from './pages/RtlSmokePage'
-import { CardPaymentsPage } from './pages/billing/CardPaymentsPage'
 import { CurrencyRatesPage } from './pages/billing/CurrencyRatesPage'
 import { LedgerPage } from './pages/billing/LedgerPage'
+import { MyPaymentMethodsPage } from './pages/billing/MyPaymentMethodsPage'
+import { PaymentTicketsPage } from './pages/billing/PaymentTicketsPage'
 import { PricingAdminPage } from './pages/billing/PricingAdminPage'
+import { ProviderCatalogPage } from './pages/billing/ProviderCatalogPage'
 import { VouchersPage } from './pages/billing/VouchersPage'
 import { ImportWizardPage } from './pages/import/ImportWizardPage'
 import { LicensePage } from './pages/license/LicensePage'
@@ -89,9 +92,14 @@ export function App() {
           <Route path="ledger" element={guard(PERM_REPORTS_VIEW, <LedgerPage />)} />
           <Route path="vouchers" element={guard(PERM_VOUCHERS_VIEW, <VouchersPage />)} />
           <Route
-            path="card-payments"
-            element={guard(PERM_CARD_PAYMENTS_VERIFY, <CardPaymentsPage />)}
+            path="payment-tickets"
+            element={guard(PERM_PAYMENT_TICKETS_VERIFY, <PaymentTicketsPage />)}
           />
+          <Route
+            path="payment-providers"
+            element={guard(PERM_PAYMENT_PROVIDERS_MANAGE, <ProviderCatalogPage />)}
+          />
+          <Route path="my-payment-methods" element={<MyPaymentMethodsPage />} />
           <Route path="currency-rates" element={guard(PERM_TOPUP, <CurrencyRatesPage />)} />
           <Route
             path="pricing-admin"

@@ -7,7 +7,6 @@ import { BackupsSettings } from './BackupsSettings'
 import { BillingSettings } from './BillingSettings'
 import { BrandingSettings } from './BrandingSettings'
 import { DataRetentionSettings } from './DataRetentionSettings'
-import { GatewaySettings } from './GatewaySettings'
 import { LocaleSettings } from './LocaleSettings'
 import { NotificationsSettings } from './NotificationsSettings'
 import { RemoteAccessSettings } from './RemoteAccessSettings'
@@ -18,7 +17,6 @@ const TABS = [
   { to: 'branding', key: 'settings.tab.branding' },
   { to: 'notifications', key: 'settings.tab.notifications' },
   { to: 'billing', key: 'settings.tab.billing' },
-  { to: 'gateways', key: 'settings.tab.gateways' },
   { to: 'backups', key: 'settings.tab.backups' },
   { to: 'data-retention', key: 'settings.tab.dataRetention' },
   { to: 'remote-access', key: 'settings.tab.remoteAccess' },
@@ -56,7 +54,6 @@ export function SettingsPage() {
             <Route path="branding" element={<BrandingSettings />} />
             <Route path="notifications" element={<NotificationsSettings />} />
             <Route path="billing" element={<BillingSettings />} />
-            <Route path="gateways" element={<GatewaySettings />} />
             <Route path="backups" element={<BackupsSettings />} />
             <Route path="data-retention" element={<DataRetentionSettings />} />
             <Route path="remote-access" element={<RemoteAccessSettings />} />
