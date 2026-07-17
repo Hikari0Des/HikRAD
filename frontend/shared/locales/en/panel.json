@@ -50,6 +50,7 @@
     "close": "Close menu",
     "cardPayments": "Card payments",
     "reports": "Reports",
+    "currencyRates": "Currency rates",
     "import": "Import subscribers",
     "settings": "Settings",
     "license": "License"
@@ -614,6 +615,30 @@
       "balance": "Balance",
       "note": "Note"
     }
+  },
+  "currencyRates": {
+    "title": "Currency rates",
+    "subtitle": "Rates are entered by hand — HikRAD never fetches a live exchange rate.",
+    "from": "From",
+    "to": "To",
+    "rate": "Rate",
+    "rateHint": "1 unit of \"From\" equals this many units of \"To\".",
+    "addRate": "Add rate",
+    "rateCreated": "Rate added.",
+    "table": {
+      "title": "Rate history",
+      "pair": "Pair",
+      "rate": "Rate",
+      "effectiveFrom": "Effective from",
+      "empty": "No rates entered yet."
+    },
+    "exchange": {
+      "title": "Exchange",
+      "amount": "Amount",
+      "submit": "Exchange",
+      "noRate": "No rate entered for this pair yet — add one below."
+    },
+    "exchangeDone": "Exchanged."
   },
   "vouchers": {
     "title": "Vouchers",

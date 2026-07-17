@@ -18,6 +18,7 @@ import {
   PERM_SETTINGS_VIEW,
   PERM_SUBSCRIBERS_CREATE,
   PERM_SUBSCRIBERS_VIEW,
+  PERM_TOPUP,
   PERM_VOUCHERS_VIEW,
 } from '../auth/permissions'
 
@@ -51,6 +52,7 @@ const NAV_GROUPS: readonly NavGroup[] = [
       { key: 'nav.vouchers', to: '/vouchers', perm: PERM_VOUCHERS_VIEW },
       { key: 'nav.cardPayments', to: '/card-payments', perm: PERM_CARD_PAYMENTS_VERIFY },
       { key: 'nav.reports', to: '/reports', perm: PERM_REPORTS_VIEW },
+      { key: 'nav.currencyRates', to: '/currency-rates', perm: PERM_TOPUP },
     ],
   },
   {

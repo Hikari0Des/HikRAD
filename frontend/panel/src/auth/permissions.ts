@@ -43,6 +43,8 @@ export const PERM_EXPORT = 'export'
 export const PERM_RENEW = 'renew'
 export const PERM_TOPUP = 'topup'
 export const PERM_REFUND = 'refund'
+/** v2 phase 4 (FR-68.3): rate creation is admin-only, an append-only audit trail. */
+export const PERM_CURRENCY_RATES_MANAGE = 'currency_rates.manage'
 
 const WILDCARD = '*'
 const ROLE_ADMIN = 'admin'
