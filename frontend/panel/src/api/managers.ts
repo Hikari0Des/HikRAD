@@ -11,6 +11,7 @@ export interface ManagerView {
   role: string
   role_id?: string | null
   scoped: boolean
+  disabled?: boolean
   totp_enabled?: boolean
   created_at: string
 }
@@ -32,9 +33,17 @@ export function createManager(body: ManagerCreate): Promise<ManagerView> {
 
 export function updateManager(
   id: string,
-  body: { role?: string; scoped?: boolean; password?: string },
+  body: { role?: string; scoped?: boolean; password?: string; disabled?: boolean },
 ): Promise<ManagerView> {
   return request<ManagerView>(`/managers/${id}`, { method: 'PUT', body })
+}
+
+/**
+ * Hard-delete a manager. The server refuses with 409 codes the page maps to
+ * messages: cannot_remove_self, last_admin, has_history (→ disable instead).
+ */
+export function deleteManager(id: string): Promise<void> {
+  return request<void>(`/managers/${id}`, { method: 'DELETE' })
 }
 
 export function unlockManager(id: string): Promise<void> {

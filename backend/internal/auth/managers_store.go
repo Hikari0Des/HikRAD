@@ -17,6 +17,7 @@ type managerAuthRow struct {
 	PasswordHash string
 	Role         string
 	Scoped       bool
+	Disabled     bool
 	// TOTP + 2FA-enforcement fields (FR-28.1), loaded for the login flow.
 	TOTPEnabled    bool
 	TOTPSecretEnc  []byte
@@ -30,18 +31,19 @@ type managerView struct {
 	Role        string    `json:"role"`
 	RoleID      *string   `json:"role_id"`
 	Scoped      bool      `json:"scoped"`
+	Disabled    bool      `json:"disabled"`
 	TOTPEnabled bool      `json:"totp_enabled"`
 	CreatedAt   time.Time `json:"created_at"`
 }
 
-const managerAuthCols = `m.id::text, m.username::text, m.password_hash, m.role, m.scoped,
+const managerAuthCols = `m.id::text, m.username::text, m.password_hash, m.role, m.scoped, m.disabled,
 	 m.totp_enabled, m.totp_secret_enc, COALESCE(r.require_2fa, false)`
 
 func scanManagerAuth(row interface {
 	Scan(dest ...any) error
 }) (*managerAuthRow, error) {
 	var m managerAuthRow
-	if err := row.Scan(&m.ID, &m.Username, &m.PasswordHash, &m.Role, &m.Scoped,
+	if err := row.Scan(&m.ID, &m.Username, &m.PasswordHash, &m.Role, &m.Scoped, &m.Disabled,
 		&m.TOTPEnabled, &m.TOTPSecretEnc, &m.RoleRequire2FA); err != nil {
 		return nil, err
 	}
@@ -72,14 +74,14 @@ func updatePasswordHash(ctx context.Context, db *pgxpool.Pool, id, hash string) 
 // managerViewCols is aliased for SELECTs over `managers m`; managerViewColsRet
 // is the same list unqualified, for INSERT/UPDATE ... RETURNING (no alias in
 // scope there). Both scan in the order scanManagerView expects.
-const managerViewCols = `m.id::text, m.username::text, m.role, m.role_id::text, m.scoped, m.totp_enabled, m.created_at`
-const managerViewColsRet = `id::text, username::text, role, role_id::text, scoped, totp_enabled, created_at`
+const managerViewCols = `m.id::text, m.username::text, m.role, m.role_id::text, m.scoped, m.disabled, m.totp_enabled, m.created_at`
+const managerViewColsRet = `id::text, username::text, role, role_id::text, scoped, disabled, totp_enabled, created_at`
 
 func scanManagerView(row interface {
 	Scan(dest ...any) error
 }) (managerView, error) {
 	var v managerView
-	err := row.Scan(&v.ID, &v.Username, &v.Role, &v.RoleID, &v.Scoped, &v.TOTPEnabled, &v.CreatedAt)
+	err := row.Scan(&v.ID, &v.Username, &v.Role, &v.RoleID, &v.Scoped, &v.Disabled, &v.TOTPEnabled, &v.CreatedAt)
 	v.CreatedAt = v.CreatedAt.UTC()
 	return v, err
 }
@@ -126,6 +128,44 @@ func updateManagerRoleScope(ctx context.Context, db *pgxpool.Pool, id, role stri
 		  WHERE id = $1::uuid
 		 RETURNING `+managerViewColsRet,
 		id, role, scoped))
+}
+
+// setManagerDisabled flips the disabled flag, returning the new view. Session
+// revocation on disable is the caller's job.
+func setManagerDisabled(ctx context.Context, db *pgxpool.Pool, id string, disabled bool) (managerView, error) {
+	return scanManagerView(db.QueryRow(ctx,
+		`UPDATE managers SET disabled = $2 WHERE id = $1::uuid
+		 RETURNING `+managerViewColsRet, id, disabled))
+}
+
+// deleteManager hard-deletes a manager row. Sessions/overrides/allowlist rows
+// cascade; subscriber ownership and voucher attribution SET NULL. A manager
+// with ledger history cannot be deleted at all: the ledger's append-only
+// trigger rejects the FK's SET NULL update (see migration 0413's comment) —
+// callers map that error to a "disable instead" response.
+func deleteManager(ctx context.Context, db *pgxpool.Pool, id string) error {
+	_, err := db.Exec(ctx, `DELETE FROM managers WHERE id = $1::uuid`, id)
+	return err
+}
+
+// otherActiveManagerAdminExists reports whether at least one manager other
+// than `excludeID` is enabled and can administer managers (via role wildcard /
+// managers.edit, a granted override, or the legacy admin role text). It backs
+// the "never remove or disable the last admin" guard: the check is deliberately
+// permissive in what counts as an admin — the guard must never leave zero.
+func otherActiveManagerAdminExists(ctx context.Context, db *pgxpool.Pool, excludeID string) (bool, error) {
+	var exists bool
+	err := db.QueryRow(ctx,
+		`SELECT EXISTS(
+		    SELECT 1 FROM managers m
+		     WHERE m.id <> $1::uuid AND NOT m.disabled
+		       AND ( m.role = 'admin'
+		          OR EXISTS (SELECT 1 FROM role_permissions rp
+		                      WHERE rp.role_id = m.role_id AND rp.permission IN ('*','managers.edit'))
+		          OR EXISTS (SELECT 1 FROM manager_permission_overrides o
+		                      WHERE o.manager_id = m.id AND o.granted AND o.permission IN ('*','managers.edit'))))`,
+		excludeID).Scan(&exists)
+	return exists, err
 }
 
 // roleExists reports whether a role with the given name exists.

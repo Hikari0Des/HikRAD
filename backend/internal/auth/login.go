@@ -80,7 +80,15 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Password OK. IP allowlist (FR-30, AC-30a) is enforced before anything is
+	// Password OK. A disabled account is refused before anything is issued;
+	// saying so openly is fine — the caller already proved the password.
+	if m.Disabled {
+		_ = AuditActor(ctx, m.ID, ip, ua, "auth.login_disabled", "manager", m.ID, nil, nil)
+		httpapi.Error(w, http.StatusForbidden, "account_disabled", "this account is disabled")
+		return
+	}
+
+	// IP allowlist (FR-30, AC-30a) is enforced before anything is
 	// issued: a correct password from a disallowed network is still refused.
 	allow, err := allowlistCIDRs(ctx, svc.db, m.ID)
 	if err != nil {
@@ -259,6 +267,12 @@ func refreshHandler(w http.ResponseWriter, r *http.Request) {
 
 	mgr, err := lookupManagerByID(ctx, svc.db, managerID)
 	if err != nil {
+		httpapi.Error(w, http.StatusUnauthorized, "invalid_token", "session is no longer valid")
+		return
+	}
+	// Disable revokes sessions, but a refresh racing the revocation must not
+	// resurrect one.
+	if mgr.Disabled {
 		httpapi.Error(w, http.StatusUnauthorized, "invalid_token", "session is no longer valid")
 		return
 	}

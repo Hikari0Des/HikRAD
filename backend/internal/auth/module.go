@@ -91,6 +91,7 @@ func (Module) Register(r chi.Router, d httpapi.Deps) {
 	r.With(Require("managers.create")).Post("/api/v1/managers", createManagerHandler)
 	r.With(Require("managers.edit")).Put("/api/v1/managers/{id}", updateManagerHandler)
 	r.With(Require("managers.edit")).Post("/api/v1/managers/{id}/unlock", unlockManagerHandler)
+	r.With(Require("managers.delete")).Delete("/api/v1/managers/{id}", deleteManagerHandler)
 	// Per-manager permission overrides + IP allowlist + admin 2FA reset (FR-27/28/30).
 	r.With(Require("managers.view")).Get("/api/v1/managers/{id}/permissions", getManagerPermissionsHandler)
 	r.With(Require("managers.edit")).Put("/api/v1/managers/{id}/permissions", putManagerOverridesHandler)

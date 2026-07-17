@@ -6,6 +6,7 @@ import { getManagerBalance, topupManager } from '../../api/billing'
 import { ApiError } from '../../api/client'
 import {
   createManager,
+  deleteManager,
   listManagers,
   resetManagerTotp,
   unlockManager,
@@ -14,7 +15,12 @@ import {
 } from '../../api/managers'
 import { listRoles, type Role } from '../../api/security'
 import { useAuth } from '../../auth/AuthContext'
-import { PERM_MANAGERS_CREATE, PERM_MANAGERS_EDIT, PERM_TOPUP } from '../../auth/permissions'
+import {
+  PERM_MANAGERS_CREATE,
+  PERM_MANAGERS_DELETE,
+  PERM_MANAGERS_EDIT,
+  PERM_TOPUP,
+} from '../../auth/permissions'
 import { Button } from '../../components/Button'
 import { Checkbox, Field, Select, TextInput } from '../../components/form'
 import { Modal } from '../../components/Modal'
@@ -30,7 +36,7 @@ const BUILTIN_ROLES = ['admin', 'operator', 'agent']
 /** Managers CRUD + balances + top-up + security actions (FR-27/FR-20/FR-30). */
 export function ManagersPage() {
   const t = useT()
-  const { can } = useAuth()
+  const { can, manager: me } = useAuth()
   const managers = useAsync(() => listManagers(), [])
   const rolesQ = useAsync(() => listRoles().catch(() => ({ items: [] as Role[] })), [])
   const roles = rolesQ.data?.items ?? []
@@ -38,6 +44,7 @@ export function ManagersPage() {
   const [editing, setEditing] = useState<ManagerView | null | 'new'>(null)
   const [topupFor, setTopupFor] = useState<ManagerView | null>(null)
   const [allowlistFor, setAllowlistFor] = useState<ManagerView | null>(null)
+  const [removing, setRemoving] = useState<ManagerView | null>(null)
 
   if (managers.error) return <ErrorState onRetry={managers.reload} />
 
@@ -64,6 +71,7 @@ export function ManagersPage() {
                 <Th>{t('managers.col.username')}</Th>
                 <Th>{t('managers.col.role')}</Th>
                 <Th>{t('managers.col.scope')}</Th>
+                <Th>{t('managers.col.status')}</Th>
                 <Th>{t('managers.col.twofa')}</Th>
                 <Th className="text-end">{t('managers.col.balance')}</Th>
                 <Th />
@@ -80,6 +88,15 @@ export function ManagersPage() {
                     {m.scoped ? t('managers.scoped') : t('managers.global')}
                   </td>
                   <td className="px-3 py-2">
+                    {m.disabled ? (
+                      <span className="rounded bg-danger/10 px-1.5 py-0.5 text-xs font-medium text-danger">
+                        {t('managers.disabledBadge')}
+                      </span>
+                    ) : (
+                      <span className="text-ok">{t('managers.active')}</span>
+                    )}
+                  </td>
+                  <td className="px-3 py-2">
                     {m.totp_enabled ? (
                       <span className="text-ok">{t('ui.yes')}</span>
                     ) : (
@@ -92,11 +109,14 @@ export function ManagersPage() {
                   <td className="px-3 py-2 text-end">
                     <RowActions
                       manager={m}
+                      isSelf={me?.id === m.id}
                       canEdit={can(PERM_MANAGERS_EDIT)}
+                      canDelete={can(PERM_MANAGERS_DELETE)}
                       canTopup={can(PERM_TOPUP)}
                       onEdit={() => setEditing(m)}
                       onTopup={() => setTopupFor(m)}
                       onAllowlist={() => setAllowlistFor(m)}
+                      onRemove={() => setRemoving(m)}
                       onChanged={managers.reload}
                     />
                   </td>
@@ -124,7 +144,102 @@ export function ManagersPage() {
       {allowlistFor ? (
         <AllowlistModal manager={allowlistFor} onClose={() => setAllowlistFor(null)} />
       ) : null}
+
+      {removing ? (
+        <RemoveManagerModal
+          manager={removing}
+          onClose={() => setRemoving(null)}
+          onChanged={() => {
+            setRemoving(null)
+            managers.reload()
+          }}
+        />
+      ) : null}
     </section>
+  )
+}
+
+/** Maps the delete/disable 409 codes to operator-readable messages. */
+function removalErrorMessage(t: ReturnType<typeof useT>, err: unknown): string {
+  if (err instanceof ApiError) {
+    if (err.code === 'cannot_remove_self' || err.code === 'cannot_disable_self')
+      return t('managers.errSelf')
+    if (err.code === 'last_admin') return t('managers.errLastAdmin')
+    if (err.code === 'has_history') return t('managers.errHasHistory')
+    if (err.message) return err.message
+  }
+  return t('common.error.body')
+}
+
+function RemoveManagerModal({
+  manager,
+  onClose,
+  onChanged,
+}: {
+  manager: ManagerView
+  onClose: () => void
+  onChanged: () => void
+}) {
+  const t = useT()
+  const { toast } = useToast()
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  // has_history managers cannot be hard-deleted; offer disable as the way out.
+  const [offerDisable, setOfferDisable] = useState(false)
+
+  async function remove() {
+    setBusy(true)
+    setError(null)
+    try {
+      await deleteManager(manager.id)
+      toast(t('managers.removed'), 'ok')
+      onChanged()
+    } catch (err) {
+      setError(removalErrorMessage(t, err))
+      if (err instanceof ApiError && err.code === 'has_history') setOfferDisable(true)
+    } finally {
+      setBusy(false)
+    }
+  }
+  async function disable() {
+    setBusy(true)
+    setError(null)
+    try {
+      await updateManager(manager.id, { disabled: true })
+      toast(t('managers.disabledDone'), 'ok')
+      onChanged()
+    } catch (err) {
+      setError(removalErrorMessage(t, err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Modal
+      open
+      onOpenChange={busy ? () => {} : (o) => !o && onClose()}
+      title={t('managers.removeTitle')}
+    >
+      <div className="space-y-4">
+        <p className="text-sm">{t('managers.removeBody', { name: manager.username })}</p>
+        {error ? <p className="text-sm text-danger">{error}</p> : null}
+        <div className="flex justify-end gap-2">
+          <Button variant="ghost" disabled={busy} onClick={onClose}>
+            {t('ui.cancel')}
+          </Button>
+          {offerDisable ? (
+            <Button variant="danger" disabled={busy} onClick={() => void disable()}>
+              {busy ? t('ui.working') : t('managers.disable')}
+            </Button>
+          ) : (
+            <Button variant="danger" disabled={busy} onClick={() => void remove()}>
+              {busy ? t('ui.working') : t('managers.remove')}
+            </Button>
+          )}
+        </div>
+      </div>
+    </Modal>
   )
 }
 
@@ -136,19 +251,25 @@ function BalanceCell({ managerId }: { managerId: string }) {
 
 function RowActions({
   manager,
+  isSelf,
   canEdit,
+  canDelete,
   canTopup,
   onEdit,
   onTopup,
   onAllowlist,
+  onRemove,
   onChanged,
 }: {
   manager: ManagerView
+  isSelf: boolean
   canEdit: boolean
+  canDelete: boolean
   canTopup: boolean
   onEdit: () => void
   onTopup: () => void
   onAllowlist: () => void
+  onRemove: () => void
   onChanged: () => void
 }) {
   const t = useT()
@@ -163,6 +284,15 @@ function RowActions({
     await resetManagerTotp(manager.id)
     toast(t('managers.totpReset'), 'ok')
     onChanged()
+  }
+  async function setDisabled(disabled: boolean) {
+    try {
+      await updateManager(manager.id, { disabled })
+      toast(disabled ? t('managers.disabledDone') : t('managers.enabledDone'), 'ok')
+      onChanged()
+    } catch (err) {
+      toast(removalErrorMessage(t, err), 'danger')
+    }
   }
 
   return (
@@ -188,7 +318,17 @@ function RowActions({
               {t('managers.resetTotp')}
             </Button>
           ) : null}
+          {!isSelf ? (
+            <Button size="sm" variant="ghost" onClick={() => void setDisabled(!manager.disabled)}>
+              {manager.disabled ? t('managers.enable') : t('managers.disable')}
+            </Button>
+          ) : null}
         </>
+      ) : null}
+      {canDelete && !isSelf ? (
+        <Button size="sm" variant="ghost" className="text-danger" onClick={onRemove}>
+          {t('managers.remove')}
+        </Button>
       ) : null}
     </div>
   )
