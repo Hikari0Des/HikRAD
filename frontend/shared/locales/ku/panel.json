@@ -365,7 +365,24 @@
       "apiUser": "ناوی بەکارهێنەری API",
       "apiPort": "پۆرتی API",
       "apiPassword": "وشەی نهێنی API",
-      "apiPasswordSetHint": "بەتاڵی بهێڵەرەوە بۆ هێشتنەوەی وشەی نهێنی ئێستا."
+      "apiPasswordSetHint": "بەتاڵی بهێڵەرەوە بۆ هێشتنەوەی وشەی نهێنی ئێستا.",
+      "currentConfigTitle": "ڕێکخستنی ئێستا لەسەر ڕوتەر",
+      "currentEmpty": "هیچ ڕێکخستنێکی پەیوەندیدار بە HikRAD نەدۆزرایەوە — ئەم ڕوتەرە پاکە.",
+      "currentRadius": "کڕیاری RADIUS",
+      "currentRadiusIncoming": "گوێگری CoA",
+      "currentPppAaa": "بەڕاستکردنەوەی PPPoE",
+      "currentHotspotProfiles": "پرۆفایلی هۆتسپۆت",
+      "currentWalledGarden": "باخچەی دەوردراو",
+      "valuesRadiusServer": "ناونیشانی ڕاژەی RADIUS",
+      "valuesCoaPort": "پۆرتی CoA",
+      "valuesInterimSecs": "ماوەی نوێکردنەوە (چرکە)",
+      "valuesWalledGarden": "میوانداری باخچەی دەوردراو (بە کۆما جیاکراوەتەوە)",
+      "resolution": {
+        "abort": "هەڵوەشاندنەوە (بنەڕەتی)",
+        "keep": "هێشتنەوەی نرخی ڕوتەر",
+        "update": "نوێکردنەوە بۆ نرخی HikRAD"
+      },
+      "applyResolutions": "پێشبینینەوە بەم هەڵبژاردانانە"
     },
     "services": "خزمەتگوزاریەکان",
     "servicesHint": "ڕاژەی PPPoE و ناوچەکانی Hotspot کە ئەم ڕوتەرە کاریان پێدەکات. لابردنیان لێرە دەیانسڕێتەوە.",
@@ -387,7 +404,25 @@
       "hotspot_user_profile_pool": "ئەم ڕوتەرە دابەشکردنی ناونیشانی HikRAD پشتگوێ دەخات"
     },
     "detected": "{count} خزمەتگوزاری لەسەر ڕوتەر دۆزرایەوە — پێداچوونەوە بکە و پاشەکەوتی بکە.",
-    "detectedWithPools": "{count} خزمەتگوزاری دۆزرایەوە. کۆگای ناونیشانی ڕوتەر: {pools}. پێداچوونەوە بکە و پاشەکەوتی بکە."
+    "detectedWithPools": "{count} خزمەتگوزاری دۆزرایەوە. کۆگای ناونیشانی ڕوتەر: {pools}. پێداچوونەوە بکە و پاشەکەوتی بکە.",
+    "serverMgmt": {
+      "addServer": "زیادکردنی ڕاژە",
+      "createTitle": "دروستکردنی ڕاژە",
+      "editTitle": "دەستکاریکردنی ڕاژە",
+      "interface": "ئینتەرفەیس",
+      "pool": "کۆگای ناونیشان",
+      "planButton": "پێشبینین",
+      "applyButton": "دروستکردن / جێبەجێکردن",
+      "applyOk": "ڕاژە پاشەکەوت کرا.",
+      "notAdopted": "ئەم خزمەتگوزاریە لەلایەن ڕوتەرەوە بەڕێوەدەبرێت — سەرەتا وەریبگرە.",
+      "modeSystem": "بەڕێوەدراو لەلایەن HikRAD",
+      "modeRouter": "بەڕێوەدراو لەلایەن ڕوتەر",
+      "adoptButton": "وەرگرتن",
+      "adoptTitle": "ئەم خزمەتگوزاریە وەربگیرێت؟",
+      "adoptHint": "لەمەودوا HikRAD ئەم خزمەتگوزاریە بەڕێوەدەبات. هیچ شتێک لەسەر ڕوتەر ناگۆڕدرێت — تەنها تۆماری تایبەتی HikRAD.",
+      "adoptConfirm": "وەرگرتن",
+      "adoptOk": "خزمەتگوزاری وەرگیرا — ئێستا دەتوانیت لە HikRAD دەستکاری بکەیت."
+    }
   },
   "pools": {
     "add": "زیادکردنی مەجمووعە",

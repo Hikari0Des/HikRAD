@@ -2,9 +2,9 @@ import { useState } from 'react'
 
 import { Ltr, ErrorState, LoadingState, useT } from '@hikrad/shared'
 
-import { deleteNas, listNas, probeNas } from '../../api/nas'
+import { adoptService, deleteNas, listNas, probeNas } from '../../api/nas'
 import { ApiError } from '../../api/client'
-import type { Nas } from '../../api/types'
+import type { Nas, NasService } from '../../api/types'
 import { useAuth } from '../../auth/AuthContext'
 import { Button } from '../../components/Button'
 import { Modal } from '../../components/Modal'
@@ -15,6 +15,7 @@ import { useAsync } from '../../hooks/useAsync'
 import { DiscoverModal } from './DiscoverModal'
 import { NasAutoSetupModal } from './NasAutoSetupModal'
 import { NasWizardModal, type NasPrefill } from './NasWizardModal'
+import { ServiceProvisionModal } from './ServiceProvisionModal'
 import { SnippetModal } from './SnippetModal'
 
 /** NAS device management (FR-13/14) — persona Ali's copy-paste onboarding. */
@@ -34,6 +35,11 @@ export function NasListPage() {
   const [deleteNeedsConfirm, setDeleteNeedsConfirm] = useState(false)
   const [deleteBusy, setDeleteBusy] = useState(false)
   const [probing, setProbing] = useState<string | null>(null)
+  // v2 phase 2 / FR-67: server management modal state.
+  const [serviceModalNas, setServiceModalNas] = useState<Nas | null>(null)
+  const [serviceModalEditing, setServiceModalEditing] = useState<NasService | undefined>(undefined)
+  const [adoptTarget, setAdoptTarget] = useState<{ nas: Nas; service: NasService } | null>(null)
+  const [adopting, setAdopting] = useState(false)
 
   const canEdit = can('nas.edit')
   const canCreate = can('nas.create')
@@ -95,6 +101,23 @@ export function NasListPage() {
       }
     } finally {
       setDeleteBusy(false)
+    }
+  }
+
+  /** FR-67.5: writes nothing to the router, only flips management_mode — and
+   * only after this explicit confirm action. */
+  async function runAdopt() {
+    if (!adoptTarget) return
+    setAdopting(true)
+    try {
+      await adoptService(adoptTarget.nas.id, adoptTarget.service.id)
+      toast(t('nas.serverMgmt.adoptOk'), 'ok')
+      setAdoptTarget(null)
+      reload()
+    } catch (err) {
+      toast(err instanceof Error ? err.message : t('common.error.body'), 'danger')
+    } finally {
+      setAdopting(false)
     }
   }
 
@@ -180,10 +203,57 @@ export function NasListPage() {
                           {t('nas.disabledTag')}
                         </span>
                       )}
+                      {/* v2 phase 2 / FR-67: management-mode badge + the
+                          mode-appropriate action. */}
+                      <span
+                        className={`rounded-full px-1.5 ${
+                          s.management_mode === 'system'
+                            ? 'bg-brand/15 text-brand-strong'
+                            : 'bg-ink-muted/15 text-ink-muted'
+                        }`}
+                      >
+                        {s.management_mode === 'system'
+                          ? t('nas.serverMgmt.modeSystem')
+                          : t('nas.serverMgmt.modeRouter')}
+                      </span>
+                      {canEdit &&
+                        (s.management_mode === 'system' ? (
+                          <button
+                            type="button"
+                            className="text-brand-strong hover:underline"
+                            onClick={() => {
+                              setServiceModalNas(n)
+                              setServiceModalEditing(s)
+                            }}
+                          >
+                            {t('ui.edit')}
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            className="text-brand-strong hover:underline"
+                            onClick={() => setAdoptTarget({ nas: n, service: s })}
+                          >
+                            {t('nas.serverMgmt.adoptButton')}
+                          </button>
+                        ))}
                     </span>
                   </li>
                 ))}
               </ul>
+              {canEdit && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="mt-1"
+                  onClick={() => {
+                    setServiceModalNas(n)
+                    setServiceModalEditing(undefined)
+                  }}
+                >
+                  {t('nas.serverMgmt.addServer')}
+                </Button>
+              )}
               <dl className="mt-3 space-y-1 text-xs text-ink-muted">
                 {n.location ? (
                   <div className="flex justify-between gap-2">
@@ -298,6 +368,41 @@ export function NasListPage() {
               : deleteNeedsConfirm
                 ? t('nas.deleteAnyway')
                 : t('ui.delete')}
+          </Button>
+        </div>
+      </Modal>
+
+      {serviceModalNas && (
+        <ServiceProvisionModal
+          nas={serviceModalNas}
+          editing={serviceModalEditing}
+          open={serviceModalNas !== null}
+          onOpenChange={(o) => {
+            if (!o) {
+              setServiceModalNas(null)
+              setServiceModalEditing(undefined)
+            }
+          }}
+          onSaved={() => {
+            setServiceModalNas(null)
+            setServiceModalEditing(undefined)
+            reload()
+          }}
+        />
+      )}
+
+      <Modal
+        open={adoptTarget !== null}
+        onOpenChange={(o) => !o && !adopting && setAdoptTarget(null)}
+        title={t('nas.serverMgmt.adoptTitle')}
+      >
+        <p className="text-sm text-ink-muted">{t('nas.serverMgmt.adoptHint')}</p>
+        <div className="mt-6 flex justify-end gap-2">
+          <Button variant="ghost" disabled={adopting} onClick={() => setAdoptTarget(null)}>
+            {t('ui.cancel')}
+          </Button>
+          <Button disabled={adopting} onClick={() => void runAdopt()}>
+            {adopting ? t('ui.working') : t('nas.serverMgmt.adoptConfirm')}
           </Button>
         </div>
       </Modal>

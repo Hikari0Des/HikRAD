@@ -364,7 +364,24 @@
       "apiUser": "API username",
       "apiPort": "API port",
       "apiPassword": "API password",
-      "apiPasswordSetHint": "Leave blank to keep the current password."
+      "apiPasswordSetHint": "Leave blank to keep the current password.",
+      "currentConfigTitle": "Current config on the router",
+      "currentEmpty": "Nothing HikRAD-relevant found yet — this looks like a clean router.",
+      "currentRadius": "RADIUS client",
+      "currentRadiusIncoming": "CoA listener",
+      "currentPppAaa": "PPPoE AAA",
+      "currentHotspotProfiles": "Hotspot profile",
+      "currentWalledGarden": "Walled garden",
+      "valuesRadiusServer": "RADIUS server address",
+      "valuesCoaPort": "CoA port",
+      "valuesInterimSecs": "Interim update (seconds)",
+      "valuesWalledGarden": "Walled garden hosts (comma-separated)",
+      "resolution": {
+        "abort": "Abort (default)",
+        "keep": "Keep the router's value",
+        "update": "Update to HikRAD's value"
+      },
+      "applyResolutions": "Re-preview with these choices"
     },
     "services": "Services",
     "servicesHint": "The PPPoE server and hotspot zones this router runs. Removing one here deletes it.",
@@ -386,7 +403,25 @@
       "hotspot_user_profile_pool": "This router overrides HikRAD's address assignment"
     },
     "detected": "Found {count} service(s) on the router — review and Save.",
-    "detectedWithPools": "Found {count} service(s). Router address pools: {pools}. Review and Save."
+    "detectedWithPools": "Found {count} service(s). Router address pools: {pools}. Review and Save.",
+    "serverMgmt": {
+      "addServer": "Add server",
+      "createTitle": "Create a server",
+      "editTitle": "Edit server",
+      "interface": "Interface",
+      "pool": "Address pool",
+      "planButton": "Preview",
+      "applyButton": "Create / apply",
+      "applyOk": "Server saved.",
+      "notAdopted": "This service is router-managed — adopt it first.",
+      "modeSystem": "HikRAD-managed",
+      "modeRouter": "Router-managed",
+      "adoptButton": "Adopt",
+      "adoptTitle": "Adopt this service?",
+      "adoptHint": "HikRAD will manage this service from now on. Nothing on the router changes — only HikRAD's own record.",
+      "adoptConfirm": "Adopt",
+      "adoptOk": "Service adopted — you can now edit it from HikRAD."
+    }
   },
   "pools": {
     "add": "Add pool",

@@ -3,13 +3,19 @@ import { request } from './client'
 import type {
   AutoSetupApplyResult,
   AutoSetupPreview,
+  AutoSetupValues,
   DiscoveredNas,
   DiscoveredService,
   Nas,
+  NasConfig,
   NasHealthFinding,
+  NasService,
   NasSnippet,
   NasStatus,
   NasWrite,
+  ServiceApplyResult,
+  ServiceProvisionRequest,
+  ServiceRouterConfig,
 } from './types'
 
 export function listNas(): Promise<{ items: Nas[] }> {
@@ -82,18 +88,77 @@ export function discoverNas(body?: {
 }
 
 /**
- * NAS API auto-setup (FR-56.2-56.4, contract C6). Preview connects read-only;
- * apply refuses unless the router's state hashes to the same preview_hash
- * (recomputed server-side) and unless the NAS's ROS version has a green
- * matrix leg — see docs/ops/ros-matrix.md.
+ * NAS API auto-setup (FR-56.2-56.4, contract C6; extended by v2 phase 2
+ * FR-66). Preview connects read-only; apply refuses unless the router's
+ * state (and the values/resolutions submitted) hashes to the same
+ * preview_hash (recomputed server-side) and unless the NAS's ROS version has
+ * a green matrix leg — see docs/ops/ros-matrix.md. `resolutions` maps a
+ * conflict's `key` to "update" or "keep"; an omitted/empty map aborts on
+ * every conflict, identical to pre-FR-66 behavior.
  */
-export function previewAutoSetup(id: string): Promise<AutoSetupPreview> {
-  return request<AutoSetupPreview>(`/nas/${id}/auto-setup/preview`, { method: 'POST' })
+export function previewAutoSetup(
+  id: string,
+  opts?: { values?: AutoSetupValues; resolutions?: Record<string, string> },
+): Promise<AutoSetupPreview> {
+  return request<AutoSetupPreview>(`/nas/${id}/auto-setup/preview`, {
+    method: 'POST',
+    body: { values: opts?.values ?? {}, resolutions: opts?.resolutions ?? {} },
+  })
 }
 
-export function applyAutoSetup(id: string, previewHash: string): Promise<AutoSetupApplyResult> {
+export function applyAutoSetup(
+  id: string,
+  previewHash: string,
+  opts?: { values?: AutoSetupValues; resolutions?: Record<string, string> },
+): Promise<AutoSetupApplyResult> {
   return request<AutoSetupApplyResult>(`/nas/${id}/auto-setup/apply`, {
     method: 'POST',
-    body: { preview_hash: previewHash },
+    body: {
+      preview_hash: previewHash,
+      values: opts?.values ?? {},
+      resolutions: opts?.resolutions ?? {},
+    },
+  })
+}
+
+/** Read-only RADIUS-relevant router config (v2 phase 2, FR-65). */
+export function nasConfig(id: string): Promise<NasConfig> {
+  return request<NasConfig>(`/nas/${id}/config`)
+}
+
+/**
+ * Live router-side view of one service instance (v2 phase 2, FR-67.2/67.5) —
+ * works for both management modes; only writes are gated on mode.
+ */
+export function serviceRouterConfig(
+  nasId: string,
+  serviceId: string,
+): Promise<ServiceRouterConfig> {
+  return request<ServiceRouterConfig>(`/nas/${nasId}/services/${serviceId}/router-config`)
+}
+
+/** Preview creating (no service_id) or editing (service_id set, must already be system-managed) one server (FR-67.3/67.4). */
+export function planService(
+  nasId: string,
+  body: ServiceProvisionRequest,
+): Promise<AutoSetupPreview> {
+  return request<AutoSetupPreview>(`/nas/${nasId}/services/plan`, { method: 'POST', body })
+}
+
+export function applyService(
+  nasId: string,
+  body: ServiceProvisionRequest & { preview_hash: string },
+): Promise<ServiceApplyResult> {
+  return request<ServiceApplyResult>(`/nas/${nasId}/services/apply`, { method: 'POST', body })
+}
+
+/**
+ * Adopt a router-managed service (FR-67.5): writes NOTHING to the router,
+ * only flips management_mode after an explicit confirm.
+ */
+export function adoptService(nasId: string, serviceId: string): Promise<NasService> {
+  return request<NasService>(`/nas/${nasId}/services/${serviceId}/adopt`, {
+    method: 'POST',
+    body: { confirm: true },
   })
 }

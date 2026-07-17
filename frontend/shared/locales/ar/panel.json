@@ -364,7 +364,24 @@
       "apiUser": "اسم مستخدم API",
       "apiPort": "منفذ API",
       "apiPassword": "كلمة مرور API",
-      "apiPasswordSetHint": "اتركه فارغًا للإبقاء على كلمة المرور الحالية."
+      "apiPasswordSetHint": "اتركه فارغًا للإبقاء على كلمة المرور الحالية.",
+      "currentConfigTitle": "الإعداد الحالي على الموجّه",
+      "currentEmpty": "لم يُعثر بعد على أي إعداد يخص HikRAD — يبدو أن هذا الموجّه نظيف.",
+      "currentRadius": "عميل RADIUS",
+      "currentRadiusIncoming": "مستمع CoA",
+      "currentPppAaa": "مصادقة PPPoE",
+      "currentHotspotProfiles": "ملف الهوتسبوت",
+      "currentWalledGarden": "الحديقة المسوّرة",
+      "valuesRadiusServer": "عنوان خادم RADIUS",
+      "valuesCoaPort": "منفذ CoA",
+      "valuesInterimSecs": "فاصل التحديث (ثوانٍ)",
+      "valuesWalledGarden": "مضيفو الحديقة المسوّرة (مفصولة بفواصل)",
+      "resolution": {
+        "abort": "إلغاء (الافتراضي)",
+        "keep": "الإبقاء على قيمة الموجّه",
+        "update": "التحديث إلى قيمة HikRAD"
+      },
+      "applyResolutions": "إعادة المعاينة بهذه الخيارات"
     },
     "services": "الخدمات",
     "servicesHint": "خادم PPPoE ومناطق Hotspot التي يشغّلها هذا الموجّه. حذف أي منها هنا يحذفها فعليًا.",
@@ -386,7 +403,25 @@
       "hotspot_user_profile_pool": "هذا الموجّه يتجاوز توزيع العناوين الذي يرسله HikRAD"
     },
     "detected": "تم العثور على {count} خدمة على الموجّه — راجِعها ثم احفظ.",
-    "detectedWithPools": "تم العثور على {count} خدمة. مجمّعات عناوين الموجّه: {pools}. راجِعها ثم احفظ."
+    "detectedWithPools": "تم العثور على {count} خدمة. مجمّعات عناوين الموجّه: {pools}. راجِعها ثم احفظ.",
+    "serverMgmt": {
+      "addServer": "إضافة خادم",
+      "createTitle": "إنشاء خادم",
+      "editTitle": "تعديل الخادم",
+      "interface": "الواجهة",
+      "pool": "مجمّع العناوين",
+      "planButton": "معاينة",
+      "applyButton": "إنشاء / تطبيق",
+      "applyOk": "تم حفظ الخادم.",
+      "notAdopted": "هذه الخدمة تُدار من الموجّه — يجب تبنّيها أولًا.",
+      "modeSystem": "تُديره HikRAD",
+      "modeRouter": "يُديره الموجّه",
+      "adoptButton": "تبنّي",
+      "adoptTitle": "تبنّي هذه الخدمة؟",
+      "adoptHint": "سيتولى HikRAD إدارة هذه الخدمة من الآن. لا يتغيّر شيء على الموجّه — فقط سجل HikRAD الخاص.",
+      "adoptConfirm": "تبنّي",
+      "adoptOk": "تم تبنّي الخدمة — يمكنك الآن تعديلها من HikRAD."
+    }
   },
   "pools": {
     "add": "إضافة مجمّع",

@@ -271,6 +271,9 @@ export interface ProfileUpdateResult {
 /** The kind of one service instance a NAS runs (FR-62). */
 export type NasType = 'pppoe' | 'hotspot'
 
+/** router = discovered/adopted (read-only until adopted); system = HikRAD-provisioned/owned (v2 phase 2, FR-67). */
+export type NasServiceManagementMode = 'router' | 'system'
+
 /** One service instance on a NAS (FR-62 / C3). */
 export interface NasService {
   id: string
@@ -284,6 +287,7 @@ export interface NasService {
   ros_server_name: string
   enabled: boolean
   live_sessions: number
+  management_mode: NasServiceManagementMode
 }
 
 /**
@@ -373,10 +377,19 @@ export interface AutoSetupPlanItem {
   current_state: string
 }
 
+/** A conflict's resolution choice (v2 phase 2, FR-66.2). Default/unset = abort. */
+export type AutoSetupResolution = 'update' | 'keep'
+
 export interface AutoSetupConflict {
   path: string
   existing: string
   reason: string
+  /** Stable id for this conflict across preview calls — key into the resolutions map. */
+  key: string
+  /** Whether "update" has a computable target sentence at all. */
+  resolvable: boolean
+  /** The exact command an "update" resolution would run, shown for operator approval. */
+  update_command?: string
 }
 
 export interface AutoSetupPreview {
@@ -384,6 +397,15 @@ export interface AutoSetupPreview {
   conflicts: AutoSetupConflict[]
   preview_hash: string
   ros_version: string
+}
+
+/** FR-66.1 values-form overrides — every field optional (omitted = HikRAD's default). */
+export interface AutoSetupValues {
+  radius_server?: string
+  src_address?: string
+  coa_port?: number
+  interim_secs?: number
+  walled_garden?: string[]
 }
 
 export interface AutoSetupApplyResultItem {
@@ -405,6 +427,66 @@ export interface NasStatus {
   last_auth_at: string | null
   last_acct_at: string | null
   seen: boolean
+}
+
+// --- Config inspection (v2 phase 2, FR-65) ---------------------------------
+
+export interface RadiusEntryConfig {
+  address: string
+  service: string
+  comment: string
+  src_address: string
+  secret_present: boolean
+}
+
+export interface HotspotProfileConfig {
+  name: string
+  use_radius: boolean
+  interim_update_secs: number
+}
+
+export interface NasConfig {
+  nas_id: string
+  ros_version: string
+  board_name: string
+  identity: string
+  radius: RadiusEntryConfig[]
+  radius_incoming: { accept: boolean; port: number }
+  ppp_aaa: { use_radius: boolean; accounting: boolean; interim_update_secs: number }
+  hotspot_profiles: HotspotProfileConfig[]
+  walled_garden: string[]
+}
+
+// --- Server management (v2 phase 2, FR-67) ---------------------------------
+
+/** Create-or-edit body for one server instance; service_id set = edit. */
+export interface ServiceProvisionRequest {
+  service_id?: string
+  service: NasType
+  label?: string
+  interface?: string
+  ros_server_name: string
+  ip_pool_id?: string | null
+  local_address?: string
+  address_range?: string
+  values?: AutoSetupValues
+}
+
+export interface ServiceApplyResult {
+  results: AutoSetupApplyResultItem[]
+  all_ok: boolean
+  service: NasService
+}
+
+/** Live router-side view of one service instance, both management modes. */
+export interface ServiceRouterConfig {
+  service: NasType
+  ros_server_name: string
+  label: string
+  interface_note: string
+  router_pool_name: string
+  enabled: boolean
+  matched_service_id: string
 }
 
 export interface NasSnippet {
