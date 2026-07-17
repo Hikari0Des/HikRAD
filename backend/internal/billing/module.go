@@ -104,6 +104,7 @@ func (m *Module) Register(r chi.Router, d httpapi.Deps) {
 
 	r.With(auth.Require(permPaymentTicketsVerify)).Get("/api/v1/payment-tickets", m.listTicketsHandler)
 	r.With(auth.Require(permPaymentTicketsVerify)).Get("/api/v1/payment-tickets/{id}", m.ticketDetailHandler)
+	r.With(auth.Require(permPaymentTicketsVerify)).Post("/api/v1/payment-tickets/{id}/reveal", m.revealTicketCardHandler)
 	r.With(auth.Require(permPaymentTicketsVerify)).Post("/api/v1/payment-tickets/{id}/approve", m.approveTicketHandler)
 	r.With(auth.Require(permPaymentTicketsVerify)).Post("/api/v1/payment-tickets/{id}/reject", m.rejectTicketHandler)
 	r.With(auth.Require(permPaymentTicketsVerify)).Get("/api/v1/payment-tickets/{id}/attachments/{attachmentId}", m.getAttachmentHandler)

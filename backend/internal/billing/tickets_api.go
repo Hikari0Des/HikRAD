@@ -6,6 +6,7 @@ package billing
 // for a scoped agent, same explicit filters for an unscoped admin.
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,6 +17,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/hikrad/hikrad/internal/auth"
 	"github.com/hikrad/hikrad/internal/httpapi"
+	"github.com/hikrad/hikrad/internal/platform/crypto"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -245,6 +247,55 @@ func (m *Module) ticketDetailHandler(w http.ResponseWriter, r *http.Request) {
 	atRows.Close()
 
 	httpapi.JSON(w, http.StatusOK, out)
+}
+
+// revealTicketCardHandler serves POST /payment-tickets/{id}/reveal (carried
+// forward from cardpay_api.go's revealCardPaymentHandler, generalized to the
+// ticket's method_detail JSON): decrypts and returns a scratch-card ticket's
+// code once, per-call, audited (FR-59.4 / AC-59c). Only meaningful for
+// method_key="scratch_card" — a provider ticket has no card_code_enc.
+func (m *Module) revealTicketCardHandler(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	ok, err := m.canSeeTicket(r.Context(), id)
+	if err != nil {
+		m.internalError(w, "ticket authz", err)
+		return
+	}
+	if !ok {
+		httpapi.Error(w, http.StatusForbidden, "forbidden", "you do not have access to this ticket")
+		return
+	}
+	var detail json.RawMessage
+	err = m.db.QueryRow(r.Context(),
+		`SELECT method_detail FROM payment_tickets WHERE id = $1::uuid AND method_key = $2`, id, methodKeyScratchCard).
+		Scan(&detail)
+	if errors.Is(err, pgx.ErrNoRows) {
+		httpapi.Error(w, http.StatusNotFound, "not_found", "payment ticket not found")
+		return
+	}
+	if err != nil {
+		m.internalError(w, "ticket reveal lookup", err)
+		return
+	}
+	var parsed struct {
+		CardCodeEnc string `json:"card_code_enc"`
+	}
+	if err := json.Unmarshal(detail, &parsed); err != nil || parsed.CardCodeEnc == "" {
+		httpapi.Error(w, http.StatusUnprocessableEntity, "no_card_code", "this ticket has no card code to reveal")
+		return
+	}
+	codeEnc, err := base64.StdEncoding.DecodeString(parsed.CardCodeEnc)
+	if err != nil {
+		m.internalError(w, "ticket reveal decode", err)
+		return
+	}
+	plain, err := crypto.Decrypt(codeEnc)
+	if err != nil {
+		m.internalError(w, "ticket reveal decrypt", err)
+		return
+	}
+	_ = auth.Audit(r.Context(), "payment_ticket.reveal", "payment_ticket", id, nil, nil)
+	httpapi.JSON(w, http.StatusOK, map[string]any{"code": string(plain)})
 }
 
 // approveTicketHandler serves POST /payment-tickets/{id}/approve.
