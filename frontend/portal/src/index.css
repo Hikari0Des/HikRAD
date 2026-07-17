@@ -26,3 +26,30 @@ body {
     'Noto Kufi Arabic',
     sans-serif;
 }
+
+/*
+ * Themed scrollbars (owner report 2026-07-17, the worst symptom of v3 item
+ * v3.1 pulled forward): when content overflows, the scrollbar follows the
+ * theme instead of the OS-chrome "legacy" look. The full responsive audit
+ * (why things overflow at small widths in the first place) stays in v3.1.
+ */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(var(--hik-surface-sunken)) transparent;
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background-color: rgb(var(--hik-surface-sunken));
+  border-radius: 5px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background-color: rgb(var(--hik-ink-muted));
+}

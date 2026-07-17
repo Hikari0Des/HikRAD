@@ -13,15 +13,19 @@ import { useAsync } from '../../hooks/useAsync'
 export function StatusView({
   title,
   subtitle,
+  queryKey,
   fetcher,
 }: {
   title: string
   subtitle?: string
+  /** Refetch key for the probe history; the title alone can change without the
+   *  entity changing (it starts as a fallback and settles on the real name). */
+  queryKey?: string
   fetcher: () => Promise<ProbeHistory>
 }) {
   const t = useT()
   const { formatDate, formatNumber } = useFormatters()
-  const q = useAsync<ProbeHistory>(fetcher, [title])
+  const q = useAsync<ProbeHistory>(fetcher, [queryKey ?? title])
 
   if (q.error) return <ErrorState onRetry={q.reload} />
   if (q.loading || !q.data) return <LoadingState />
