@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -20,11 +20,11 @@ beforeEach(() => {
   fetchMock.mockReset()
   vi.stubGlobal('fetch', fetchMock)
   window.localStorage.clear()
-  // Every RenewPage mount checks for a pending scratch-card status (contract
-  // C8 seam) — default it to "none" unless a test overrides the first call.
+  // Every RenewPage mount resolves the unified Pay screen's tile list
+  // (contract C4) — default it to "voucher only" unless a test overrides.
   fetchMock.mockImplementation((url: string) => {
-    if (url.includes('/portal/card-payments/mine')) {
-      return Promise.resolve(jsonResponse(200, null))
+    if (url.includes('/portal/pay-methods')) {
+      return Promise.resolve(jsonResponse(200, { items: [{ key: 'voucher', kind: 'voucher' }] }))
     }
     return Promise.resolve(
       jsonResponse(404, { error: { code: 'not_found', message: 'unhandled' } }),
@@ -44,11 +44,12 @@ function renderRenew() {
   )
 }
 
-describe('renew flow — voucher redeem states (FR-42, task 3)', () => {
-  it('shows a success screen with the new expiry on redeem', async () => {
+describe('renew flow — unified Pay screen (v2-2, FR-42/78)', () => {
+  it('opens the voucher tile and shows a success screen with the new expiry on redeem', async () => {
     fetchMock.mockImplementation((url: string) => {
-      if (url.includes('/portal/card-payments/mine'))
-        return Promise.resolve(jsonResponse(200, null))
+      if (url.includes('/portal/pay-methods')) {
+        return Promise.resolve(jsonResponse(200, { items: [{ key: 'voucher', kind: 'voucher' }] }))
+      }
       if (url.includes('/portal/vouchers/redeem')) {
         return Promise.resolve(
           jsonResponse(200, {
@@ -65,6 +66,7 @@ describe('renew flow — voucher redeem states (FR-42, task 3)', () => {
 
     const user = userEvent.setup()
     renderRenew()
+    await user.click(await screen.findByRole('button', { name: en.portal.renew.tab.voucher }))
     await user.type(screen.getByLabelText(en.portal.renew.voucher.label), 'ABCD1234')
     await user.click(screen.getByRole('button', { name: en.portal.renew.voucher.submit }))
 
@@ -77,8 +79,9 @@ describe('renew flow — voucher redeem states (FR-42, task 3)', () => {
     ['voucher_invalid', en.portal.renew.voucher.error.invalid],
   ])('shows a clear error for %s', async (code, expected) => {
     fetchMock.mockImplementation((url: string) => {
-      if (url.includes('/portal/card-payments/mine'))
-        return Promise.resolve(jsonResponse(200, null))
+      if (url.includes('/portal/pay-methods')) {
+        return Promise.resolve(jsonResponse(200, { items: [{ key: 'voucher', kind: 'voucher' }] }))
+      }
       if (url.includes('/portal/vouchers/redeem')) {
         return Promise.resolve(jsonResponse(422, { error: { code, message: code } }))
       }
@@ -87,67 +90,62 @@ describe('renew flow — voucher redeem states (FR-42, task 3)', () => {
 
     const user = userEvent.setup()
     renderRenew()
+    await user.click(await screen.findByRole('button', { name: en.portal.renew.tab.voucher }))
     await user.type(screen.getByLabelText(en.portal.renew.voucher.label), 'BADCODE')
     await user.click(screen.getByRole('button', { name: en.portal.renew.voucher.submit }))
 
     expect(await screen.findByText(expected)).toBeInTheDocument()
   })
 
-  it('degrades to an explanatory message with the voucher path prominent when all gateways are down (NFR-7)', async () => {
+  it('degrades to an explanatory message when no payment methods are enabled (NFR-7, kickoff blocker 1)', async () => {
     fetchMock.mockImplementation((url: string) => {
-      if (url.includes('/portal/card-payments/mine'))
-        return Promise.resolve(jsonResponse(200, null))
-      if (url.includes('/portal/payments/gateways')) {
+      if (url.includes('/portal/pay-methods')) {
         return Promise.resolve(jsonResponse(200, { items: [] }))
       }
       return Promise.resolve(jsonResponse(404, {}))
     })
 
-    const user = userEvent.setup()
     renderRenew()
-    await user.click(screen.getByRole('tab', { name: en.portal.renew.tab.gateway }))
 
-    expect(await screen.findByText(en.portal.renew.gateway.allDownTitle)).toBeInTheDocument()
-
-    // The escape hatch switches back to the voucher tab.
-    await user.click(screen.getByRole('button', { name: en.portal.renew.gateway.useVoucher }))
-    await waitFor(() =>
-      expect(screen.getByRole('tab', { name: en.portal.renew.tab.voucher })).toHaveAttribute(
-        'aria-selected',
-        'true',
-      ),
-    )
+    expect(await screen.findByText(en.portal.renew.pay.noneTitle)).toBeInTheDocument()
   })
 
-  it('lists enabled gateways and starts a payment on tap', async () => {
+  it('lists a provider tile and submits a transfer-proof ticket on tap', async () => {
     fetchMock.mockImplementation((url: string) => {
-      if (url.includes('/portal/card-payments/mine'))
-        return Promise.resolve(jsonResponse(200, null))
-      if (url.includes('/portal/payments/gateways')) {
-        return Promise.resolve(jsonResponse(200, { items: [{ id: 'mock', name: 'Mock Wallet' }] }))
-      }
-      if (url.includes('/portal/payments/mock/create')) {
+      if (url.includes('/portal/pay-methods')) {
         return Promise.resolve(
-          jsonResponse(200, { redirect_url: 'https://pay.test/x', intent_id: 'i1' }),
+          jsonResponse(200, {
+            items: [
+              {
+                key: 'prov-1',
+                kind: 'provider',
+                provider_name: 'Zain Cash',
+                account_details: '0770 000 0000',
+                instructions_text: 'Send and enter the reference.',
+              },
+            ],
+          }),
+        )
+      }
+      if (url.includes('/portal/payment-tickets')) {
+        return Promise.resolve(
+          jsonResponse(200, {
+            id: 'tk1',
+            state: 'pending',
+            trial_granted: true,
+            trial_expires_at: '2026-08-01T00:00:00Z',
+          }),
         )
       }
       return Promise.resolve(jsonResponse(404, {}))
     })
 
-    // jsdom doesn't implement navigation; stub the setter so the redirect is observable.
-    Object.defineProperty(window, 'location', {
-      configurable: true,
-      value: { ...window.location, href: '' },
-    })
-
     const user = userEvent.setup()
     renderRenew()
-    await user.click(screen.getByRole('tab', { name: en.portal.renew.tab.gateway }))
-    await user.click(await screen.findByRole('button', { name: /Mock Wallet/ }))
+    await user.click(await screen.findByRole('button', { name: 'Zain Cash' }))
+    await user.type(screen.getByLabelText(en.portal.renew.pay.referenceLabel), 'REF123')
+    await user.click(screen.getByRole('button', { name: en.portal.renew.pay.submit }))
 
-    await waitFor(() => expect(window.location.href).toBe('https://pay.test/x'))
-    expect(window.localStorage.getItem('hikrad.portal.pending_payment_intent')).toBe(
-      JSON.stringify({ gateway: 'mock', intentId: 'i1' }),
-    )
+    expect(await screen.findByText(en.portal.renew.pay.submittedTitle)).toBeInTheDocument()
   })
 })

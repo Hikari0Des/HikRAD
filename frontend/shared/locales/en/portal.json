@@ -62,19 +62,15 @@
       "paymentType": {
         "renewal": "Renewal",
         "voucher": "Voucher",
-        "gateway": "Online payment",
-        "card": "Scratch card",
+        "card": "Manual payment",
         "refund": "Refund",
         "other": "Payment"
       }
     },
     "renew": {
       "title": "Renew",
-      "resumePending": "You have a payment in progress — tap to continue",
       "tab": {
-        "voucher": "Voucher",
-        "gateway": "Online payment",
-        "card": "Scratch card"
+        "voucher": "Voucher"
       },
       "reconnectNote": "Reconnecting may take a moment if you're online.",
       "voucher": {
@@ -95,42 +91,44 @@
           "generic": "Something went wrong on our side. Please try again."
         }
       },
-      "gateway": {
-        "startError": "Couldn't start the payment. Please try again.",
-        "allDownTitle": "Online payment isn't available right now",
-        "allDownBody": "You can still renew instantly with a voucher.",
-        "useVoucher": "Use a voucher instead"
-      },
       "card": {
         "pendingTitle": "Test internet active",
         "pendingBody": "Pending ISP verification — active until {time} if not approved sooner.",
         "typeLabel": "Card type",
-        "typePlaceholder": "Select a card type",
+        "typePlaceholder": "e.g. Zain, Asiacell",
         "codeLabel": "Card code",
         "submit": "Activate",
         "submitting": "Activating…",
         "error": {
-          "cooldown": "Please wait before submitting another card.",
           "network": "Couldn't reach the server. Please try again.",
-          "invalid_code": "That card type isn't accepted. Pick a card type from the list and try again.",
+          "card_code_invalid": "That card type isn't accepted. Check it and try again.",
           "no_profile": "Your account has no plan to renew — please contact your provider.",
-          "already_pending": "You already have a card payment pending verification.",
+          "method_not_allowed": "This payment method is no longer available.",
+          "ticket_pending": "You already have a payment pending verification.",
           "generic": "Something went wrong on our side. Please try again."
         }
       },
-      "return": {
-        "noIntent": "No payment in progress.",
-        "backToRenew": "Back to Renew",
-        "reconnecting": "Reconnecting…",
-        "pendingTitle": "Payment pending",
-        "pendingBody": "We're confirming your payment. This can take a moment — you don't need to do anything.",
-        "reference": "Reference: {ref}",
-        "successTitle": "Payment successful",
-        "backToHome": "Back to Home",
-        "expiredTitle": "Payment expired",
-        "failedTitle": "Payment failed",
-        "failedBody": "The payment didn't go through. You can try again or use a voucher instead.",
-        "retry": "Try again"
+      "pay": {
+        "noneTitle": "No payment methods available",
+        "noneBody": "Contact your provider to renew, or ask them to enable a payment method.",
+        "back": "Back",
+        "scratchCardTile": "Scratch card",
+        "accountDetails": "Send payment to:",
+        "referenceLabel": "Transfer reference / sender name",
+        "noteLabel": "Note (optional)",
+        "attachmentsLabel": "Attach a screenshot or receipt (optional)",
+        "submit": "Submit for verification",
+        "submitting": "Submitting…",
+        "submittedTitle": "Test internet active",
+        "submittedBody": "Your payment is pending verification by your provider. You'll be notified once it's reviewed.",
+        "error": {
+          "network": "Couldn't reach the server. Please try again.",
+          "method_not_allowed": "This payment method is no longer available.",
+          "ticket_pending": "You already have a payment pending verification.",
+          "card_code_invalid": "That card type isn't accepted. Check it and try again.",
+          "no_profile": "Your account has no plan to renew — please contact your provider.",
+          "generic": "Something went wrong on our side. Please try again."
+        }
       }
     },
     "settings": {

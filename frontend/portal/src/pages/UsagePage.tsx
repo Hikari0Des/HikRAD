@@ -9,10 +9,15 @@ import { useAsync } from '../hooks/useAsync'
 const PAYMENT_TYPE_KEYS: Record<string, string> = {
   renewal: 'portal.usage.paymentType.renewal',
   voucher_redeem: 'portal.usage.paymentType.voucher',
-  'portal-mock': 'portal.usage.paymentType.gateway',
-  'portal-zaincash': 'portal.usage.paymentType.gateway',
-  'card-trial': 'portal.usage.paymentType.card',
   refund: 'portal.usage.paymentType.refund',
+}
+
+// v2-2: ticket-based payments key off "ticket-<method_key>" (method_key is
+// "scratch_card" or a payment_providers.id, an unbounded set) — a prefix
+// match, not a static lookup, covers every current and future provider.
+function paymentTypeKey(type: string): string {
+  if (type.startsWith('ticket-')) return 'portal.usage.paymentType.card'
+  return PAYMENT_TYPE_KEYS[type] ?? 'portal.usage.paymentType.other'
 }
 
 /** Usage & payments (FR-41.3): daily/monthly charts, payment history. All
@@ -73,9 +78,7 @@ export function UsagePage() {
             {payments.data.items.map((p) => (
               <li key={p.id} className="flex items-center justify-between gap-2 py-2 text-sm">
                 <div>
-                  <p className="font-medium">
-                    {t(PAYMENT_TYPE_KEYS[p.type] ?? 'portal.usage.paymentType.other')}
-                  </p>
+                  <p className="font-medium">{t(paymentTypeKey(p.type))}</p>
                   <p className="text-xs text-ink-muted">{formatDate(p.at)}</p>
                 </div>
                 <IQDAmount amount={p.amount} currency={p.currency} className="font-semibold" />

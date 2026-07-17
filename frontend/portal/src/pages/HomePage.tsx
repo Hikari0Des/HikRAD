@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom'
 
 import { ErrorState, StatusBadge, useFormatters, useT } from '@hikrad/shared'
 
-import { getMyCardPayment } from '../api/cardPayments'
+import { getLatestTicket } from '../api/payMethods'
 import { getMe } from '../api/me'
 import { PullToRefresh } from '../components/PullToRefresh'
 import { HomeSkeleton } from '../components/Skeleton'
@@ -19,11 +19,11 @@ export function HomePage() {
   const t = useT()
   const { formatDate, formatNumber } = useFormatters()
   const me = useAsync(getMe, [])
-  const card = useAsync(getMyCardPayment, [])
+  const ticket = useAsync(getLatestTicket, [])
 
   async function refresh() {
     me.reload()
-    card.reload()
+    ticket.reload()
   }
 
   if (me.loading) return <HomeSkeleton />
@@ -33,14 +33,14 @@ export function HomePage() {
   }
 
   const data = me.data
-  const cardPayment = card.data
+  const latestTicket = ticket.data
 
   return (
     <PullToRefresh onRefresh={refresh}>
       <section className="flex flex-col gap-4 pb-24">
         <h1 className="text-lg font-semibold">{t('portal.home.title')}</h1>
 
-        {cardPayment?.state === 'pending' ? (
+        {latestTicket?.state === 'pending' && latestTicket.trial_granted ? (
           <div
             role="status"
             className="flex flex-col gap-1 rounded-xl border border-warning bg-warning/10 p-4 text-sm"
@@ -48,20 +48,20 @@ export function HomePage() {
             <p className="font-semibold">{t('portal.home.cardPendingTitle')}</p>
             <p className="text-ink-muted">
               {t('portal.home.cardPendingBody', {
-                time: formatDate(cardPayment.trial_expires_at, { timeStyle: 'short' }),
+                time: formatDate(latestTicket.trial_expires_at, { timeStyle: 'short' }),
               })}
             </p>
           </div>
         ) : null}
 
-        {cardPayment?.state === 'rejected' ? (
+        {latestTicket?.state === 'rejected' ? (
           <div
             role="alert"
             className="flex flex-col gap-2 rounded-xl border border-danger bg-danger/10 p-4 text-sm"
           >
             <p className="font-semibold">{t('portal.home.cardRejectedTitle')}</p>
-            {cardPayment.reject_reason ? (
-              <p className="text-ink-muted">{cardPayment.reject_reason}</p>
+            {latestTicket.reject_reason ? (
+              <p className="text-ink-muted">{latestTicket.reject_reason}</p>
             ) : null}
             <Link to="/renew" className="font-semibold text-brand underline">
               {t('portal.home.cardRejectedAction')}
