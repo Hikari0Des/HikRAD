@@ -27,4 +27,8 @@
 
 Prepaid card designer · TWA store wrapper · public API docs · non-MikroTik vendor certification · application-aware QoS (Decision 20 marked post-v1 at most) · receipt/alert **email channel** (once v2-4's email field exists). Brief these the same way when chosen: one file here, mini-PRD + kickoff prompt, slotted into the execution plan.
 
+## v3 parking backlog
+
+Items the owner reports **while v2 is in flight** that aren't v2 scope go to [docs/v3/00-v3-index.md](../v3/00-v3-index.md) (established 2026-07-17: frontend modernization pass, per-manager dashboards, instance branding, dashboard NAS-uuid bug, manager removal, factory reset). A v2 session must not interleave them uninvited — park, don't scope-creep. v3 reserves migrations 0600–0689.
+
 **reseller/sub-manager tree** left this list on 2026-07-16: it is now the open blocker at the top of [09-cost-margin-and-reseller-pricing.md](09-cost-margin-and-reseller-pricing.md) §6, because whether resellers nest decides that phase's schema rather than being a separate feature.
