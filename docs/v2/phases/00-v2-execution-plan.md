@@ -7,7 +7,7 @@
 1. **Solo + sequential.** One session, no subagent teams. Order work inside a phase by dependency (schema → backend → RADIUS → UI), not by v1 agent roles.
 2. **Docs stay true.** Every doc a change invalidates (PRD, sub-PRDs, docs/ops/*, CLAUDE.md) is updated in the same phase. The gate includes a docs-accuracy check.
 3. **Bugs get recorded.** Any bug found while building — fixed or not — gets a row in `docs/ops/known-issues.md` (root cause, fix, commit) so later AI sessions never ghost-guess.
-4. **Migrations**: v1 owns 0001–04xx (v1.x maintenance continues at 0412+). v2 ranges are per phase, below. Never take a number outside your phase's range.
+4. **Migrations** (amended 2026-07-17 after a near-miss, see known-issues): numbers form **one linear sequence** — golang-migrate applies only versions above the DB's current one, so every new migration (maintenance or phase) takes **the next free number above the repo's current maximum**. The per-phase ranges below are *budgets* for how many numbers a phase may consume; a range the sequence has already passed is dead (that's why the 2026-07-17 maintenance migration is 0505, inside v2-1's unused tail, not 0413).
 5. **Frozen contracts** work exactly as in v1: the phase's `00-phase.md` freezes API shapes/schema/events before implementation; amendments are explicit, never silent.
 6. **Gates**: each phase defines an integration gate; scriptable items live in `scripts/gate-v2-phase-N.sh`; the phase ends with a written `gate-result.md` in its folder, like v1 phases.
 

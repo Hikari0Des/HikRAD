@@ -7,7 +7,7 @@
 1. **v2 starts only after the v1 pilot gate** (success metric M1: pilot ISP 30 days in production). Don't interleave v2 features with v1.x maintenance fixes — they intentionally touch code v1 treats as frozen.
 2. **Sequential, single-agent execution** (owner decision 2026-07-16): one Claude Code session executes one phase at a time, start to finish — **no parallel agent teams**. The order, standing rules, and migration ranges live in [phases/00-v2-execution-plan.md](phases/00-v2-execution-plan.md).
 3. Every v2 feature still flows through the standard pipeline: master-PRD amendment (new FR numbers continue from FR-61; new Decision rows) → owning sub-PRD update → a frozen-contract phase brief in `docs/v2/phases/phase-v2-N-*/00-phase.md` → implementation → integration gate with a written `gate-result.md`. The kickoff prompts encode this.
-4. v2 migration ranges: **0500–0589**, partitioned per phase in the execution plan. v1.x maintenance continues in 04xx (0412+).
+4. v2 migration ranges: **0500–0589**, partitioned per phase in the execution plan — but note the 2026-07-17 amendment there: migration numbers are one **linear sequence** (next free number above the current max, always); ranges are budgets, and a passed range is dead. v1.x maintenance used 0412 and then continues inside whatever tail the sequence has reached.
 5. The verification baseline for v2 is [docs/verification-phases-1-2.md](../verification-phases-1-2.md) plus the v1 phase gate results. **v2 phases must update every doc they invalidate in the same effort**, and record every bug found in [docs/ops/known-issues.md](../ops/known-issues.md).
 
 ## v2 features (execution order — see the plan for rationale)
@@ -29,6 +29,6 @@ Prepaid card designer · TWA store wrapper · public API docs · non-MikroTik ve
 
 ## v3 parking backlog
 
-Items the owner reports **while v2 is in flight** that aren't v2 scope go to [docs/v3/00-v3-index.md](../v3/00-v3-index.md) (established 2026-07-17: frontend modernization pass, per-manager dashboards, instance branding, dashboard NAS-uuid bug, manager removal, factory reset). A v2 session must not interleave them uninvited — park, don't scope-creep. v3 reserves migrations 0600–0689.
+Items the owner reports **while v2 is in flight** that aren't v2 scope go to [docs/v3/00-v3-index.md](../v3/00-v3-index.md) (established 2026-07-17; three of its six items — NAS-uuid bug, manager removal, factory reset — were pulled forward into v1.x the same day at the owner's request, leaving the frontend modernization pass, per-manager dashboards, and instance branding). A v2 session must not interleave the rest uninvited — park, don't scope-creep. v3 reserves migrations 0600–0689.
 
 **reseller/sub-manager tree** left this list on 2026-07-16: it is now the open blocker at the top of [09-cost-margin-and-reseller-pricing.md](09-cost-margin-and-reseller-pricing.md) §6, because whether resellers nest decides that phase's schema rather than being a separate feature.
