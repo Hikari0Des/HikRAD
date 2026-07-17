@@ -37,7 +37,8 @@ export interface PaymentIntent {
   id: string
   gateway: string
   state: PaymentIntentState
-  amount_iqd: number
+  amount: number
+  currency: string
   gateway_ref: string
   new_expires_at?: string
 }

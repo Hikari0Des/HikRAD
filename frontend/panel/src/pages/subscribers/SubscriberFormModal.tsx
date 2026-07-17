@@ -244,7 +244,11 @@ export function SubscriberFormModal({
             onChange={(e) => set('sessionLimitOverride', e.target.value)}
           />
         </Field>
-        <Field label={t('subscriber.priceOverride')} error={errors.price_override}>
+        <Field
+          label={t('subscriber.priceOverride')}
+          hint={t('subscriber.priceOverrideHint')}
+          error={errors.price_override}
+        >
           <TextInput
             type="number"
             value={form.priceOverride}

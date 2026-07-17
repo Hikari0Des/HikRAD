@@ -90,7 +90,7 @@ export function VouchersPage() {
                   <td className="px-3 py-2 text-end">{b.used}</td>
                   <td className="px-3 py-2 text-end">{b.unused}</td>
                   <td className="px-3 py-2 text-end">
-                    <IQDAmount amount={b.unit_price_iqd} />
+                    <IQDAmount amount={b.unit_price} currency={b.currency} />
                   </td>
                   <td className="px-3 py-2 text-end">
                     {can(PERM_VOUCHERS_CREATE) && b.unused > 0 ? (

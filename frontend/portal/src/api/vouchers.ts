@@ -7,7 +7,7 @@ export interface RenewResult {
   ledger_tx_id: string
   receipt_no: string
   new_expires_at: string
-  price_iqd: number
+  currency: string
   coa_result: CoAResult
 }
 

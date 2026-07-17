@@ -78,7 +78,7 @@ export function UsagePage() {
                   </p>
                   <p className="text-xs text-ink-muted">{formatDate(p.at)}</p>
                 </div>
-                <IQDAmount amount={p.amount_iqd} className="font-semibold" />
+                <IQDAmount amount={p.amount} currency={p.currency} className="font-semibold" />
               </li>
             ))}
           </ul>

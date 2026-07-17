@@ -55,7 +55,7 @@ describe('renew flow — voucher redeem states (FR-42, task 3)', () => {
             ledger_tx_id: 't1',
             receipt_no: 'R1',
             new_expires_at: '2026-08-01T00:00:00Z',
-            price_iqd: 25000,
+            currency: 'IQD',
             coa_result: 'restored',
           }),
         )

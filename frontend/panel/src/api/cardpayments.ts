@@ -12,7 +12,8 @@ export interface CardPaymentRow {
   username: string
   profile_id: string
   profile_name: string
-  price_iqd: number
+  requested_amount: number
+  currency: string
   card_type: string
   state: CardPaymentState
   created_at: string
@@ -33,7 +34,7 @@ export interface CardPaymentApproveResult {
   ledger_tx_id: string
   receipt_no: string
   new_expires_at: string
-  price_iqd: number
+  currency: string
   coa_result: string
 }
 

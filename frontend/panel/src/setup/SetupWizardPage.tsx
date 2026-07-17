@@ -273,7 +273,7 @@ function ProfileStep({ onNext, onSkip }: { onNext: () => void; onSkip: () => voi
     try {
       const body: ProfileWrite = {
         name,
-        price_iqd: Number(price),
+        price: Number(price),
         duration_days: Number(duration),
         rate_down_kbps: Number(down),
         rate_up_kbps: Number(up),

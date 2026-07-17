@@ -46,12 +46,12 @@ export function BalanceWidget() {
   }, [reload])
 
   if (!q.data) return null
-  const low = q.data.balance_iqd < LOW_BALANCE_IQD
+  const low = q.data.balance < LOW_BALANCE_IQD
   return (
     <div className="flex items-center gap-1.5 rounded-md bg-surface-sunken px-2.5 py-1 text-sm">
       <span className="text-xs text-ink-muted">{t('balance.mine')}</span>
       <span className={`font-semibold ${low ? 'text-danger' : ''}`}>
-        <IQDAmount amount={q.data.balance_iqd} />
+        <IQDAmount amount={q.data.balance} currency={q.data.currency} />
       </span>
       {low ? (
         <span className="rounded bg-danger/10 px-1.5 py-0.5 text-xs text-danger">

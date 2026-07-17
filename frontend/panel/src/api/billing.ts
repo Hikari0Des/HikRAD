@@ -20,7 +20,7 @@ export interface RenewResult {
   ledger_tx_id: string
   receipt_no: string
   new_expires_at: string
-  price_iqd: number
+  currency: string
   coa_result: CoAResult
 }
 
@@ -48,17 +48,79 @@ export function refundRenewal(
   )
 }
 
-// --- balances (FR-20) -------------------------------------------------------
+// --- balances (FR-20, per-currency since v2 phase 4 FR-69.2) ---------------
 
-export function getManagerBalance(id: string): Promise<{ balance_iqd: number }> {
-  return request<{ balance_iqd: number }>(`/managers/${id}/balance`)
+export function getManagerBalance(
+  id: string,
+  currency = 'IQD',
+): Promise<{ currency: string; balance: number }> {
+  return request<{ currency: string; balance: number }>(
+    `/managers/${id}/balance?currency=${encodeURIComponent(currency)}`,
+  )
+}
+
+/** Every currency the manager has ever touched (new, plural — C7). */
+export function listManagerBalances(
+  id: string,
+): Promise<{ balances: { currency: string; balance: number }[] }> {
+  return request(`/managers/${id}/balances`)
 }
 
 export function topupManager(
   id: string,
-  body: { amount_iqd: number; note?: string },
-): Promise<{ ledger_tx_id: string; balance_iqd: number }> {
+  body: { amount: number; currency?: string; note?: string },
+): Promise<{ ledger_tx_id: string; currency: string; balance: number }> {
   return touchingBalance(request(`/managers/${id}/topup`, { method: 'POST', body }))
+}
+
+/** Currency catalog for building currency <select>s (C7). */
+export interface Currency {
+  code: string
+  minor_unit_digits: number
+  symbol: string
+}
+
+export function listCurrencies(): Promise<{ items: Currency[] }> {
+  return request<{ items: Currency[] }>('/currencies')
+}
+
+export interface CurrencyRate {
+  id: string
+  from_currency: string
+  to_currency: string
+  rate: number
+  effective_from: string
+  created_by: string | null
+  created_at: string
+}
+
+export function listCurrencyRates(from?: string, to?: string): Promise<{ items: CurrencyRate[] }> {
+  const params = new URLSearchParams()
+  if (from) params.set('from', from)
+  if (to) params.set('to', to)
+  const qs = params.toString()
+  return request<{ items: CurrencyRate[] }>(`/currency-rates${qs ? `?${qs}` : ''}`)
+}
+
+export function createCurrencyRate(body: {
+  from_currency: string
+  to_currency: string
+  rate: number
+}): Promise<CurrencyRate> {
+  return request<CurrencyRate>('/currency-rates', { method: 'POST', body })
+}
+
+export function exchangeManagerBalance(
+  id: string,
+  body: { from_currency: string; to_currency: string; amount: number; currency_rate_id: string },
+): Promise<{
+  exchange_reference: string
+  from_ledger_tx_id: string
+  to_ledger_tx_id: string
+  from_balance: number
+  to_balance: number
+}> {
+  return touchingBalance(request(`/managers/${id}/exchange`, { method: 'POST', body }))
 }
 
 // --- ledger (FR-24) ---------------------------------------------------------
@@ -70,7 +132,8 @@ export interface LedgerItem {
   id: string
   at: string
   type: LedgerType
-  amount_iqd: number
+  amount: number
+  currency: string
   actor_manager_id: string | null
   subscriber_id: string | null
   source: string
@@ -83,6 +146,7 @@ export interface LedgerFilters {
   manager_id?: string
   subscriber_id?: string
   type?: string
+  currency?: string
   from?: string
   to?: string
 }
@@ -106,7 +170,8 @@ export interface VoucherBatch {
   profile_id: string
   prefix: string
   count: number
-  unit_price_iqd: number
+  unit_price: number
+  currency: string
   state: string
   expires_at: string | null
   created_at: string
@@ -133,7 +198,7 @@ export function getVoucherBatch(id: string): Promise<{ items: VoucherCode[] }> {
 
 export function voidVoucherBatch(
   id: string,
-): Promise<{ voided_unused: number; credit_iqd: number }> {
+): Promise<{ voided_unused: number; credit: number; currency: string }> {
   return touchingBalance(request(`/vouchers/batches/${id}/void`, { method: 'POST' }))
 }
 

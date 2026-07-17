@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 
 import { IQDAmount, ErrorState, LoadingState, useFormatters, useT } from '@hikrad/shared'
 
+import { listCurrencies } from '../../api/billing'
 import {
   archiveProfile,
   createProfile,
@@ -208,7 +209,7 @@ function ProfileRow({
         )}
       </td>
       <td className="whitespace-nowrap px-3 py-2">
-        <IQDAmount amount={p.price_iqd} />
+        <IQDAmount amount={p.price} currency={p.currency} />
       </td>
       <td className="whitespace-nowrap px-3 py-2">
         {t('profiles.days', { days: p.duration_days })}
@@ -254,6 +255,7 @@ function ProfileFormModal({
 }) {
   const t = useT()
   const { toast } = useToast()
+  const { data: currencies } = useAsync(() => listCurrencies(), [])
   const editing = Boolean(existing)
   const [f, setF] = useState(() => initial(existing))
   const [errors, setErrors] = useState<Record<string, string>>({})
@@ -304,13 +306,22 @@ function ProfileFormModal({
         <Field label={t('profiles.name')} error={errors.name}>
           <TextInput value={f.name} onChange={(e) => set('name', e.target.value)} />
         </Field>
-        <Field label={t('profiles.price')} error={errors.price_iqd}>
+        <Field label={t('profiles.price')} error={errors.price}>
           <TextInput
             type="number"
             dir="ltr"
             value={f.price}
             onChange={(e) => set('price', e.target.value)}
           />
+        </Field>
+        <Field label={t('profiles.currency')} error={errors.currency}>
+          <Select value={f.currency} onChange={(e) => set('currency', e.target.value)}>
+            {(currencies?.items ?? [{ code: 'IQD' }]).map((c) => (
+              <option key={c.code} value={c.code}>
+                {c.code}
+              </option>
+            ))}
+          </Select>
         </Field>
         <Field label={t('profiles.durationDays')} error={errors.duration_days}>
           <TextInput
@@ -479,6 +490,7 @@ function ProfileFormModal({
 interface ProfileForm {
   name: string
   price: string
+  currency: string
   duration: string
   sessionLimit: string
   rateDown: string
@@ -498,7 +510,8 @@ interface ProfileForm {
 function initial(p?: Profile): ProfileForm {
   return {
     name: p?.name ?? '',
-    price: p != null ? String(p.price_iqd) : '0',
+    price: p != null ? String(p.price) : '0',
+    currency: p?.currency ?? 'IQD',
     duration: p != null ? String(p.duration_days) : '30',
     sessionLimit: p != null ? String(p.session_limit_default) : '1',
     rateDown: p != null ? String(p.rate_down_kbps) : '0',
@@ -523,7 +536,8 @@ function numOrNull(s: string): number | null {
 function toWrite(f: ProfileForm): ProfileWrite {
   return {
     name: f.name,
-    price_iqd: Number(f.price) || 0,
+    price: Number(f.price) || 0,
+    currency: f.currency,
     duration_days: Number(f.duration) || 1,
     rate_down_kbps: Number(f.rateDown) || 0,
     rate_up_kbps: Number(f.rateUp) || 0,

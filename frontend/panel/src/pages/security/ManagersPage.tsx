@@ -2,7 +2,7 @@ import { useState } from 'react'
 
 import { ErrorState, IQDAmount, LoadingState, useT } from '@hikrad/shared'
 
-import { getManagerBalance, topupManager } from '../../api/billing'
+import { getManagerBalance, listCurrencies, topupManager } from '../../api/billing'
 import { ApiError } from '../../api/client'
 import {
   createManager,
@@ -246,7 +246,7 @@ function RemoveManagerModal({
 function BalanceCell({ managerId }: { managerId: string }) {
   const q = useAsync(() => getManagerBalance(managerId).catch(() => null), [managerId])
   if (!q.data) return <span className="text-ink-muted">—</span>
-  return <IQDAmount amount={q.data.balance_iqd} />
+  return <IQDAmount amount={q.data.balance} currency={q.data.currency} />
 }
 
 function RowActions({
@@ -441,7 +441,9 @@ function ManagerFormModal({
 function TopupModal({ manager, onClose }: { manager: ManagerView; onClose: () => void }) {
   const t = useT()
   const { toast } = useToast()
+  const { data: currencies } = useAsync(() => listCurrencies(), [])
   const [amount, setAmount] = useState(0)
+  const [currency, setCurrency] = useState('IQD')
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
 
@@ -449,7 +451,8 @@ function TopupModal({ manager, onClose }: { manager: ManagerView; onClose: () =>
     setBusy(true)
     try {
       const res = await topupManager(manager.id, {
-        amount_iqd: amount,
+        amount,
+        currency,
         note: note.trim() || undefined,
       })
       toast(t('managers.topupDone'), 'ok')
@@ -485,6 +488,19 @@ function TopupModal({ manager, onClose }: { manager: ManagerView; onClose: () =>
             dir="ltr"
             required
           />
+        </Field>
+        <Field label={t('managers.topupCurrency')} htmlFor="topup-currency">
+          <Select
+            id="topup-currency"
+            value={currency}
+            onChange={(e) => setCurrency(e.target.value)}
+          >
+            {(currencies?.items ?? [{ code: 'IQD' }]).map((c) => (
+              <option key={c.code} value={c.code}>
+                {c.code}
+              </option>
+            ))}
+          </Select>
         </Field>
         <Field label={t('managers.topupNote')} htmlFor="topup-note">
           <TextInput id="topup-note" value={note} onChange={(e) => setNote(e.target.value)} />

@@ -38,7 +38,9 @@ export function ReportsIndexPage() {
         <div className="rounded-md border border-surface-sunken bg-surface-raised p-4">
           <p className="text-xs text-ink-muted">{t('reports.index.revenueThisMonth')}</p>
           <p className="text-2xl font-semibold">
-            {revenue.loading ? '…' : <IQDAmount amount={revenue.data?.total_iqd ?? 0} />}
+            {/* IQD-scoped headline (like the dashboard tile and digest) — the
+                full per-currency breakdown lives on the revenue report itself. */}
+            {revenue.loading ? '…' : <IQDAmount amount={revenue.data?.totals.IQD ?? 0} />}
           </p>
         </div>
         <div className="rounded-md border border-surface-sunken bg-surface-raised p-4">

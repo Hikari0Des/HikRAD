@@ -28,15 +28,18 @@ export function indexReversals(items: LedgerItem[]): ReversalIndex {
 
 /**
  * Running-balance column: only meaningful when the ledger is filtered to a
- * single manager (a mixed feed has no single balance). Returns a map of tx id →
- * balance after that entry, computed oldest-first over the amounts. `items` are
- * assumed newest-first (the list-endpoint order), so we walk them in reverse.
+ * single manager AND a single currency (v2 phase 4 — a mixed feed, or one
+ * spanning currencies, has no single balance; summing across currencies here
+ * would be the same class of bug AC-69c locks out of the balance layer).
+ * Returns a map of tx id → balance after that entry, computed oldest-first
+ * over the amounts. `items` are assumed newest-first (the list-endpoint
+ * order), so we walk them in reverse.
  */
 export function runningBalances(items: LedgerItem[]): Map<string, number> {
   const out = new Map<string, number>()
   let bal = 0
   for (let i = items.length - 1; i >= 0; i--) {
-    bal += items[i].amount_iqd
+    bal += items[i].amount
     out.set(items[i].id, bal)
   }
   return out

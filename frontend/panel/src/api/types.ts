@@ -208,7 +208,8 @@ export type QuotaBehavior = 'block' | 'throttle' | 'expired_pool'
 export interface Profile {
   id: string
   name: string
-  price_iqd: number
+  price: number
+  currency: string
   duration_days: number
   rate_down_kbps: number
   rate_up_kbps: number
@@ -232,7 +233,8 @@ export interface Profile {
 
 export interface ProfileWrite {
   name: string
-  price_iqd: number
+  price: number
+  currency?: string
   duration_days: number
   rate_down_kbps: number
   rate_up_kbps: number

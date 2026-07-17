@@ -16,12 +16,14 @@ export type RevenueGroupBy = 'day' | 'month' | 'manager' | 'profile' | 'method'
 
 export interface RevenueRow {
   key: string
-  amount_iqd: number
+  currency: string
+  amount: number
   count: number
 }
 
 export interface RevenueReport {
-  total_iqd: number
+  /** Per-currency totals (v2 phase 4, FR-70.2) — never summed across currency. */
+  totals: Record<string, number>
   rows: RevenueRow[]
 }
 
@@ -34,22 +36,24 @@ export function getRevenueReport(
   })
 }
 
-// --- settlement (FR-45.2) ----------------------------------------------------
+// --- settlement (FR-45.2, scoped to one currency since v2 phase 4) ----------
 
 export interface SettlementReport {
-  opening_iqd: number
-  topups_iqd: number
-  renewals: { count: number; amount_iqd: number }
-  refunds_iqd: number
-  closing_iqd: number
+  currency: string
+  opening: number
+  topups: number
+  renewals: { count: number; amount: number }
+  refunds: number
+  closing: number
 }
 
 export function getSettlementReport(
   range: ReportRange,
   managerId?: string,
+  currency = 'IQD',
 ): Promise<SettlementReport> {
   return request<SettlementReport>('/reports/settlement', {
-    query: { from: range.from, to: range.to, manager_id: managerId },
+    query: { from: range.from, to: range.to, manager_id: managerId, currency },
   })
 }
 

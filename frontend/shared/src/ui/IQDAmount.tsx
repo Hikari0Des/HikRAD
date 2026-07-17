@@ -21,5 +21,9 @@ export function IQDAmount({
   className?: string
 }) {
   const { formatMoney } = useFormatters()
-  return <bdi className={`hk-iqd${className ? ` ${className}` : ''}`}>{formatMoney(amount, currency)}</bdi>
+  return (
+    <bdi className={`hk-iqd${className ? ` ${className}` : ''}`}>
+      {formatMoney(amount, currency)}
+    </bdi>
+  )
 }

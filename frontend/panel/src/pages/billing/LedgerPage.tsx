@@ -5,6 +5,7 @@ import { ErrorState, IQDAmount, LoadingState, useFormatters, useT } from '@hikra
 import { downloadAuthorized } from '../../api/security'
 import {
   ledgerExportUrl,
+  listCurrencies,
   listLedger,
   refundRenewal,
   type LedgerFilters,
@@ -18,6 +19,7 @@ import { Field, Select, TextInput, Textarea } from '../../components/form'
 import { Modal } from '../../components/Modal'
 import { PageHeader } from '../../components/PageHeader'
 import { useToast } from '../../components/Toast'
+import { useAsync } from '../../hooks/useAsync'
 import { usePaginated } from '../../hooks/usePaginated'
 import { indexReversals, runningBalances } from '../../lib/ledgerPairing'
 
@@ -37,15 +39,17 @@ export function LedgerPage() {
   const { can } = useAuth()
   const [filters, setFilters] = useState<LedgerFilters>({})
   const [refundRow, setRefundRow] = useState<LedgerItem | null>(null)
+  const { data: currencies } = useAsync(() => listCurrencies(), [])
 
   const key = JSON.stringify(filters)
   const page = usePaginated<LedgerItem>((cursor) => listLedger({ cursor }, filters), key)
 
   const reversals = useMemo(() => indexReversals(page.items), [page.items])
-  // Running balance only makes sense filtered to a single manager.
+  // Running balance only makes sense filtered to a single manager AND a
+  // single currency (v2 phase 4) — a mixed-currency feed has no single sum.
   const balances = useMemo(
-    () => (filters.manager_id ? runningBalances(page.items) : null),
-    [filters.manager_id, page.items],
+    () => (filters.manager_id && filters.currency ? runningBalances(page.items) : null),
+    [filters.manager_id, filters.currency, page.items],
   )
 
   function setField(k: keyof LedgerFilters, v: string) {
@@ -94,6 +98,20 @@ export function LedgerPage() {
             placeholder={t('ledger.filter.managerId')}
             dir="ltr"
           />
+        </label>
+        <label className="text-xs">
+          <span className="mb-1 block text-ink-muted">{t('ledger.filter.currency')}</span>
+          <Select
+            value={filters.currency ?? ''}
+            onChange={(e) => setField('currency', e.target.value)}
+          >
+            <option value="">{t('ledger.filter.allCurrencies')}</option>
+            {(currencies?.items ?? []).map((c) => (
+              <option key={c.code} value={c.code}>
+                {c.code}
+              </option>
+            ))}
+          </Select>
         </label>
         <label className="text-xs">
           <span className="mb-1 block text-ink-muted">{t('ledger.filter.from')}</span>
@@ -197,12 +215,12 @@ function LedgerRow({
           </span>
         ) : null}
       </td>
-      <td className={`px-3 py-2 text-end ${row.amount_iqd < 0 ? 'text-danger' : ''}`}>
-        <IQDAmount amount={row.amount_iqd} />
+      <td className={`px-3 py-2 text-end ${row.amount < 0 ? 'text-danger' : ''}`}>
+        <IQDAmount amount={row.amount} currency={row.currency} />
       </td>
       {showBalance ? (
         <td className="px-3 py-2 text-end text-ink-muted">
-          {balance !== undefined ? <IQDAmount amount={balance} /> : '—'}
+          {balance !== undefined ? <IQDAmount amount={balance} currency={row.currency} /> : '—'}
         </td>
       ) : null}
       <td className="px-3 py-2 text-ink-muted">{row.note || '—'}</td>

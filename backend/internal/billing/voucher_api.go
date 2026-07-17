@@ -301,9 +301,11 @@ func (m *Module) voidBatchHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = auth.Audit(ctx, "voucher.batch.void", "voucher_batch", id, nil, map[string]any{
-		"voided_unused": voided, "credit_iqd": credit,
+		"voided_unused": voided, "credit": credit, "currency": unitCurrency,
 	})
-	httpapi.JSON(w, http.StatusOK, map[string]any{"voided_unused": voided, "credit_iqd": credit})
+	httpapi.JSON(w, http.StatusOK, map[string]any{
+		"voided_unused": voided, "credit": credit, "currency": unitCurrency,
+	})
 }
 
 // --- Internal redeem seam for B's hotspot login (C3) ------------------------

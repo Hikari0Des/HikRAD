@@ -24,7 +24,8 @@ vi.mock('../../api/billing', async () => {
 const profile: Profile = {
   id: 'p1',
   name: 'Home 10M',
-  price_iqd: 15000,
+  price: 15000,
+  currency: 'IQD',
   duration_days: 30,
   rate_down_kbps: 10000,
   rate_up_kbps: 10000,
@@ -104,7 +105,7 @@ describe('RenewModal (FR-19)', () => {
       ledger_tx_id: 'tx1',
       receipt_no: 'R-100',
       new_expires_at: '2026-08-01T00:00:00Z',
-      price_iqd: 15000,
+      currency: 'IQD',
       coa_result: 'restored',
     })
     renderModal()
@@ -130,7 +131,7 @@ describe('RenewModal (FR-19)', () => {
       ledger_tx_id: 'tx1',
       receipt_no: 'R-101',
       new_expires_at: '2026-08-01T00:00:00Z',
-      price_iqd: 15000,
+      currency: 'IQD',
       coa_result: 'disconnect_fallback',
     })
     renderModal()

@@ -49,6 +49,10 @@ export function RenewModal({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<{ code: string; message: string } | null>(null)
   const [result, setResult] = useState<RenewResult | null>(null)
+  // The renew response never carries the price charged (only ledger_tx_id/
+  // receipt_no/new_expires_at/coa_result/currency) — captured client-side at
+  // submit time from the same preview the operator already saw instead.
+  const [charged, setCharged] = useState<{ amount: number; currency: string } | null>(null)
 
   // Mint a fresh idempotency key whenever the dialog opens; keep it stable across
   // retries within the same open so a retried submit is deduped server-side.
@@ -60,6 +64,7 @@ export function RenewModal({
       setNote('')
       setError(null)
       setResult(null)
+      setCharged(null)
       setBusy(false)
     }
     // options/currentProfileId are stable enough; reset only on open toggle.
@@ -75,18 +80,23 @@ export function RenewModal({
       ? null
       : profileId === currentProfileId && subscriber.price_override != null
         ? subscriber.price_override
-        : selected.price_iqd
+        : selected.price
 
   async function submit() {
     setBusy(true)
     setError(null)
     try {
+      const chargedAtSubmit =
+        previewPrice != null && selected != null
+          ? { amount: previewPrice, currency: selected.currency }
+          : null
       const res = await renewSubscriber(
         subscriber.id,
         { profile_id: profileId || undefined, note: note.trim() || undefined },
         idemKey.current,
       )
       setResult(res)
+      setCharged(chargedAtSubmit)
       onRenewed()
     } catch (err) {
       if (err instanceof ApiError) {
@@ -109,7 +119,7 @@ export function RenewModal({
       title={t('renew.title', { username: subscriber.username })}
     >
       {result ? (
-        <RenewSuccess result={result} onClose={() => onOpenChange(false)} />
+        <RenewSuccess result={result} charged={charged} onClose={() => onOpenChange(false)} />
       ) : (
         <form
           onSubmit={(e) => {
@@ -138,7 +148,7 @@ export function RenewModal({
             <span className="text-sm text-ink-muted">{t('renew.price')}</span>
             {previewPrice != null ? (
               <span className="text-lg font-semibold">
-                <IQDAmount amount={previewPrice} />
+                <IQDAmount amount={previewPrice} currency={selected?.currency} />
               </span>
             ) : (
               <span className="text-sm text-ink-muted">{t('ui.none')}</span>
@@ -186,7 +196,15 @@ function RenewError({ code, message }: { code: string; message: string }) {
 }
 
 /** Success state: new expiry, amount, CoA outcome, and receipt actions. */
-function RenewSuccess({ result, onClose }: { result: RenewResult; onClose: () => void }) {
+function RenewSuccess({
+  result,
+  charged,
+  onClose,
+}: {
+  result: RenewResult
+  charged: { amount: number; currency: string } | null
+  onClose: () => void
+}) {
   const t = useT()
   const { locale } = useLocale()
   const { formatDate } = useFormatters()
@@ -216,7 +234,11 @@ function RenewSuccess({ result, onClose }: { result: RenewResult; onClose: () =>
         <div>
           <dt className="text-xs text-ink-muted">{t('renew.charged')}</dt>
           <dd className="mt-0.5 font-medium">
-            <IQDAmount amount={result.price_iqd} />
+            {charged != null ? (
+              <IQDAmount amount={charged.amount} currency={charged.currency} />
+            ) : (
+              <span className="text-ink-muted">{t('ui.none')}</span>
+            )}
           </dd>
         </div>
         <div className="col-span-2">

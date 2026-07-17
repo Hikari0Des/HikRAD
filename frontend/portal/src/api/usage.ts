@@ -22,7 +22,8 @@ export interface PortalPaymentItem {
   id: string
   at: string
   type: PaymentType
-  amount_iqd: number
+  amount: number
+  currency: string
   source: string
   reference: string
 }

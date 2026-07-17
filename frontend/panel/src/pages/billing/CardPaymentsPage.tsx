@@ -120,7 +120,8 @@ export function CardPaymentsPage() {
                     </Link>
                   </td>
                   <td className="px-3 py-2">
-                    {r.profile_name} · <IQDAmount amount={r.price_iqd} />
+                    {r.profile_name} ·{' '}
+                    <IQDAmount amount={r.requested_amount} currency={r.currency} />
                   </td>
                   <td className="px-3 py-2 capitalize">{r.card_type}</td>
                   <td className="px-3 py-2 text-ink-muted">
