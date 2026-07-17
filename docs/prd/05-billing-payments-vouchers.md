@@ -1,11 +1,13 @@
 # HikRAD — Sub-PRD 05: Billing, Payments & Vouchers
 
-> Derived from [docs/PRD.md](../PRD.md) v1.0 on 2026-07-08; updated 2026-07-11 for master v1.3 (FR-59 scratch-card payments added — Decision 22). Owns: FR-19, FR-20, FR-21, FR-22, FR-23, FR-24, FR-25, FR-26, FR-59 · Risk: e-wallet gateway availability · Open question 1 (gateway priority)
+> Derived from [docs/PRD.md](../PRD.md) v1.0 on 2026-07-08; updated 2026-07-11 for master v1.3 (FR-59 scratch-card payments added — Decision 22); updated 2026-07-17 for master v1.6 (FR-68–70 full multi-currency billing — Decision 34, v2 phase 3; supersedes the implicit-IQD assumption stated in §1 below). Owns: FR-19, FR-20, FR-21, FR-22, FR-23, FR-24, FR-25, FR-26, FR-59, FR-68, FR-69, FR-70 · Risk: e-wallet gateway availability · Open question 1 (gateway priority)
 > Depends on: [04-subscribers-profiles](04-subscribers-profiles.md) (profile price/duration, expiry updates, per-user overrides), [02-radius-nas-aaa](02-radius-nas-aaa.md) (CoA after renewal, Hotspot voucher login), [06-managers-roles-security](06-managers-roles-security.md) (manager accounts, permissions, audit) · Depended on by: [07-subscriber-portal-pwa](07-subscriber-portal-pwa.md) (portal renewal + payment UI), [08-reports](08-reports.md) (financial reports read the ledger), [03-lossless-accounting-live-monitoring](03-lossless-accounting-live-monitoring.md) (revenue tile, low-balance alerts)
 
 ## 1. Scope & context
 
-All money movement: prepaid renewals, the immutable transaction ledger, manager/agent balances (how **Hassan** the field agent operates and settles), manual cash payments with printable receipts, one-time voucher batches, and Iraqi e-wallet payments (ZainCash, FastPay, Qi) behind a pluggable gateway interface. Business model is prepaid only (Decision 7); currency is IQD by default with formatting from settings. Payments must never be a launch blocker: manual + voucher paths work fully offline (NFR-7 — e-wallets are the *only* online-dependent feature).
+All money movement: prepaid renewals, the immutable transaction ledger, manager/agent balances (how **Hassan** the field agent operates and settles), manual cash payments with printable receipts, one-time voucher batches, and Iraqi e-wallet payments (ZainCash, FastPay, Qi) behind a pluggable gateway interface. Business model is prepaid only (Decision 7). Payments must never be a launch blocker: manual + voucher paths work fully offline (NFR-7 — e-wallets are the *only* online-dependent feature).
+
+**v2 (FR-68–70, Decision 34) supersedes this scope note's "currency is IQD by default":** every monetary column is now an integer minor-unit amount **plus a currency code on the same row** — `IQD`/`USD`/`EUR` shipped enabled, extensible catalog. Nothing here becomes online-dependent: exchange rates are admin-entered (`currency_rates`), never fetched, so the NFR-7 offline posture is unaffected.
 
 ## 2. Owned requirements — elaborated
 
@@ -75,6 +77,33 @@ All money movement: prepaid renewals, the immutable transaction ledger, manager/
 
 *Elaboration (Could):* per-profile promo price + date window; FR-19.2 price resolution order becomes user-override → active promo → profile price; ledger entries flag promo-priced renewals for reporting.
 
+### FR-68 (M) — Currency model (v2)
+**Master:** A `currencies` catalog (`IQD`/`USD`/`EUR` shipped enabled, extensible) replaces the implicit-IQD assumption. Every monetary column becomes an integer minor-unit amount + a `currency` code. Exchange rates are admin-maintained only — no online feed. Every rate actually used is stamped onto the ledger row.
+
+*Elaboration:*
+- **FR-68.1** — `currencies(code PK, minor_unit_digits, symbol, enabled)`. `minor_unit_digits` is 0 for IQD (its stored integer already *is* the whole-currency amount, so the FR-24 rename below changes no IQD value), 2 for USD/EUR. Adding a fourth currency later is a data-only change (a new `currencies` row + enabling it in Settings), never a schema change — the FR-17-style "no core changes to add one more" principle applied to money instead of NAS vendors.
+- **FR-68.2** — Every existing `*_iqd` column (`ledger_transactions.amount_iqd`, `manager_balances.balance_iqd`, `manager_low_balance_thresholds.threshold_iqd`, `profiles.price_iqd`, `voucher_batches.unit_price_iqd`, `payments.amount_iqd`) is renamed to drop the `_iqd` suffix and gains a sibling `currency` column (`NOT NULL REFERENCES currencies(code)`, backfilled `'IQD'`). The rename is deliberate, not cosmetic: a column still spelled `amount_iqd` holding USD cents would be a standing lie in the schema every future reader has to know to distrust.
+- **FR-68.3** — `currency_rates(id, from_currency, to_currency, rate, effective_from, created_by, created_at)`. `rate` is expressed in **whole-currency** terms (e.g. `1 USD = 1310 IQD` stores `rate=1310`, `from_currency='USD'`, `to_currency='IQD'`) so the admin-facing rate-entry form is human-auditable; any code converting minor-unit amounts applies each side's `minor_unit_digits` around that whole-currency rate. No code path in this feature ever makes an outbound HTTP call to fetch a rate (NFR-7) — the only way a `currency_rates` row is created is the admin CRUD endpoint (FR-68.4).
+- **FR-68.4** — Rate CRUD is permission-gated (new permission `currency_rates.manage`) and audit-logged like any other settings mutation; rates are append-style (a new `effective_from` row, not an edit of an old one) so a historical ledger entry's stamped rate is never retroactively altered — consistent with the ledger's own append-only philosophy.
+
+### FR-69 (M) — Money flows in the transaction's own currency (v2)
+**Master:** Renewals, balances, vouchers, and refunds all thread the currency of the money actually moving, end to end. Manager balances become per-currency with no implicit conversion; converting currency is an explicit, ledger-visible exchange.
+
+*Elaboration:*
+- **FR-69.1** — Profile price gains a currency (FR-8 elaboration, owned by [04](04-subscribers-profiles.md) for the column, enforced here for the renewal math). FR-19.3's single renewal code path is unchanged in shape — it now also threads `currency` alongside `price` from resolution through to the ledger entry, payment/receipt row, and CoA restore is unaffected (currency has no RADIUS meaning).
+- **FR-69.2** — `manager_balances` becomes a per-`(manager_id, currency)` row (composite PK), each independently derived-from-the-ledger (FR-20.1 applies **per currency**: `balance(M, C) = sum(ledger.amount WHERE actor_manager_id=M AND currency=C)`, never summed across `C`). A renewal in a currency the manager has never held creates that currency's zero-balance row on first touch, identical in spirit to today's `manager_balances` upsert-on-first-use. Insufficient-balance errors name the currency that was short.
+- **FR-69.3** — **Exchange** (new): a manager (or admin on their behalf) converts between two of their own currency balances using a `currency_rates` row. This inserts exactly **two** linked `ledger_transactions` rows in one transaction — a debit in `from_currency`, a credit in `to_currency` — both carrying a shared reference and the `currency_rates.id` used (FR-68.1's "every rate actually used is stamped" requirement). This is the **only** way value moves between a manager's currencies; nothing else (a renewal, a top-up, a refund) is ever allowed to implicitly convert. New ledger `type` value `'exchange'` (widens FR-24's existing CHECK).
+- **FR-69.4** — Vouchers (FR-22) keep the charge-at-generation model exactly as Phase 3 built it (the "NEW" open question in §7 was already resolved there) — this FR only adds that a batch's `unit_price`/`currency` are the generating profile's, unchanged mechanism.
+- **FR-69.5** — Refunds (FR-25) reverse in the **original entry's own currency, at no rate at all** (a refund is not a re-conversion — it is undoing the original movement exactly) — `reverses_id` already links the pair, so the reversing entry's currency is read from the entry it reverses, never re-resolved from today's profile price or today's rate table.
+
+### FR-70 (S) — Multi-currency display & reports (v2)
+**Master:** A default display currency in Settings; the shared amount formatter generalizes from IQD-only; reports/reconciliation run per currency, never silently summed across one.
+
+*Elaboration:*
+- **FR-70.1** — `formatIQD(amount, locale, opts)` generalizes to `formatMoney(amount, currency, locale, opts)`; `formatIQD` becomes a thin wrapper (`formatMoney(amount, 'IQD', locale, opts)`) so existing call sites keep compiling, but every call site that renders a genuinely multi-currency field (profile price, ledger row, manager balance, receipt, voucher batch) must migrate to pass the row's real `currency`, not assume IQD. IQD's rendered output is byte-identical to today's (regression-locked by the existing format test suite), including the Eastern-Arabic-numeral option ([07](07-subscriber-portal-pwa.md) NFR-6.3).
+- **FR-70.2** — Reports ([08](08-reports.md)) and the M-series reconciliation invariants (FR-40-style "received/persisted" but for money: ledger sum = displayed balance) are computed **per currency** — a report spanning multiple currencies shows one column set per currency, never a single blended total. An optional "converted to display currency" view is additive and always labeled with the rate and its `effective_from` date, so it is legibly an estimate, not the authoritative figure.
+- **FR-70.3** — Settings gains a default display currency (used only for FR-70.1's fallback when a screen has no more specific currency context, e.g. a dashboard tile aggregating across managers — which itself must respect FR-70.2's per-currency rule rather than silently pick one).
+
 ## 3. Acceptance criteria
 
 - **AC-19a** — Given an active user expiring in 3 days on a 30-day profile with anchor "from expiry", when renewed, then new expiry = old expiry + 30 days; given an expired user, new expiry = now + 30 days.
@@ -89,22 +118,34 @@ All money movement: prepaid renewals, the immutable transaction ledger, manager/
 - **AC-59a** — Given an expired subscriber submitting a card code at midnight, then within 5 s they have a 1-day provisional renewal (online-in-expired-pool case restored via CoA) and a pending item exists in the verification queue; a second submission while pending is rejected with a clear message.
 - **AC-59b** — Given an admin approving a pending card payment on day 0 for a 30-day profile, then the subscriber's expiry = trial start + 30 days (not +31); given a rejection, then the ledger nets to 0 for the trial, the subscriber is expired again, and a rejected notification (with reason) is delivered.
 - **AC-59c** — Given the card-payments list API, then card codes never appear in it; the reveal action returns the code once and writes an audit entry naming the revealing manager.
+- **AC-68a** *(v2)* — Given a fresh install or an upgraded one, then `currencies` contains exactly `IQD`/`USD`/`EUR`, all enabled; every pre-migration `*_iqd` row backfills to `currency='IQD'` with its stored integer unchanged (IQD's `minor_unit_digits=0` means the rename changes no value).
+- **AC-68b** *(v2)* — Given the `currency_rates` CRUD endpoint, then no code path in this feature ever issues an outbound HTTP request — rates only ever come from an authenticated admin submission, audit-logged.
+- **AC-69a** *(v2)* — Given a USD-priced profile and an agent with a USD balance of $50 and an IQD balance of 25,000, when the agent renews a $25 USD subscriber, then the USD balance is $25, the IQD balance is untouched at 25,000, and the receipt shows USD.
+- **AC-69b** *(v2)* — Given a manager exchanging $100 to IQD at a stored rate of 1310, then exactly two new ledger rows exist (a $100 USD debit, a 131,000 IQD credit), both referencing the same `currency_rates` row; the manager's USD balance drops by exactly $100 and IQD balance rises by exactly 131,000; no other manager's balance in either currency changes.
+- **AC-69c** *(v2)* — Given any point in time, then every manager's displayed balance **in each currency they hold** equals the sum of their ledger entries **in that currency** exactly (AC-20b generalized — the invariant must hold per currency, and a bug that summed across currencies would fail this on the very first mixed-currency manager).
+- **AC-69d** *(v2)* — Given a refunded USD renewal, then the reversing entry is in USD at the original entry's amount — never re-priced at today's profile price or re-converted at today's rate.
+- **AC-70a** *(v2)* — Given `formatMoney` called with `currency='IQD'`, then its output is byte-identical to today's `formatIQD` for the same amount/locale/options (regression-locked).
+- **AC-70b** *(v2)* — Given a report spanning subscribers billed in both IQD and USD, then the report shows separate per-currency figures; no total anywhere silently adds an IQD number to a USD number.
 
 ## 4. Data & interfaces
 
-**Owned entities:** `ledger_transactions` (append-only, fields per FR-24), `payments` (intent lifecycle, gateway ref, receipt no), `vouchers` + `voucher_batches`, `gateway_configs` (per-gateway creds, encrypted at rest per NFR-4), `card_payments` (FR-59: subscriber, profile, card type, card_code_enc, state `pending|approved|rejected`, trial ledger ref, decided_by/at, reject_reason), promo fields on pricing.
+**Owned entities:** `ledger_transactions` (append-only, fields per FR-24; **v2:** `amount` + `currency` replace `amount_iqd`, plus a nullable `currency_rate_id` stamped only on `type='exchange'` rows), `payments` (intent lifecycle, gateway ref, receipt no; **v2:** `amount`/`currency` replace `amount_iqd`), `vouchers` + `voucher_batches` (**v2:** `unit_price`/`currency` replace `unit_price_iqd`), `gateway_configs` (per-gateway creds, encrypted at rest per NFR-4), `card_payments` (FR-59: subscriber, profile, card type, card_code_enc, state `pending|approved|rejected`, trial ledger ref, decided_by/at, reject_reason), promo fields on pricing. **v2 additions (FR-68):** `currencies` (code, minor_unit_digits, symbol, enabled), `currency_rates` (from_currency, to_currency, rate, effective_from, created_by). `manager_balances` and `manager_low_balance_thresholds` (owned data, FR-20) become per-`(manager_id, currency)` composite-keyed rows.
 
 **Exposes:**
 - `POST /api/v1/subscribers/{id}/renew` (the single renewal path, FR-19.3), `POST /api/v1/subscribers/{id}/refund`
 - `GET/POST /api/v1/vouchers/batches`, `POST /api/v1/vouchers/redeem` (also consumed by Hotspot login flow)
-- `POST /api/v1/managers/{id}/topup`, `GET /api/v1/managers/{id}/balance`
-- `GET /api/v1/ledger?filters…` (+ CSV export)
+- `POST /api/v1/managers/{id}/topup`, `GET /api/v1/managers/{id}/balance` (**v2:** returns one balance per currency the manager holds, not a single integer)
+- `POST /api/v1/managers/{id}/exchange {from_currency, to_currency, amount, currency_rate_id}` (**v2, FR-69.3** — the only currency-conversion path)
+- `GET/POST /api/v1/currency-rates` (**v2, FR-68.4**, `currency_rates.manage`-gated), `GET /api/v1/currencies`
+- `GET /api/v1/ledger?filters…` (+ CSV export; **v2:** filterable/groupable by `currency`)
 - `POST /api/v1/payments/{gateway}/create`, `POST /api/v1/payments/{gateway}/callback` (public webhook endpoint, signature-verified), reconciliation worker.
 - FR-59: `POST /api/v1/portal/card-payments {card_type, code}` (portal-scoped), `GET /api/v1/card-payments?state=` (queue), `POST /api/v1/card-payments/{id}/reveal`, `POST /api/v1/card-payments/{id}/approve`, `POST /api/v1/card-payments/{id}/reject {reason}`.
-- Revenue aggregates for dashboard/reports ([03](03-lossless-accounting-live-monitoring.md), [08](08-reports.md)).
-- Renewal/payment events (subscriber, amount, receipt no, new expiry) published for [03](03-lossless-accounting-live-monitoring.md) FR-55 WhatsApp receipt delivery — money logic here, message delivery there.
+- Revenue aggregates for dashboard/reports ([03](03-lossless-accounting-live-monitoring.md), [08](08-reports.md)) — **v2:** aggregated per currency (FR-70.2).
+- Renewal/payment events (subscriber, amount, currency, receipt no, new expiry) published for [03](03-lossless-accounting-live-monitoring.md) FR-55 WhatsApp receipt delivery — money logic here, message delivery there.
 
-**Consumes:** profile price/duration + expiry mutation + policy invalidation from [04](04-subscribers-profiles.md); CoA from [02](02-radius-nas-aaa.md); permissions (`renew`, `top-up`, `export`) + audit from [06](06-managers-roles-security.md); billing-default settings and branding (receipts) from [01](01-platform-install-licensing.md).
+**Consumes:** profile price/duration/currency + expiry mutation + policy invalidation from [04](04-subscribers-profiles.md); CoA from [02](02-radius-nas-aaa.md); permissions (`renew`, `top-up`, `export`, **`currency_rates.manage`**) + audit from [06](06-managers-roles-security.md); billing-default settings, default display currency, and branding (receipts) from [01](01-platform-install-licensing.md).
+
+Full request/response shapes, the migration sequence, and the exchange-pair ledger contract are frozen in [docs/v2/phases/phase-v2-3-multi-currency/00-phase.md](../v2/phases/phase-v2-3-multi-currency/00-phase.md) once written at that phase's kickoff.
 
 ## 5. UX notes
 
