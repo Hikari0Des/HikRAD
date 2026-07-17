@@ -29,4 +29,4 @@ Method: structural spot-check of every load-bearing claim in `CLAUDE.md`, the Ph
 ## Consequence for planning
 
 - **Phases 1–2: closed, accurate, no rework.** v1 continues with Phase 3 as planned.
-- **Anything that would have forced Phase-1/2 rework is in v2** with briefs + kickoff prompts: [v2-01 Hotspot management](v2/01-hotspot-management.md) (subscriber `service_type`, multi hotspot/PPPoE servers per router), [v2-02 AsiaHawala/Areeba adapters](v2/02-payment-gateways-asiahawala-areeba.md) (deferred for merchant-account reasons, not code reasons).
+- **Anything that would have forced Phase-1/2 rework is in v2** with briefs + kickoff prompts: [v2-01 Hotspot management](v2/01-hotspot-management.md) (subscriber `service_type`, multi hotspot/PPPoE servers per router), v2-02 AsiaHawala/Areeba adapters (deferred for merchant-account reasons, not code reasons; *withdrawn 2026-07-17 and replaced by [manual payment providers](v2/02-manual-payment-providers.md) — PRD Decisions 29/30*).

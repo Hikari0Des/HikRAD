@@ -4,7 +4,7 @@
 >
 > **Updated 2026-07-11 — decisions applied to the repo (master PRD now v1.3):**
 > - **Q1 →** Hotspot management (hotspot-only subscriber accounts with full details, multi hotspot/PPPoE servers on one router) is **planned as v2** — it reworks Phase-2-built code (Decision 24). Brief + AI kickoff prompt: [docs/v2/01-hotspot-management.md](v2/01-hotspot-management.md). v1 keeps the PPPoE-first model; anonymous hotspot access via vouchers.
-> - **Q2 →** AsiaHawala (Asiacell) and Areeba adapters: **v2** (blocked on merchant accounts, zero core changes needed). Brief + prompt: [docs/v2/02-payment-gateways-asiahawala-areeba.md](v2/02-payment-gateways-asiahawala-areeba.md).
+> - **Q2 →** AsiaHawala (Asiacell) and Areeba adapters: **v2** (blocked on merchant accounts, zero core changes needed). *(Superseded 2026-07-17, PRD Decisions 29/30: gateway adapters withdrawn — the brief was removed — and replaced by **manual payment providers**: named providers, per-manager receiving accounts, portal transfer-proof with attachments, 1-day provisional, human review. See [docs/v2/02-manual-payment-providers.md](v2/02-manual-payment-providers.md).)*
 > - **Q3 →** Telecom scratch cards are now **in v1 as FR-59** (Decision 22): subscriber submits the card code in the portal → instant **1-day trial internet** → admin manually verifies the card in a panel queue → approve = full renewal, reject = reversal + deactivation, with subscriber notifications at every step. No carrier API needed. Lands in Phase 4 (backend + portal) and Phase 5 (panel verification queue).
 > - **Q6 →** Wireless-AP/infrastructure device monitoring is now **in v1 as FR-60** (Decision 23) — it rides the Phase-3 probe engine (`monitored_devices`, `device_down|device_up` alerts, device health cards).
 > - **Q7 →** An **execution-efficiency protocol** was added to [docs/phases/00-team.md](phases/00-team.md) (binding for Phases 3–5): agents load only their own task file + cited contracts, scriptable gate items are automated into `scripts/gate-phase-N.sh` by the implementing agent, one session runs the gate, handoffs capped at 20 lines, no contract re-derivation. Phase briefs 3–5 carry matching notes.
@@ -28,6 +28,8 @@ The intended way to serve walk-in / hotspot-only customers in v1 is **vouchers**
 ---
 
 ## Q2 — Does this support ZainCash / Qi / Asiacell / Zain / Areeba payment gateways?
+
+> **Superseded 2026-07-17 (PRD Decisions 29/30):** gateway-API integrations are withdrawn entirely — merchant accounts/API docs never materialized. The replacement is **manual payment providers** ([docs/v2/02-manual-payment-providers.md](v2/02-manual-payment-providers.md)): the owner adds providers by name, subscribers transfer to their manager's account and submit proof with attachments, get 1 day provisional, and the owning manager approves for the full month. The table below is kept as the historical answer.
 
 Per FR-23 and Decision 8, v1 ships a **pluggable `PaymentGateway` interface** (Phase 4, contract C3 — `CreatePayment / VerifyCallback / QueryStatus` per adapter) with these adapters:
 
@@ -191,7 +193,7 @@ One Claude Code session is enough — the architecture was deliberately built so
 | # | Topic | Verdict | When |
 |---|---|---|---|
 | 1 | Hotspot-only users | v1: merged PPPoE-first model (built); full **Hotspot management** (hotspot-only accounts + multi-service routers) = **v2**, brief in `docs/v2/01` | Phase 2 ✅ / v2 |
-| 2 | Gateways | ZainCash ✅ Qi ✅ FastPay ✅ (merchant-account-dependent) in v1; AsiaHawala/Areeba = **v2**, brief in `docs/v2/02` | Phase 4 / v2 |
+| 2 | Gateways | ZainCash ✅ Qi ✅ FastPay ✅ (merchant-account-dependent) in v1; AsiaHawala/Areeba = ~~v2 adapters~~ **withdrawn 2026-07-17** → replaced by manual payment providers, brief in `docs/v2/02-manual-payment-providers.md` (Decisions 29/30) | Phase 4 / v2 |
 | 3 | Telecom scratch cards | ✅ **In v1 as FR-59** (Decision 22): manual admin verification + 1-day trial window, offline-capable | Phase 4 + 5 |
 | 4 | Modern UI/UX | Core product goal, enforced by NFR-5 + Phase-5 polish gate; optional extra design pass recommended | Phases 3 + 5 |
 | 5 | Router up/down alerts | ✅ ICMP/SNMP + alerts (Telegram/WhatsApp/email/in-app) | Phase 3 |
