@@ -14,6 +14,7 @@ import {
   PERM_PROFILES_VIEW,
   PERM_REPORTS_VIEW,
   PERM_SETTINGS_VIEW,
+  PERM_OVERHEADS_MANAGE,
   PERM_SUBSCRIBERS_CREATE,
   PERM_SUBSCRIBERS_VIEW,
   PERM_TOPUP,
@@ -27,6 +28,7 @@ import { RtlSmokePage } from './pages/RtlSmokePage'
 import { CardPaymentsPage } from './pages/billing/CardPaymentsPage'
 import { CurrencyRatesPage } from './pages/billing/CurrencyRatesPage'
 import { LedgerPage } from './pages/billing/LedgerPage'
+import { PricingAdminPage } from './pages/billing/PricingAdminPage'
 import { VouchersPage } from './pages/billing/VouchersPage'
 import { ImportWizardPage } from './pages/import/ImportWizardPage'
 import { LicensePage } from './pages/license/LicensePage'
@@ -40,6 +42,7 @@ import { NasListPage } from './pages/nas/NasListPage'
 import { PoolsPage } from './pages/pools/PoolsPage'
 import { ProfilesPage } from './pages/profiles/ProfilesPage'
 import { DebugPage } from './pages/radius/DebugPage'
+import { MarginReportPage } from './pages/reports/MarginReportPage'
 import { RevenueReportPage } from './pages/reports/RevenueReportPage'
 import { ReportsIndexPage } from './pages/reports/ReportsIndexPage'
 import { SettlementReportPage } from './pages/reports/SettlementReportPage'
@@ -90,8 +93,13 @@ export function App() {
             element={guard(PERM_CARD_PAYMENTS_VERIFY, <CardPaymentsPage />)}
           />
           <Route path="currency-rates" element={guard(PERM_TOPUP, <CurrencyRatesPage />)} />
+          <Route
+            path="pricing-admin"
+            element={guard(PERM_OVERHEADS_MANAGE, <PricingAdminPage />)}
+          />
           <Route path="reports" element={guard(PERM_REPORTS_VIEW, <ReportsIndexPage />)} />
           <Route path="reports/revenue" element={guard(PERM_REPORTS_VIEW, <RevenueReportPage />)} />
+          <Route path="reports/margin" element={guard(PERM_REPORTS_VIEW, <MarginReportPage />)} />
           <Route
             path="reports/settlement"
             element={guard(PERM_REPORTS_VIEW, <SettlementReportPage />)}

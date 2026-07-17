@@ -2,7 +2,12 @@ import { useEffect, useState } from 'react'
 
 import { IQDAmount, ErrorState, LoadingState, useFormatters, useT } from '@hikrad/shared'
 
-import { listCurrencies } from '../../api/billing'
+import {
+  listCurrencies,
+  listProfileCostHistory,
+  setProfileCost,
+  type CostHistoryEntry,
+} from '../../api/billing'
 import {
   archiveProfile,
   createProfile,
@@ -44,6 +49,7 @@ export function ProfilesPage() {
   const [editing, setEditing] = useState<Profile | undefined>(undefined)
   const [archiveTarget, setArchiveTarget] = useState<Profile | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Profile | null>(null)
+  const [costTarget, setCostTarget] = useState<Profile | null>(null)
 
   const canCreate = can('profiles.create')
   const canEdit = can('profiles.edit')
@@ -128,6 +134,7 @@ export function ProfilesPage() {
                   onArchive={() => setArchiveTarget(p)}
                   canDelete={canDelete}
                   onDelete={() => setDeleteTarget(p)}
+                  onCost={() => setCostTarget(p)}
                 />
               ))}
             </tbody>
@@ -167,6 +174,8 @@ export function ProfilesPage() {
           if (deleteTarget) await doDelete(deleteTarget)
         }}
       />
+
+      <ProfileCostModal profile={costTarget} onClose={() => setCostTarget(null)} />
     </section>
   )
 }
@@ -188,6 +197,7 @@ function ProfileRow({
   onArchive,
   canDelete,
   onDelete,
+  onCost,
 }: {
   profile: Profile
   canEdit: boolean
@@ -195,6 +205,7 @@ function ProfileRow({
   onArchive: () => void
   canDelete: boolean
   onDelete: () => void
+  onCost: () => void
 }) {
   const t = useT()
   const { formatNumber } = useFormatters()
@@ -223,6 +234,9 @@ function ProfileRow({
           <>
             <Button size="sm" variant="ghost" onClick={onEdit}>
               {t('ui.edit')}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={onCost}>
+              {t('profiles.cost')}
             </Button>
             <Button size="sm" variant="ghost" onClick={onArchive}>
               {t('profiles.archive')}
@@ -556,4 +570,106 @@ function toWrite(f: ProfileForm): ProfileWrite {
     // operator selects nothing.
     nas_scopes: f.nasScopes,
   }
+}
+
+/**
+ * Plan cost price (v2 phase 9, FR-71): history + a form to record a new
+ * version. Append-only — every submission is a new row, never an edit of an
+ * old one (mirrors the currency-rates screen's own pattern).
+ */
+function ProfileCostModal({ profile, onClose }: { profile: Profile | null; onClose: () => void }) {
+  const t = useT()
+  const { toast } = useToast()
+  const { formatDate } = useFormatters()
+  const { data: currencies } = useAsync(() => listCurrencies(), [])
+  const {
+    data: history,
+    loading,
+    reload,
+  } = useAsync(
+    () => (profile ? listProfileCostHistory(profile.id) : Promise.resolve(null)),
+    [profile?.id],
+  )
+
+  const [cost, setCost] = useState('')
+  const [currency, setCurrency] = useState('IQD')
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    if (profile) {
+      setCost('')
+      setCurrency(profile.currency)
+    }
+  }, [profile])
+
+  async function submit() {
+    if (!profile) return
+    setBusy(true)
+    try {
+      await setProfileCost(profile.id, { cost: Number(cost), currency })
+      toast(t('profiles.costSaved'), 'ok')
+      setCost('')
+      reload()
+    } catch (err) {
+      toast(err instanceof Error ? err.message : t('common.error.body'), 'danger')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Modal
+      open={profile !== null}
+      onOpenChange={(o) => !o && onClose()}
+      title={t('profiles.costTitle')}
+    >
+      <div className="space-y-4">
+        <div className="grid grid-cols-2 gap-3">
+          <Field label={t('profiles.cost')} htmlFor="cost-value">
+            <TextInput
+              id="cost-value"
+              type="number"
+              dir="ltr"
+              value={cost}
+              onChange={(e) => setCost(e.target.value)}
+            />
+          </Field>
+          <Field label={t('profiles.currency')} htmlFor="cost-currency">
+            <Select
+              id="cost-currency"
+              value={currency}
+              onChange={(e) => setCurrency(e.target.value)}
+            >
+              {(currencies?.items ?? [{ code: 'IQD' }]).map((c) => (
+                <option key={c.code} value={c.code}>
+                  {c.code}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        </div>
+        <Button size="sm" disabled={busy || !cost} onClick={() => void submit()}>
+          {busy ? t('ui.working') : t('profiles.costSave')}
+        </Button>
+
+        <div className="border-t border-surface-sunken pt-3">
+          <p className="mb-2 text-xs font-medium text-ink-muted">{t('profiles.costHistory')}</p>
+          {loading ? (
+            <LoadingState />
+          ) : (history?.items.length ?? 0) === 0 ? (
+            <p className="text-sm text-ink-muted">{t('profiles.costEmpty')}</p>
+          ) : (
+            <ul className="space-y-1 text-sm">
+              {(history?.items ?? []).map((h: CostHistoryEntry) => (
+                <li key={h.id} className="flex items-center justify-between">
+                  <IQDAmount amount={h.cost} currency={h.currency} />
+                  <span className="text-xs text-ink-muted">{formatDate(h.effective_from)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+    </Modal>
+  )
 }

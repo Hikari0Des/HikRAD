@@ -29,6 +29,7 @@ export function ReportsIndexPage() {
       descKey: 'reports.subscribers.desc',
     },
     { to: '/reports/usage', titleKey: 'reports.usage.title', descKey: 'reports.usage.desc' },
+    { to: '/reports/margin', titleKey: 'reports.margin.title', descKey: 'reports.margin.desc' },
   ]
 
   return (

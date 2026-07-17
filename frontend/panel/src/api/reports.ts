@@ -164,3 +164,38 @@ export function usageExportUrl(
 ): string {
   return csvUrl('/reports/usage', { view, from: range.from, to: range.to, limit })
 }
+
+// --- margin (v2 phase 9, FR-72.3/FR-75) --------------------------------------
+
+export interface MarginRow {
+  profile_id: string
+  profile_name: string
+  currency: string
+  revenue: number
+  wholesale: number
+  count: number
+  reseller_margin: number
+  // Owner-only (FR-75.2) — absent entirely (not null) for a reseller-scoped
+  // caller; the shared frontend never assumes these are present.
+  cost?: number
+  unknown_cost_count?: number
+  owner_margin?: number
+}
+
+export function getMarginReport(range: ReportRange): Promise<{ rows: MarginRow[] }> {
+  return request('/reports/margin', { query: { from: range.from, to: range.to } })
+}
+
+export interface SiteMarginRow {
+  nas_id: string
+  nas_name: string
+  currency: string
+  revenue: number
+  site_overheads: number
+  net_margin: number
+  global_overheads: number
+}
+
+export function getSiteMarginReport(range: ReportRange): Promise<{ rows: SiteMarginRow[] }> {
+  return request('/reports/margin/sites', { query: { from: range.from, to: range.to } })
+}

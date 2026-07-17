@@ -12,6 +12,7 @@ import {
   PERM_MANAGERS_VIEW,
   PERM_MONITORING_VIEW,
   PERM_NAS_VIEW,
+  PERM_OVERHEADS_MANAGE,
   PERM_POOLS_VIEW,
   PERM_PROFILES_VIEW,
   PERM_REPORTS_VIEW,
@@ -53,6 +54,7 @@ const NAV_GROUPS: readonly NavGroup[] = [
       { key: 'nav.cardPayments', to: '/card-payments', perm: PERM_CARD_PAYMENTS_VERIFY },
       { key: 'nav.reports', to: '/reports', perm: PERM_REPORTS_VIEW },
       { key: 'nav.currencyRates', to: '/currency-rates', perm: PERM_TOPUP },
+      { key: 'nav.pricingAdmin', to: '/pricing-admin', perm: PERM_OVERHEADS_MANAGE },
     ],
   },
   {

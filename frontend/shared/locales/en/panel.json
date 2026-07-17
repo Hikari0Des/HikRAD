@@ -51,6 +51,7 @@
     "cardPayments": "Card payments",
     "reports": "Reports",
     "currencyRates": "Currency rates",
+    "pricingAdmin": "Overheads & reseller pricing",
     "import": "Import subscribers",
     "settings": "Settings",
     "license": "License"
@@ -242,6 +243,12 @@
     "editTitle": "Edit profile",
     "created": "Profile created.",
     "saved": "Profile saved.",
+    "cost": "Cost",
+    "costTitle": "Plan cost",
+    "costSave": "Save cost",
+    "costSaved": "Cost recorded.",
+    "costHistory": "History",
+    "costEmpty": "No cost recorded yet — margin reports as unknown.",
     "days": "{days} days",
     "durationDays": "Duration (days)",
     "sessionLimit": "Session limit",
@@ -639,6 +646,32 @@
       "noRate": "No rate entered for this pair yet — add one below."
     },
     "exchangeDone": "Exchanged."
+  },
+  "pricingAdmin": {
+    "title": "Overheads & reseller pricing",
+    "subtitle": "Business costs and what each reseller pays — never shown to the reseller themselves.",
+    "overheads": {
+      "title": "Overheads",
+      "name": "Name",
+      "amount": "Amount",
+      "site": "Site",
+      "global": "Global (whole business)",
+      "add": "Add overhead",
+      "empty": "No overheads recorded yet."
+    },
+    "overheadSaved": "Overhead recorded.",
+    "resellerPrices": {
+      "title": "Reseller wholesale pricing",
+      "hint": "What a reseller pays your business for a plan — never what their own subscriber pays.",
+      "reseller": "Reseller",
+      "price": "Wholesale price",
+      "subscriberOverride": "Subscriber override",
+      "subscriberOverrideHint": "Optional — leave blank for this reseller's plan-wide price.",
+      "planWide": "Plan-wide",
+      "add": "Add price",
+      "empty": "No reseller prices set yet — every reseller pays retail.",
+      "saved": "Reseller price recorded."
+    }
   },
   "vouchers": {
     "title": "Vouchers",
@@ -1039,6 +1072,25 @@
       "renewals": "Renewals ({count})",
       "refunds": "Refunds",
       "closing": "Closing balance"
+    },
+    "margin": {
+      "title": "Margin report",
+      "subtitle": "Revenue, cost and margin by plan.",
+      "desc": "Per-plan revenue, wholesale, cost and margin.",
+      "revenue": "Revenue",
+      "wholesale": "Wholesale",
+      "cost": "Cost",
+      "resellerMargin": "Reseller margin",
+      "ownerMargin": "Owner margin",
+      "unknown": "Unknown",
+      "sites": {
+        "title": "Per-site net margin",
+        "site": "Site",
+        "siteOverheads": "Site overheads",
+        "netMargin": "Net margin",
+        "globalOverheads": "Global overheads",
+        "globalNote": "Global overheads are shown for reference only — never subtracted from a site's own net margin."
+      }
     },
     "subscribers": {
       "title": "Subscriber report",

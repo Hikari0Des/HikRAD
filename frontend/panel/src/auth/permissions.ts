@@ -45,6 +45,9 @@ export const PERM_TOPUP = 'topup'
 export const PERM_REFUND = 'refund'
 /** v2 phase 4 (FR-68.3): rate creation is admin-only, an append-only audit trail. */
 export const PERM_CURRENCY_RATES_MANAGE = 'currency_rates.manage'
+/** v2 phase 9 (FR-73/74): overheads and reseller wholesale pricing are admin-only. */
+export const PERM_OVERHEADS_MANAGE = 'overheads.manage'
+export const PERM_RESELLER_PRICES_MANAGE = 'reseller_prices.manage'
 
 const WILDCARD = '*'
 const ROLE_ADMIN = 'admin'

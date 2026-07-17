@@ -293,3 +293,87 @@ export async function printReceipt(receiptNo: string, lang: 'ar' | 'en'): Promis
   win.document.write(html)
   win.document.close()
 }
+
+// --- v2 phase 9: plan cost, overheads, reseller pricing (FR-71/73/74) ------
+
+export interface CostHistoryEntry {
+  id: string
+  cost: number
+  currency: string
+  effective_from: string
+}
+
+export function setProfileCost(
+  profileId: string,
+  body: { cost: number; currency: string },
+): Promise<CostHistoryEntry> {
+  return request(`/profiles/${profileId}/cost`, { method: 'POST', body })
+}
+
+export function listProfileCostHistory(profileId: string): Promise<{ items: CostHistoryEntry[] }> {
+  return request(`/profiles/${profileId}/cost-history`)
+}
+
+export interface Overhead {
+  id: string
+  name: string
+  amount: number
+  currency: string
+  nas_id: string | null
+  period_start: string
+  period_end: string | null
+  notes: string
+}
+
+export function listOverheads(
+  params: { nas_id?: string; as_of?: string } = {},
+): Promise<{ items: Overhead[] }> {
+  const q = new URLSearchParams()
+  if (params.nas_id) q.set('nas_id', params.nas_id)
+  if (params.as_of) q.set('as_of', params.as_of)
+  const qs = q.toString()
+  return request(`/overheads${qs ? `?${qs}` : ''}`)
+}
+
+export function createOverhead(body: {
+  name: string
+  amount: number
+  currency: string
+  nas_id?: string | null
+  period_start: string
+  period_end?: string | null
+  notes?: string
+}): Promise<Overhead> {
+  return request('/overheads', { method: 'POST', body })
+}
+
+export interface ResellerPrice {
+  id: string
+  manager_id: string
+  profile_id: string
+  subscriber_id: string | null
+  price: number
+  currency: string
+  effective_from: string
+}
+
+export function listResellerPrices(params: {
+  manager_id?: string
+  profile_id?: string
+}): Promise<{ items: ResellerPrice[] }> {
+  const q = new URLSearchParams()
+  if (params.manager_id) q.set('manager_id', params.manager_id)
+  if (params.profile_id) q.set('profile_id', params.profile_id)
+  const qs = q.toString()
+  return request(`/reseller-prices${qs ? `?${qs}` : ''}`)
+}
+
+export function createResellerPrice(body: {
+  manager_id: string
+  profile_id: string
+  subscriber_id?: string | null
+  price: number
+  currency: string
+}): Promise<ResellerPrice> {
+  return request('/reseller-prices', { method: 'POST', body })
+}
