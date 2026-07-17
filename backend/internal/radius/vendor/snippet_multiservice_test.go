@@ -125,7 +125,7 @@ func TestPlanAutoSetup_MultiService_PlansBothKinds(t *testing.T) {
 	conn.rows["/ip/hotspot/profile/print"] = []map[string]string{{"name": "default", ".id": "*1"}}
 	in := multiInput()
 	in.WalledGarden = []string{"portal.isp.iq"}
-	plan, err := For("mikrotik").PlanAutoSetup(conn, in)
+	plan, err := For("mikrotik").PlanAutoSetup(conn, in, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -165,7 +165,7 @@ func TestPlanAutoSetup_MultiHotspot_ProfileLimitation(t *testing.T) {
 		{"name": "lobby-profile", ".id": "*1"},
 		{"name": "cafe-profile", ".id": "*2"},
 	}
-	plan, err := For("mikrotik").PlanAutoSetup(conn, multiInput())
+	plan, err := For("mikrotik").PlanAutoSetup(conn, multiInput(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -187,7 +187,7 @@ func TestPlanAutoSetup_MultiHotspot_ProfileLimitation(t *testing.T) {
 // shared block does — the two paths describe one desired state.
 func TestPlanAutoSetup_RadiusServiceListMatchesSnippet(t *testing.T) {
 	conn := newFakeROS()
-	plan, err := For("mikrotik").PlanAutoSetup(conn, multiInput())
+	plan, err := For("mikrotik").PlanAutoSetup(conn, multiInput(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

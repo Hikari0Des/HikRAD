@@ -10,6 +10,7 @@ import (
 	"errors"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -17,6 +18,44 @@ import (
 	"github.com/hikrad/hikrad/internal/radius/vendor"
 	"github.com/jackc/pgx/v5"
 )
+
+// snippetValuesFromQuery parses the FR-66.1 form overrides from query
+// parameters (contract C3: "the copy-paste snippet endpoint accepts the same
+// overrides so both paths describe one desired state"). A GET request has no
+// JSON body by convention, so overrides travel as query params here instead
+// of the JSON object the auto-setup POST endpoints use — same fields, same
+// nil-means-default semantics.
+func snippetValuesFromQuery(q map[string][]string) autoSetupValuesInput {
+	var v autoSetupValuesInput
+	get := func(key string) (string, bool) {
+		vals, ok := q[key]
+		if !ok || len(vals) == 0 {
+			return "", false
+		}
+		return vals[0], true
+	}
+	if s, ok := get("radius_server"); ok {
+		v.RadiusServer = &s
+	}
+	if s, ok := get("src_address"); ok {
+		v.SrcAddress = &s
+	}
+	if s, ok := get("coa_port"); ok {
+		if n, err := strconv.Atoi(s); err == nil {
+			v.CoAPort = &n
+		}
+	}
+	if s, ok := get("interim_secs"); ok {
+		if n, err := strconv.Atoi(s); err == nil {
+			v.InterimSecs = &n
+		}
+	}
+	if s, ok := get("walled_garden"); ok {
+		hosts := strings.Split(s, ",")
+		v.WalledGarden = &hosts
+	}
+	return v
+}
 
 func (m *module) configSnippetHandler(w http.ResponseWriter, r *http.Request) {
 	n, err := getNAS(r.Context(), m.db, chi.URLParam(r, "id"))
@@ -34,6 +73,7 @@ func (m *module) configSnippetHandler(w http.ResponseWriter, r *http.Request) {
 		m.internal(w, "build snippet input", err)
 		return
 	}
+	in = snippetValuesFromQuery(r.URL.Query()).apply(in)
 	snippet, err := vendor.For(n.Vendor).Snippet(in)
 	if err != nil {
 		m.internal(w, "render snippet", err)

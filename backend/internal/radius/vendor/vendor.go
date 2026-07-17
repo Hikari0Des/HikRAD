@@ -190,15 +190,39 @@ type Adapter interface {
 	SupportsInPlace(rosVersion, nasType, intent string) bool
 	// PlanAutoSetup computes the FR-56.2 preview: it connects read-only
 	// (print/query sentences only, never add/set) and diffs the router's
-	// current state against the config in against desired the FR-14.2
-	// bootstrap needs, returning additive-only items plus any conflicts that
-	// must abort the whole apply. RouterOS API traffic for auto-setup lives
-	// only here and in the conn implementation (FR-56.4/FR-17.1).
-	PlanAutoSetup(conn ROSConn, in SnippetInput) (AutoSetupPlan, error)
+	// current state against the config the FR-14.2 bootstrap needs, returning
+	// additive-only items plus any conflicts that must abort the whole apply.
+	// RouterOS API traffic for auto-setup lives only here and in the conn
+	// implementation (FR-56.4/FR-17.1).
+	//
+	// resolutions (v2 phase 2, FR-66.2) maps a PlanConflict.Key to "update" or
+	// "keep"; any other value (including absent) means "abort" — an empty or
+	// nil map reproduces PRE-FR-66 behavior exactly (C1). "update" only ever
+	// turns a Resolvable conflict into a PlanItem that /sets the router's
+	// existing entry to HikRAD's value — it never adds or removes anything.
+	// "keep" drops the item from both Items and Conflicts: the operator
+	// explicitly accepted the router's current state for it.
+	PlanAutoSetup(conn ROSConn, in SnippetInput, resolutions map[string]string) (AutoSetupPlan, error)
 	// ApplyAutoSetup executes plan's items in order against conn (already
 	// re-validated conflict-free by the caller) and reports a per-item
 	// result. Callers stop issuing further items after the first failure.
 	ApplyAutoSetup(conn ROSConn, plan AutoSetupPlan) []ApplyResult
+	// ReadConfig reads the router's current RADIUS-relevant state (v2 phase 2,
+	// FR-65). Pure print sentences, same ROSConn seam as PlanAutoSetup/
+	// DiscoverServices/CheckHealth — never writes. Vendor-specific paths/
+	// fields live only here (FR-17).
+	ReadConfig(conn ROSConn) (ConfigSnapshot, error)
+	// PlanService computes the FR-67.3/67.4 preview for creating or editing
+	// ONE system-managed server instance: read-only connect, additive/update-
+	// only writes, same PlanItem/PlanConflict/AutoSetupPlan vocabulary as
+	// PlanAutoSetup so the HTTP layer, hashing, and panel rendering are shared
+	// code rather than a parallel implementation. Conflicts here are
+	// abort-only (Resolvable always false) — there is no safe "update" meaning
+	// for "another service already claims this identity."
+	PlanService(conn ROSConn, in ServiceProvisionInput) (AutoSetupPlan, error)
+	// ApplyService executes a PlanService result exactly like ApplyAutoSetup
+	// (same whole-apply-abort-on-first-failure contract).
+	ApplyService(conn ROSConn, plan AutoSetupPlan) []ApplyResult
 }
 
 // ROSConn is a minimal connected RouterOS API session. Every RouterOS API
@@ -233,11 +257,33 @@ type PlanItem struct {
 
 // PlanConflict is one reason auto-setup refuses to touch the router at all
 // (FR-56.2 safety contract: any conflict aborts the whole apply, nothing is
-// written).
+// written) — UNLESS the operator picks an "update" resolution for it (v2
+// phase 2, FR-66.2), which is safe only when the conflict came with a
+// computable target sentence.
 type PlanConflict struct {
 	Path     string `json:"path"`
 	Existing string `json:"existing"`
 	Reason   string `json:"reason"`
+	// Key identifies this conflict across the preview/apply round trip so the
+	// operator's resolution choice can be supplied and re-verified server-side
+	// (FR-66.2/C4). Stable per plan shape: today at most one conflict occurs
+	// per Path, so Key == Path.
+	Key string `json:"key"`
+	// Resolvable is true when an "update" resolution has a computable target
+	// sentence (updateSentence below). False for a conflict with no single
+	// safe target to rewrite (v1: the hotspot-profile conflict on a router
+	// whose zone uses a non-"default" profile name — FR-67's adopt flow is
+	// the answer for that router, not a forced guess here).
+	Resolvable bool `json:"resolvable"`
+	// UpdateCommand is the human-readable command an "update" resolution would
+	// run, shown next to the keep/update/abort choice so the operator approves
+	// an exact sentence — same transparency PlanItem.Command already gives
+	// additive items. Empty when Resolvable is false.
+	UpdateCommand string `json:"update_command,omitempty"`
+	// updateSentence is the actual API words an "update" resolution would send
+	// — never serialized (mirrors PlanItem.Sentence's json:"-" pattern and the
+	// same tamper-safety reasoning: apply always recomputes it server-side).
+	updateSentence []string `json:"-"`
 }
 
 // AutoSetupPlan is PlanAutoSetup's result. Items is empty-safe (nil marshals
@@ -253,6 +299,72 @@ type ApplyResult struct {
 	Command string `json:"command"`
 	OK      bool   `json:"ok"`
 	Error   string `json:"error,omitempty"`
+}
+
+// ConfigSnapshot is FR-65's read-only view of a router's current
+// RADIUS-relevant state (v2 phase 2, C2). Every field comes from a print
+// sentence; nothing here is ever written.
+type ConfigSnapshot struct {
+	RadiusEntries   []RadiusEntryConfig
+	RadiusIncoming  RadiusIncomingConfig
+	PPPAAA          PPPAAAConfig
+	HotspotProfiles []HotspotProfileConfig
+	WalledGarden    []string
+}
+
+// RadiusEntryConfig is one /radius row. SecretPresent reports whether the
+// router returned a secret value at all (RouterOS API permissions can
+// withhold it) — the secret itself is never surfaced (FR-65.1).
+type RadiusEntryConfig struct {
+	Address       string
+	Service       string
+	Comment       string
+	SrcAddress    string
+	SecretPresent bool
+}
+
+// RadiusIncomingConfig is the router-wide CoA listener toggle.
+type RadiusIncomingConfig struct {
+	Accept bool
+	Port   int
+}
+
+// PPPAAAConfig is the /ppp/aaa RADIUS toggle for PPPoE.
+type PPPAAAConfig struct {
+	UseRadius         bool
+	Accounting        bool
+	InterimUpdateSecs int
+}
+
+// HotspotProfileConfig is one /ip/hotspot/profile row's RADIUS-relevant
+// fields.
+type HotspotProfileConfig struct {
+	Name              string
+	UseRadius         bool
+	InterimUpdateSecs int
+}
+
+// ServiceProvisionInput is FR-67.3/67.4's create-or-edit-one-server input.
+// Deliberately separate from SnippetInput/AutoSetupPlan's whole-NAS RADIUS
+// wiring vocabulary — this describes ONE server object (interface binding,
+// local address, pool) plus the shared RADIUS values that server needs wired
+// to HikRAD.
+type ServiceProvisionInput struct {
+	Kind          string // "pppoe" | "hotspot"
+	ROSServerName string // required; must be unique among the NAS's other enabled instances of Kind
+	Label         string
+	Interface     string // required: the router interface/bridge this server binds
+	LocalAddress  string // hotspot only: the server's own gateway IP
+	AddressRange  string // hotspot only, optional: DHCP range for a HikRAD-created pool
+	PoolName      string // resolved HikRAD ip_pool name, or "" = router-local
+	Values        SnippetInput
+	// Editing is true for FR-67.4 (edit a system-managed instance): the
+	// planner requires a matching router-side object (by ROSServerName) to
+	// already exist and only ever /sets it, rather than /add-ing a new one.
+	// False (FR-67.3 create) requires the OPPOSITE — no existing match — so
+	// create can never silently become an edit of some unrelated object that
+	// happens to share a name, or vice versa.
+	Editing bool
 }
 
 var registry = map[string]Adapter{}

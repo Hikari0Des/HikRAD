@@ -41,7 +41,7 @@ func baseInput() SnippetInput {
 
 func TestPlanAutoSetup_FreshRouter_AllAdditive(t *testing.T) {
 	conn := newFakeROS()
-	plan, err := For("mikrotik").PlanAutoSetup(conn, baseInput())
+	plan, err := For("mikrotik").PlanAutoSetup(conn, baseInput(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,7 +69,7 @@ func TestPlanAutoSetup_AlreadyApplied_NoItems(t *testing.T) {
 	conn.rows["/radius/incoming/print"] = []map[string]string{{"accept": "yes", "port": "3799"}}
 	conn.rows["/ppp/aaa/print"] = []map[string]string{{"use-radius": "yes", "accounting": "yes", "interim-update": "300s"}}
 
-	plan, err := For("mikrotik").PlanAutoSetup(conn, baseInput())
+	plan, err := For("mikrotik").PlanAutoSetup(conn, baseInput(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,7 +83,7 @@ func TestPlanAutoSetup_ForeignRadiusEntry_Conflicts(t *testing.T) {
 	conn.rows["/radius/print"] = []map[string]string{
 		{"address": "10.0.0.5", "service": "ppp", "secret": "someone-elses-secret", "comment": "manually configured"},
 	}
-	plan, err := For("mikrotik").PlanAutoSetup(conn, baseInput())
+	plan, err := For("mikrotik").PlanAutoSetup(conn, baseInput(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,7 +98,7 @@ func TestPlanAutoSetup_ForeignRadiusEntry_Conflicts(t *testing.T) {
 func TestPlanAutoSetup_IncomingPortMismatch_Conflicts(t *testing.T) {
 	conn := newFakeROS()
 	conn.rows["/radius/incoming/print"] = []map[string]string{{"accept": "yes", "port": "1700"}}
-	plan, err := For("mikrotik").PlanAutoSetup(conn, baseInput())
+	plan, err := For("mikrotik").PlanAutoSetup(conn, baseInput(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,7 +122,7 @@ func TestPlanAutoSetup_HotspotWalledGarden_Additive(t *testing.T) {
 	in.Type = "hotspot"
 	in.WalledGarden = []string{"portal.isp.iq", "pay.isp.iq"}
 
-	plan, err := For("mikrotik").PlanAutoSetup(conn, in)
+	plan, err := For("mikrotik").PlanAutoSetup(conn, in, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

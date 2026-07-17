@@ -67,28 +67,29 @@ func (mikrotikAdapter) SupportsInPlace(rosVersion, nasType, intent string) bool 
 }
 
 // PlanAutoSetup implements Adapter.PlanAutoSetup for MikroTik.
-func (a mikrotikAdapter) PlanAutoSetup(conn ROSConn, in SnippetInput) (AutoSetupPlan, error) {
+//
+// resolutions (v2 phase 2, FR-66.2) resolves a conflict.Key to "update" or
+// "keep"; anything else (including absent) means "abort" — an empty/nil map
+// reproduces pre-FR-66 behavior exactly (C1's non-invalidation guarantee),
+// because resolveConflict's default case is unchanged from the old
+// unconditional "always a conflict" branch.
+func (a mikrotikAdapter) PlanAutoSetup(conn ROSConn, in SnippetInput, resolutions map[string]string) (AutoSetupPlan, error) {
 	var plan AutoSetupPlan
+	add := func(item *PlanItem, conflict *PlanConflict) {
+		resolveConflict(&plan, resolutions, item, conflict)
+	}
 
 	radiusItem, radiusConflict, err := a.planRadiusEntry(conn, in)
 	if err != nil {
 		return plan, err
 	}
-	if radiusConflict != nil {
-		plan.Conflicts = append(plan.Conflicts, *radiusConflict)
-	} else if radiusItem != nil {
-		plan.Items = append(plan.Items, *radiusItem)
-	}
+	add(radiusItem, radiusConflict)
 
 	incomingItem, incomingConflict, err := a.planRadiusIncoming(conn, in)
 	if err != nil {
 		return plan, err
 	}
-	if incomingConflict != nil {
-		plan.Conflicts = append(plan.Conflicts, *incomingConflict)
-	} else if incomingItem != nil {
-		plan.Items = append(plan.Items, *incomingItem)
-	}
+	add(incomingItem, incomingConflict)
 
 	// Plan each enabled service additively (C8/FR-62): a NAS running PPPoE and
 	// two hotspot zones needs the PPP AAA entry AND each hotspot's profile, not
@@ -100,22 +101,14 @@ func (a mikrotikAdapter) PlanAutoSetup(conn ROSConn, in SnippetInput) (AutoSetup
 		if err != nil {
 			return plan, err
 		}
-		if aaaConflict != nil {
-			plan.Conflicts = append(plan.Conflicts, *aaaConflict)
-		} else if aaaItem != nil {
-			plan.Items = append(plan.Items, *aaaItem)
-		}
+		add(aaaItem, aaaConflict)
 	}
 	if anyOfKind(services, "hotspot") {
 		profItem, profConflict, err := a.planHotspotProfile(conn, in)
 		if err != nil {
 			return plan, err
 		}
-		if profConflict != nil {
-			plan.Conflicts = append(plan.Conflicts, *profConflict)
-		} else if profItem != nil {
-			plan.Items = append(plan.Items, *profItem)
-		}
+		add(profItem, profConflict)
 
 		gardenItems, err := a.planWalledGarden(conn, in)
 		if err != nil {
@@ -125,6 +118,46 @@ func (a mikrotikAdapter) PlanAutoSetup(conn ROSConn, in SnippetInput) (AutoSetup
 	}
 
 	return plan, nil
+}
+
+// resolveConflict is the FR-66.2 decision table, shared by every planXXX call
+// site so the resolution semantics live in exactly one place:
+//   - no conflict: the additive item (if any) is appended, unchanged from
+//     pre-FR-66 behavior.
+//   - conflict + resolutions[key]=="update" + Resolvable: the conflict's
+//     precomputed update sentence becomes a "set" PlanItem; the conflict is
+//     dropped (nothing left to abort on for this item).
+//   - conflict + resolutions[key]=="update" + !Resolvable: falls through to
+//     the abort case below — an operator cannot force an update onto a
+//     target HikRAD doesn't know how to compute.
+//   - conflict + resolutions[key]=="keep": dropped entirely from both Items
+//     and Conflicts — the operator explicitly accepted the router's current
+//     state for this one item.
+//   - conflict + anything else (unset/"abort"/unrecognized): reported as a
+//     Conflict, identical to pre-FR-66 behavior — this is what keeps
+//     len(plan.Conflicts) > 0 as the single abort gate.
+func resolveConflict(plan *AutoSetupPlan, resolutions map[string]string, item *PlanItem, conflict *PlanConflict) {
+	if conflict == nil {
+		if item != nil {
+			plan.Items = append(plan.Items, *item)
+		}
+		return
+	}
+	switch resolutions[conflict.Key] {
+	case "update":
+		if conflict.Resolvable {
+			plan.Items = append(plan.Items, PlanItem{
+				Action: "set", Path: conflict.Path, Command: conflict.UpdateCommand,
+				CurrentState: conflict.Existing, Sentence: conflict.updateSentence,
+			})
+			return
+		}
+		plan.Conflicts = append(plan.Conflicts, *conflict)
+	case "keep":
+		// Accepted as-is; contributes nothing to either list.
+	default:
+		plan.Conflicts = append(plan.Conflicts, *conflict)
+	}
 }
 
 // ApplyAutoSetup implements Adapter.ApplyAutoSetup for MikroTik.
@@ -158,18 +191,33 @@ func (mikrotikAdapter) planRadiusEntry(conn ROSConn, in SnippetInput) (*PlanItem
 			continue
 		}
 		summary := fmt.Sprintf("address=%s service=%s comment=%q", row["address"], row["service"], row["comment"])
+		// Both conflict cases below (FR-66.2) are resolvable: the target is
+		// always "this exact /radius entry, rewritten to HikRAD's values" — an
+		// update /set never has to guess which router object to touch.
+		updateSentence := []string{"/radius/set", "=.id=" + row[".id"], "=service=" + service,
+			"=address=" + in.RadiusServer, "=secret=" + in.Secret, "=comment=" + hikradComment}
+		if in.SrcAddress != "" {
+			updateSentence = append(updateSentence, "=src-address="+in.SrcAddress)
+		}
+		updateCmd := fmt.Sprintf("/radius set [find .id=%s] service=%s address=%s secret=**** comment=%s", row[".id"], service, in.RadiusServer, hikradComment)
 		if strings.HasPrefix(row["comment"], hikradComment) {
 			if row["secret"] == in.Secret || row["secret"] == "" {
 				return nil, nil, nil // already ours, matches (or secret withheld by API perms) — no-op
 			}
 			return nil, &PlanConflict{
-				Path: "/radius", Existing: summary,
-				Reason: "a HikRAD-tagged /radius entry already exists with a different secret; auto-setup never overwrites an existing entry",
+				Path: "/radius", Existing: summary, Key: "/radius",
+				Reason:         "a HikRAD-tagged /radius entry already exists with a different secret; auto-setup never overwrites an existing entry",
+				Resolvable:     true,
+				UpdateCommand:  updateCmd,
+				updateSentence: updateSentence,
 			}, nil
 		}
 		return nil, &PlanConflict{
-			Path: "/radius", Existing: summary,
-			Reason: "an existing /radius entry already points at this RADIUS server/service and was not created by HikRAD",
+			Path: "/radius", Existing: summary, Key: "/radius",
+			Reason:         "an existing /radius entry already points at this RADIUS server/service and was not created by HikRAD",
+			Resolvable:     true,
+			UpdateCommand:  updateCmd,
+			updateSentence: updateSentence,
 		}, nil
 	}
 
@@ -226,8 +274,11 @@ func (mikrotikAdapter) planRadiusIncoming(conn ROSConn, in SnippetInput) (*PlanI
 		return nil, nil, nil // already enabled on our port (or router hasn't reported a port — treat as match)
 	case accept == "yes" && port != wantPort:
 		return nil, &PlanConflict{
-			Path: "/radius/incoming", Existing: current,
-			Reason: fmt.Sprintf("CoA is already enabled on port %s for another purpose; changing the router-wide CoA port to %s could break it", port, wantPort),
+			Path: "/radius/incoming", Existing: current, Key: "/radius/incoming",
+			Reason:         fmt.Sprintf("CoA is already enabled on port %s for another purpose; changing the router-wide CoA port to %s could break it", port, wantPort),
+			Resolvable:     true,
+			UpdateCommand:  fmt.Sprintf("/radius incoming set accept=yes port=%s", wantPort),
+			updateSentence: []string{"/radius/incoming/set", "=accept=yes", "=port=" + wantPort},
 		}, nil
 	default: // accept == "no" or unset: safe to turn on, nothing existing is disturbed
 		sentence := []string{"/radius/incoming/set", "=accept=yes", "=port=" + wantPort}
@@ -261,8 +312,11 @@ func (mikrotikAdapter) planPPPAAA(conn ROSConn, in SnippetInput) (*PlanItem, *Pl
 		// Already turned on with a different tuning someone else configured —
 		// changing it would modify an existing, deliberately-set value.
 		return nil, &PlanConflict{
-			Path: "/ppp/aaa", Existing: current,
-			Reason: "PPP AAA is already enabled with different accounting/interim-update settings than HikRAD needs",
+			Path: "/ppp/aaa", Existing: current, Key: "/ppp/aaa",
+			Reason:         "PPP AAA is already enabled with different accounting/interim-update settings than HikRAD needs",
+			Resolvable:     true,
+			UpdateCommand:  fmt.Sprintf("/ppp aaa set use-radius=yes accounting=yes interim-update=%s", wantInterim),
+			updateSentence: []string{"/ppp/aaa/set", "=use-radius=yes", "=accounting=yes", "=interim-update=" + wantInterim},
 		}, nil
 	default:
 		sentence := []string{"/ppp/aaa/set", "=use-radius=yes", "=accounting=yes", "=interim-update=" + wantInterim}
@@ -286,9 +340,14 @@ func (mikrotikAdapter) planHotspotProfile(conn ROSConn, in SnippetInput) (*PlanI
 		}
 	}
 	if prof == nil {
+		// Not Resolvable (FR-66.2): there is no single profile to update on a
+		// router with custom-named zones — guessing which one terminates
+		// HikRAD's NAS would be exactly the silent-wrong-write FR-56.2 forbids.
+		// FR-67's adopt flow is the answer for that router: the operator picks
+		// the exact zone, and editing proceeds against a specific instance.
 		return nil, &PlanConflict{
-			Path: "/ip/hotspot/profile", Existing: "no profile named " + hotspotProfileName,
-			Reason: "auto-setup only targets the default hotspot profile; a custom profile layout needs the FR-14 copy-paste snippet",
+			Path: "/ip/hotspot/profile", Existing: "no profile named " + hotspotProfileName, Key: "/ip/hotspot/profile",
+			Reason: "auto-setup only targets the default hotspot profile; a custom profile layout needs the FR-14 copy-paste snippet or FR-67's server adopt flow",
 		}, nil
 	}
 

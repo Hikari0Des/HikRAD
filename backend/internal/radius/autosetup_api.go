@@ -1,10 +1,10 @@
 package radius
 
-// RouterOS API auto-setup HTTP handlers (FR-56.2-56.4, contract C6). Two
-// endpoints:
+// RouterOS API auto-setup HTTP handlers (FR-56.2-56.4, contract C6; extended
+// by v2 phase 2 FR-66, contracts C3-C6). Two endpoints:
 //
-//	POST /api/v1/nas/{id}/auto-setup/preview  -> {items, conflicts, preview_hash}
-//	POST /api/v1/nas/{id}/auto-setup/apply    {preview_hash} -> {results, seen}
+//	POST /api/v1/nas/{id}/auto-setup/preview  {values?, resolutions?} -> {items, conflicts, preview_hash}
+//	POST /api/v1/nas/{id}/auto-setup/apply    {preview_hash, values?, resolutions?} -> {results, seen}
 //
 // Safety contract (frozen by Decision 17, restated because this is the
 // scariest write path in the product): preview only ever issues read (print)
@@ -15,6 +15,15 @@ package radius
 // or literally anything else) without a stored preview-session table. A
 // non-empty Conflicts list aborts the whole apply before a single write
 // sentence is sent, so the router is provably untouched.
+//
+// v2 phase 2 (FR-66) extends this without weakening it: Values lets the
+// operator override the FR-14.2 defaults (RADIUS server, CoA port, interim,
+// walled garden) instead of only accepting settings/NAS-derived ones, and
+// Resolutions lets a conflicting item be resolved "update" or "keep" instead
+// of only "abort" (the unresolved-or-abort case is byte-identical to pre-FR-66
+// behavior — see vendor.resolveConflict). Both are folded into planHash
+// alongside the plan itself, so apply is tied to the EXACT values+resolutions
+// the operator saw in preview, not just to the router's raw state.
 
 import (
 	"context"
@@ -33,12 +42,50 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// autoSetupPreviewResponse is the C6 preview shape.
+// autoSetupValuesInput carries the FR-66.1 form overrides (contract C3).
+// Every field is nil-able so "omitted" (keep HikRAD's settings/NAS-derived
+// default) is distinguishable from "explicitly cleared".
+type autoSetupValuesInput struct {
+	RadiusServer *string   `json:"radius_server,omitempty"`
+	SrcAddress   *string   `json:"src_address,omitempty"`
+	CoAPort      *int      `json:"coa_port,omitempty"`
+	InterimSecs  *int      `json:"interim_secs,omitempty"`
+	WalledGarden *[]string `json:"walled_garden,omitempty"`
+}
+
+// apply overlays non-nil fields onto a SnippetInput already built from
+// settings/NAS defaults — nil leaves the default untouched (C3).
+func (v autoSetupValuesInput) apply(in vendor.SnippetInput) vendor.SnippetInput {
+	if v.RadiusServer != nil {
+		in.RadiusServer = *v.RadiusServer
+	}
+	if v.SrcAddress != nil {
+		in.SrcAddress = *v.SrcAddress
+	}
+	if v.CoAPort != nil {
+		in.CoAPort = *v.CoAPort
+	}
+	if v.InterimSecs != nil {
+		in.InterimSecs = *v.InterimSecs
+	}
+	if v.WalledGarden != nil {
+		in.WalledGarden = *v.WalledGarden
+	}
+	return in
+}
+
+// autoSetupPreviewResponse is the C6 preview shape (Conflicts carry the C4
+// resolution fields — vendor.PlanConflict already includes them).
 type autoSetupPreviewResponse struct {
 	Items       []vendor.PlanItem     `json:"items"`
 	Conflicts   []vendor.PlanConflict `json:"conflicts"`
 	PreviewHash string                `json:"preview_hash"`
 	ROSVersion  string                `json:"ros_version"`
+}
+
+type autoSetupPreviewRequest struct {
+	Values      autoSetupValuesInput `json:"values"`
+	Resolutions map[string]string    `json:"resolutions"`
 }
 
 func (m *module) autoSetupPreviewHandler(w http.ResponseWriter, r *http.Request) {
@@ -53,14 +100,22 @@ func (m *module) autoSetupPreviewHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	plan, ros, _, closeConn, err := m.buildAutoSetupPlan(ctx, n)
+	// An empty/omitted body reproduces pre-FR-66 behavior exactly (C1): Bind
+	// on a body-less POST leaves req at its zero value, which is a no-op
+	// values overlay and a nil resolutions map.
+	var req autoSetupPreviewRequest
+	if r.ContentLength != 0 && !httpapi.Bind(w, r, &req) {
+		return
+	}
+
+	plan, ros, _, closeConn, err := m.buildAutoSetupPlan(ctx, n, req.Values, req.Resolutions)
 	if err != nil {
 		m.autoSetupConnectError(w, err)
 		return
 	}
 	defer closeConn()
 
-	hash := planHash(n.ID, plan)
+	hash := planHash(n.ID, req.Values, req.Resolutions, plan)
 	_ = auth.Audit(ctx, "nas.autosetup_preview", "nas", n.ID, nil, map[string]any{
 		"items": len(plan.Items), "conflicts": len(plan.Conflicts), "ros_version": ros,
 	})
@@ -71,7 +126,9 @@ func (m *module) autoSetupPreviewHandler(w http.ResponseWriter, r *http.Request)
 }
 
 type autoSetupApplyRequest struct {
-	PreviewHash string `json:"preview_hash" validate:"required"`
+	PreviewHash string               `json:"preview_hash" validate:"required"`
+	Values      autoSetupValuesInput `json:"values"`
+	Resolutions map[string]string    `json:"resolutions"`
 }
 
 type autoSetupApplyResponse struct {
@@ -107,17 +164,17 @@ func (m *module) autoSetupApplyHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	plan, gotROS, conn, closeConn, err := m.buildAutoSetupPlan(ctx, n)
+	plan, gotROS, conn, closeConn, err := m.buildAutoSetupPlan(ctx, n, req.Values, req.Resolutions)
 	if err != nil {
 		m.autoSetupConnectError(w, err)
 		return
 	}
 	defer closeConn()
 
-	hash := planHash(n.ID, plan)
+	hash := planHash(n.ID, req.Values, req.Resolutions, plan)
 	if hash != req.PreviewHash {
 		httpapi.Error(w, http.StatusConflict, "preview_stale",
-			"the router's state has changed since this preview was generated; re-run preview and try again")
+			"the router's state (or the values/resolutions submitted) has changed since this preview was generated; re-run preview and try again")
 		return
 	}
 	if len(plan.Conflicts) > 0 {
@@ -167,28 +224,25 @@ func (m *module) autoSetupApplyHandler(w http.ResponseWriter, r *http.Request) {
 // apply can reuse it for writes without a second connect+login round trip)
 // and closeConn must always be deferred by the caller, even on error paths
 // where conn itself is nil (closeConn is a no-op then).
-func (m *module) buildAutoSetupPlan(ctx context.Context, n nasRow) (plan vendor.AutoSetupPlan, rosVersion string, conn vendor.ROSConn, closeConn func(), err error) {
+func (m *module) buildAutoSetupPlan(ctx context.Context, n nasRow, values autoSetupValuesInput, resolutions map[string]string) (plan vendor.AutoSetupPlan, rosVersion string, conn vendor.ROSConn, closeConn func(), err error) {
 	closeConn = func() {}
 	if n.APIUser == "" || len(n.APIPasswordEnc) == 0 {
 		return plan, "", nil, closeConn, fmt.Errorf("%w: no RouterOS API credentials saved for this NAS", errAutoSetupNoCreds)
-	}
-	apiPassword, err := decryptToString(n.APIPasswordEnc)
-	if err != nil {
-		return plan, "", nil, closeConn, fmt.Errorf("radius: decrypt nas api password: %w", err)
 	}
 
 	in, ros, err := m.snippetInputFor(ctx, n, "")
 	if err != nil {
 		return plan, ros, nil, closeConn, err
 	}
+	in = values.apply(in)
 
-	c, err := m.dialROS(ctx, n.IP, apiPortOrDefault(n.APIPort), n.APIUser, apiPassword)
+	c, err := m.connectNAS(ctx, n)
 	if err != nil {
-		return plan, ros, nil, closeConn, fmt.Errorf("%w: %s", errAutoSetupConnect, err.Error())
+		return plan, ros, nil, closeConn, err
 	}
 	closeConn = func() { _ = c.Close() }
 
-	plan, err = vendor.For(n.Vendor).PlanAutoSetup(c, in)
+	plan, err = vendor.For(n.Vendor).PlanAutoSetup(c, in, resolutions)
 	if err != nil {
 		return plan, ros, c, closeConn, fmt.Errorf("radius: plan auto-setup: %w", err)
 	}
@@ -199,6 +253,26 @@ var (
 	errAutoSetupNoCreds = errors.New("auto-setup: credentials not configured")
 	errAutoSetupConnect = errors.New("auto-setup: could not connect to router")
 )
+
+// connectNAS resolves saved RouterOS API credentials and dials n — the
+// credential-check-then-connect sequence buildAutoSetupPlan/nasConfigHandler/
+// the FR-67 service handlers all need, in one place so it can't drift between
+// them. Wraps errors as errAutoSetupNoCreds/errAutoSetupConnect so callers can
+// keep using autoSetupConnectError to classify the HTTP response.
+func (m *module) connectNAS(ctx context.Context, n nasRow) (vendor.ROSConn, error) {
+	if n.APIUser == "" || len(n.APIPasswordEnc) == 0 {
+		return nil, fmt.Errorf("%w: no RouterOS API credentials saved for this NAS", errAutoSetupNoCreds)
+	}
+	apiPassword, err := decryptToString(n.APIPasswordEnc)
+	if err != nil {
+		return nil, fmt.Errorf("radius: decrypt nas api password: %w", err)
+	}
+	c, err := m.dialROS(ctx, n.IP, apiPortOrDefault(n.APIPort), n.APIUser, apiPassword)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %s", errAutoSetupConnect, err.Error())
+	}
+	return c, nil
+}
 
 func (m *module) autoSetupConnectError(w http.ResponseWriter, err error) {
 	switch {
@@ -215,22 +289,60 @@ func (m *module) autoSetupConnectError(w http.ResponseWriter, err error) {
 // plan would do (and why not, for conflicts) plus the NAS id, so a stale or
 // cross-NAS hash can never be replayed. Recomputed identically at apply time
 // over freshly-read router state — any drift changes the hash.
-func planHash(nasID string, plan vendor.AutoSetupPlan) string {
+//
+// v2 phase 2 (FR-66.3, contract C6): also folds in Values and Resolutions
+// directly, not only the plan.Items/Conflicts they produced — apply is tied
+// to the exact form values and per-conflict choices the operator approved in
+// preview, so resending a changed resolutions map (even one that happens to
+// produce the same items/conflicts) still recomputes a different hash.
+func planHash(nasID string, values autoSetupValuesInput, resolutions map[string]string, plan vendor.AutoSetupPlan) string {
 	items := append([]vendor.PlanItem(nil), plan.Items...)
 	sort.Slice(items, func(i, j int) bool { return items[i].Path+items[i].Command < items[j].Path+items[j].Command })
 	conflicts := append([]vendor.PlanConflict(nil), plan.Conflicts...)
 	sort.Slice(conflicts, func(i, j int) bool { return conflicts[i].Path+conflicts[i].Existing < conflicts[j].Path+conflicts[j].Existing })
 
+	resKeys := make([]string, 0, len(resolutions))
+	for k := range resolutions {
+		resKeys = append(resKeys, k)
+	}
+	sort.Strings(resKeys)
+
 	var b strings.Builder
 	b.WriteString(nasID)
+	fmt.Fprintf(&b, "|values:%s:%s:%d:%d:%s", strOrEmpty(values.RadiusServer), strOrEmpty(values.SrcAddress),
+		intOrZero(values.CoAPort), intOrZero(values.InterimSecs), strings.Join(sliceOrNil(values.WalledGarden), ","))
+	for _, k := range resKeys {
+		fmt.Fprintf(&b, "|res:%s:%s", k, resolutions[k])
+	}
 	for _, it := range items {
 		fmt.Fprintf(&b, "|item:%s:%s:%s:%s", it.Action, it.Path, it.Command, it.CurrentState)
 	}
 	for _, c := range conflicts {
-		fmt.Fprintf(&b, "|conflict:%s:%s:%s", c.Path, c.Existing, c.Reason)
+		fmt.Fprintf(&b, "|conflict:%s:%s:%s:%v", c.Path, c.Existing, c.Reason, c.Resolvable)
 	}
 	sum := sha256.Sum256([]byte(b.String()))
 	return hex.EncodeToString(sum[:])
+}
+
+func strOrEmpty(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
+}
+
+func intOrZero(n *int) int {
+	if n == nil {
+		return 0
+	}
+	return *n
+}
+
+func sliceOrNil(s *[]string) []string {
+	if s == nil {
+		return nil
+	}
+	return *s
 }
 
 func nonNilItems(items []vendor.PlanItem) []vendor.PlanItem {

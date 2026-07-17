@@ -19,29 +19,31 @@ import (
 
 // serviceRow is one nas_services record.
 type serviceRow struct {
-	ID            string
-	NASID         string
-	Service       string // pppoe | hotspot
-	Label         string
-	InterfaceNote string
-	IPPoolID      *string
-	IPPoolName    string // resolved from ip_pools for the reply/snippet
-	ROSServerName string
-	Enabled       bool
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
+	ID              string
+	NASID           string
+	Service         string // pppoe | hotspot
+	Label           string
+	InterfaceNote   string
+	IPPoolID        *string
+	IPPoolName      string // resolved from ip_pools for the reply/snippet
+	ROSServerName   string
+	Enabled         bool
+	ManagementMode  string // router | system (FR-67 / C5)
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
 }
 
-// serviceView is the JSON read shape embedded in nasView (C3/C9).
+// serviceView is the JSON read shape embedded in nasView (C3/C9; management_mode added by v2 phase 2 C9).
 type serviceView struct {
-	ID            string  `json:"id"`
-	Service       string  `json:"service"`
-	Label         string  `json:"label"`
-	InterfaceNote string  `json:"interface_note"`
-	IPPoolID      *string `json:"ip_pool_id"`
-	IPPoolName    string  `json:"ip_pool_name"`
-	ROSServerName string  `json:"ros_server_name"`
-	Enabled       bool    `json:"enabled"`
+	ID             string  `json:"id"`
+	Service        string  `json:"service"`
+	Label          string  `json:"label"`
+	InterfaceNote  string  `json:"interface_note"`
+	IPPoolID       *string `json:"ip_pool_id"`
+	IPPoolName     string  `json:"ip_pool_name"`
+	ROSServerName  string  `json:"ros_server_name"`
+	Enabled        bool    `json:"enabled"`
+	ManagementMode string  `json:"management_mode"`
 	// LiveSessions is the FR-63 per-service session count the panel's services
 	// sub-list shows. Filled by the API layer from C's live counter.
 	LiveSessions int `json:"live_sessions"`
@@ -51,7 +53,7 @@ func (s serviceRow) view() serviceView {
 	return serviceView{
 		ID: s.ID, Service: s.Service, Label: s.Label, InterfaceNote: s.InterfaceNote,
 		IPPoolID: s.IPPoolID, IPPoolName: s.IPPoolName,
-		ROSServerName: s.ROSServerName, Enabled: s.Enabled,
+		ROSServerName: s.ROSServerName, Enabled: s.Enabled, ManagementMode: s.ManagementMode,
 	}
 }
 
@@ -70,12 +72,12 @@ func (s serviceInput) enabled() bool { return s.Enabled == nil || *s.Enabled }
 
 const serviceColumns = `s.id::text, s.nas_id::text, s.service, s.label, s.interface_note,
 	s.ip_pool_id::text, coalesce((SELECT name FROM ip_pools WHERE id = s.ip_pool_id), ''),
-	s.ros_server_name, s.enabled, s.created_at, s.updated_at`
+	s.ros_server_name, s.enabled, s.management_mode, s.created_at, s.updated_at`
 
 func scanService(row pgx.Row) (serviceRow, error) {
 	var s serviceRow
 	err := row.Scan(&s.ID, &s.NASID, &s.Service, &s.Label, &s.InterfaceNote,
-		&s.IPPoolID, &s.IPPoolName, &s.ROSServerName, &s.Enabled, &s.CreatedAt, &s.UpdatedAt)
+		&s.IPPoolID, &s.IPPoolName, &s.ROSServerName, &s.Enabled, &s.ManagementMode, &s.CreatedAt, &s.UpdatedAt)
 	return s, err
 }
 
@@ -130,6 +132,82 @@ func queryServices(ctx context.Context, db *pgxpool.Pool, q string, args ...any)
 		out = append(out, s)
 	}
 	return out, rows.Err()
+}
+
+// errServiceNotFound is returned when a service id doesn't belong to the NAS
+// it was addressed under (FR-67 endpoints all scope by both ids).
+var errServiceNotFound = errors.New("radius: nas service not found")
+
+// getService fetches one nas_services row scoped to its NAS (FR-67 endpoints
+// never let a service id from another NAS leak in).
+func getService(ctx context.Context, db *pgxpool.Pool, nasID, serviceID string) (serviceRow, error) {
+	rows, err := queryServices(ctx, db,
+		`SELECT `+serviceColumns+` FROM nas_services s WHERE s.id = $1::uuid AND s.nas_id = $2::uuid`,
+		serviceID, nasID)
+	if err != nil {
+		return serviceRow{}, err
+	}
+	if len(rows) == 0 {
+		return serviceRow{}, errServiceNotFound
+	}
+	return rows[0], nil
+}
+
+// setServiceManagementMode flips a service's management_mode (FR-67.5 adopt).
+// Never touches any other column — adopt writes nothing router-side, and this
+// mirrors that on the HikRAD side too.
+func setServiceManagementMode(ctx context.Context, db *pgxpool.Pool, nasID, serviceID, mode string) error {
+	ct, err := db.Exec(ctx,
+		`UPDATE nas_services SET management_mode = $3, updated_at = now()
+		  WHERE id = $1::uuid AND nas_id = $2::uuid`,
+		serviceID, nasID, mode)
+	if err != nil {
+		return err
+	}
+	if ct.RowsAffected() == 0 {
+		return errServiceNotFound
+	}
+	return nil
+}
+
+// systemServiceInput is what FR-67.3/67.4's create/edit flow persists after a
+// successful ApplyService — always management_mode='system', whether this is
+// a brand-new row or updating one already in that mode.
+type systemServiceInput struct {
+	Service       string
+	Label         string
+	InterfaceNote string
+	IPPoolID      *string
+	ROSServerName string
+}
+
+// upsertSystemService inserts a new system-managed service (serviceID == "")
+// or updates an existing one (which FR-67.4 already required be management_mode
+// = 'system' before allowing the plan/apply call that led here). Returns the
+// row's id.
+func upsertSystemService(ctx context.Context, db *pgxpool.Pool, nasID, serviceID string, in systemServiceInput) (string, error) {
+	if serviceID == "" {
+		var id string
+		err := db.QueryRow(ctx,
+			`INSERT INTO nas_services (nas_id, service, label, interface_note, ip_pool_id, ros_server_name, enabled, management_mode)
+			 VALUES ($1::uuid, $2, $3, $4, $5::uuid, $6, true, 'system')
+			 RETURNING id::text`,
+			nasID, in.Service, in.Label, in.InterfaceNote, in.IPPoolID, in.ROSServerName).Scan(&id)
+		return id, err
+	}
+	ct, err := db.Exec(ctx,
+		`UPDATE nas_services
+		    SET service = $3, label = $4, interface_note = $5, ip_pool_id = $6::uuid,
+		        ros_server_name = $7, management_mode = 'system', updated_at = now()
+		  WHERE id = $1::uuid AND nas_id = $2::uuid`,
+		serviceID, nasID, in.Service, in.Label, in.InterfaceNote, in.IPPoolID, in.ROSServerName)
+	if err != nil {
+		return "", err
+	}
+	if ct.RowsAffected() == 0 {
+		return "", errServiceNotFound
+	}
+	return serviceID, nil
 }
 
 // errLastService is returned when a write would leave a NAS with no service

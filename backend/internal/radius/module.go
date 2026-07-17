@@ -93,6 +93,18 @@ func (Module) Register(r chi.Router, d httpapi.Deps) {
 	r.With(auth.Require("nas.view")).Post("/api/v1/nas/{id}/auto-setup/preview", m.autoSetupPreviewHandler)
 	r.With(auth.Require("nas.edit")).Post("/api/v1/nas/{id}/auto-setup/apply", m.autoSetupApplyHandler)
 
+	// v2 phase 2 / FR-65: read-only RADIUS-relevant router config, same
+	// nas.view gate as every other read-only router inspection here.
+	r.With(auth.Require("nas.view")).Get("/api/v1/nas/{id}/config", m.nasConfigHandler)
+
+	// v2 phase 2 / FR-67: Hotspot/PPPoE server management. router-config is a
+	// read (nas.view); plan/apply/adopt all write (nas.edit) — plan only to
+	// the router via preview, apply/adopt persist to HikRAD too.
+	r.With(auth.Require("nas.view")).Get("/api/v1/nas/{id}/services/{serviceId}/router-config", m.serviceRouterConfigHandler)
+	r.With(auth.Require("nas.edit")).Post("/api/v1/nas/{id}/services/plan", m.servicePlanHandler)
+	r.With(auth.Require("nas.edit")).Post("/api/v1/nas/{id}/services/apply", m.serviceApplyHandler)
+	r.With(auth.Require("nas.edit")).Post("/api/v1/nas/{id}/services/{serviceId}/adopt", m.adoptServiceHandler)
+
 	// RADIUS debug tail (FR-39 / C6): SSE over radius:decisions, nas.view-gated.
 	// Lives under /api/v1/live/ (E's debug view) but is B's backend per the
 	// cross-assignment — a distinct path from live's own /live/sessions route.
