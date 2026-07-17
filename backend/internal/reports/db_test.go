@@ -162,7 +162,7 @@ func (e env) login(t *testing.T, user, pass string) string {
 func (e env) createProfile(t *testing.T, price int64, days int) string {
 	t.Helper()
 	r := e.do(t, "POST", "/api/v1/profiles", e.token, map[string]any{
-		"name": uniq("plan_"), "price_iqd": price, "duration_days": days,
+		"name": uniq("plan_"), "price": price, "currency": "IQD", "duration_days": days,
 		"rate_down_kbps": 10240, "rate_up_kbps": 2048,
 	})
 	if r.status != http.StatusCreated {
@@ -221,20 +221,20 @@ func (e env) seedAgent(t *testing.T) (string, string) {
 
 func (e env) balance(t *testing.T, mgr, token string) int64 {
 	t.Helper()
-	r := e.do(t, "GET", "/api/v1/managers/"+mgr+"/balance", token, nil)
+	r := e.do(t, "GET", "/api/v1/managers/"+mgr+"/balance?currency=IQD", token, nil)
 	if r.status != http.StatusOK {
 		t.Fatalf("balance = %d: %s", r.status, r.body)
 	}
 	var out struct {
-		BalanceIQD int64 `json:"balance_iqd"`
+		Balance int64 `json:"balance"`
 	}
 	r.into(t, &out)
-	return out.BalanceIQD
+	return out.Balance
 }
 
 func (e env) topup(t *testing.T, mgr, token string, amount int64) {
 	t.Helper()
-	r := e.do(t, "POST", "/api/v1/managers/"+mgr+"/topup", token, map[string]any{"amount_iqd": amount})
+	r := e.do(t, "POST", "/api/v1/managers/"+mgr+"/topup", token, map[string]any{"amount": amount, "currency": "IQD"})
 	if r.status != http.StatusOK {
 		t.Fatalf("topup = %d: %s", r.status, r.body)
 	}
@@ -289,7 +289,7 @@ func TestRevenueReportReconcilesWithPayments(t *testing.T) {
 
 	var directTotal int64
 	if err := e.db.QueryRow(context.Background(),
-		`SELECT COALESCE(sum(amount_iqd),0) FROM payments WHERE at >= $1 AND at < $2`, from, to).
+		`SELECT COALESCE(sum(amount),0) FROM payments WHERE currency = 'IQD' AND at >= $1 AND at < $2`, from, to).
 		Scan(&directTotal); err != nil {
 		t.Fatal(err)
 	}
@@ -304,23 +304,26 @@ func TestRevenueReportReconcilesWithPayments(t *testing.T) {
 			t.Fatalf("revenue[%s] = %d: %s", groupBy, r.status, r.body)
 		}
 		var out struct {
-			TotalIQD int64 `json:"total_iqd"`
-			Rows     []struct {
-				Key       string `json:"key"`
-				AmountIQD int64  `json:"amount_iqd"`
-				Count     int    `json:"count"`
+			Totals map[string]int64 `json:"totals"`
+			Rows   []struct {
+				Key      string `json:"key"`
+				Currency string `json:"currency"`
+				Amount   int64  `json:"amount"`
+				Count    int    `json:"count"`
 			} `json:"rows"`
 		}
 		r.into(t, &out)
-		if out.TotalIQD != directTotal {
-			t.Fatalf("group_by=%s: total_iqd=%d, want %d (direct payments sum)", groupBy, out.TotalIQD, directTotal)
+		if out.Totals["IQD"] != directTotal {
+			t.Fatalf("group_by=%s: totals[IQD]=%d, want %d (direct payments sum)", groupBy, out.Totals["IQD"], directTotal)
 		}
 		var rowSum int64
 		for _, rr := range out.Rows {
-			rowSum += rr.AmountIQD
+			if rr.Currency == "IQD" {
+				rowSum += rr.Amount
+			}
 		}
 		if rowSum != directTotal {
-			t.Fatalf("group_by=%s: sum(rows.amount_iqd)=%d, want %d", groupBy, rowSum, directTotal)
+			t.Fatalf("group_by=%s: sum(rows[IQD].amount)=%d, want %d", groupBy, rowSum, directTotal)
 		}
 	}
 
@@ -360,28 +363,28 @@ func TestSettlementClosingEqualsLiveBalance(t *testing.T) {
 		t.Fatalf("settlement = %d: %s", r.status, r.body)
 	}
 	var out struct {
-		OpeningIQD int64 `json:"opening_iqd"`
-		TopupsIQD  int64 `json:"topups_iqd"`
-		Renewals   struct {
-			Count     int   `json:"count"`
-			AmountIQD int64 `json:"amount_iqd"`
+		Opening  int64 `json:"opening"`
+		Topups   int64 `json:"topups"`
+		Renewals struct {
+			Count  int   `json:"count"`
+			Amount int64 `json:"amount"`
 		} `json:"renewals"`
-		RefundsIQD int64 `json:"refunds_iqd"`
-		ClosingIQD int64 `json:"closing_iqd"`
+		Refunds int64 `json:"refunds"`
+		Closing int64 `json:"closing"`
 	}
 	r.into(t, &out)
-	if out.ClosingIQD != live {
-		t.Fatalf("closing_iqd=%d, want live balance %d", out.ClosingIQD, live)
+	if out.Closing != live {
+		t.Fatalf("closing=%d, want live balance %d", out.Closing, live)
 	}
-	if out.Renewals.Count != 3 || out.Renewals.AmountIQD != 45_000 {
+	if out.Renewals.Count != 3 || out.Renewals.Amount != 45_000 {
 		t.Fatalf("renewals = %+v, want count=3 amount=45000", out.Renewals)
 	}
-	if out.TopupsIQD != 200_000 {
-		t.Fatalf("topups_iqd=%d, want 200000", out.TopupsIQD)
+	if out.Topups != 200_000 {
+		t.Fatalf("topups=%d, want 200000", out.Topups)
 	}
-	if out.OpeningIQD+out.TopupsIQD-out.Renewals.AmountIQD+out.RefundsIQD != out.ClosingIQD {
+	if out.Opening+out.Topups-out.Renewals.Amount+out.Refunds != out.Closing {
 		t.Fatalf("opening+topups-renewals+refunds=%d, want closing=%d",
-			out.OpeningIQD+out.TopupsIQD-out.Renewals.AmountIQD+out.RefundsIQD, out.ClosingIQD)
+			out.Opening+out.Topups-out.Renewals.Amount+out.Refunds, out.Closing)
 	}
 
 	// Zero-activity manager: clean zeros, not a 404 (edge case).
@@ -391,11 +394,11 @@ func TestSettlementClosingEqualsLiveBalance(t *testing.T) {
 		t.Fatalf("settlement (zero activity) = %d: %s", r2.status, r2.body)
 	}
 	var out2 struct {
-		ClosingIQD int64 `json:"closing_iqd"`
+		Closing int64 `json:"closing"`
 	}
 	r2.into(t, &out2)
-	if out2.ClosingIQD != 0 {
-		t.Fatalf("zero-activity manager closing_iqd=%d, want 0", out2.ClosingIQD)
+	if out2.Closing != 0 {
+		t.Fatalf("zero-activity manager closing=%d, want 0", out2.Closing)
 	}
 }
 

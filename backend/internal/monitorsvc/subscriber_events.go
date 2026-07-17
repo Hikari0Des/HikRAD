@@ -76,11 +76,13 @@ func (s *subscriberEvents) handle(ctx context.Context, channel string, payload [
 	}
 }
 
-// renewedEvent mirrors billing's publish shape exactly (contract C7).
+// renewedEvent mirrors billing's publish shape exactly (contract C7; v2 phase
+// 4 FR-69.1 renamed amount_iqd -> amount and added currency).
 type renewedEvent struct {
 	SubscriberID string    `json:"subscriber_id"`
 	ReceiptNo    string    `json:"receipt_no"`
-	AmountIQD    int64     `json:"amount_iqd"`
+	Amount       int64     `json:"amount"`
+	Currency     string    `json:"currency"`
 	NewExpiresAt time.Time `json:"new_expires_at"`
 	Source       string    `json:"source"`
 }
@@ -96,7 +98,7 @@ func (s *subscriberEvents) handleRenewed(ctx context.Context, payload []byte) {
 		return
 	}
 	if contact.OptIn && contact.Phone != "" {
-		params := []string{strconv.FormatInt(ev.AmountIQD, 10), ev.ReceiptNo, ev.NewExpiresAt.Format("2006-01-02")}
+		params := []string{strconv.FormatInt(ev.Amount, 10), ev.ReceiptNo, ev.NewExpiresAt.Format("2006-01-02")}
 		if err := deliverSubscriberWhatsApp(ctx, s.settings, s.client, contact.Phone, contact.Language, "payment_receipt", params); err != nil {
 			s.log.Warn("subscriber-events: payment_receipt whatsapp failed", "subscriber_id", ev.SubscriberID, "error", err)
 		}
@@ -104,7 +106,7 @@ func (s *subscriberEvents) handleRenewed(ctx context.Context, payload []byte) {
 	if err := push.DeliverToSubscriber(ctx, ev.SubscriberID, push.Payload{
 		TitleKey: "push.payment_receipt.title",
 		BodyKey:  "push.payment_receipt.body",
-		Params:   map[string]any{"amount_iqd": ev.AmountIQD, "receipt_no": ev.ReceiptNo},
+		Params:   map[string]any{"amount": ev.Amount, "currency": ev.Currency, "receipt_no": ev.ReceiptNo},
 		URL:      "/",
 	}); err != nil {
 		s.log.Warn("subscriber-events: payment_receipt push failed", "subscriber_id", ev.SubscriberID, "error", err)

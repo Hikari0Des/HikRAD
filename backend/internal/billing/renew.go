@@ -73,14 +73,16 @@ func (m *Module) fillSettings(ctx context.Context, p *renewParams) {
 	}
 }
 
-// renewResult is the C2 response shape.
+// renewResult is the C2 response shape. Currency is exported (v2 phase 4,
+// FR-69.1): every renewal response names the currency it charged in.
 type renewResult struct {
 	LedgerTxID   string    `json:"ledger_tx_id"`
 	ReceiptNo    string    `json:"receipt_no"`
 	NewExpiresAt time.Time `json:"new_expires_at"`
 	CoAResult    string    `json:"coa_result"` // restored | disconnect_fallback | failed | not_online
+	Currency     string    `json:"currency"`
 	// internal, not serialized: needed for the post-commit CoA restore.
-	priceIQD int64
+	price    int64
 	rate     string
 	poolName string
 }
@@ -192,18 +194,19 @@ func (m *Module) renewInTx(ctx context.Context, tx pgx.Tx, dbNow time.Time, p re
 
 	// Load the target profile (reject a concurrent archive cleanly).
 	var (
-		profPrice int64
-		duration  int
-		archived  bool
-		rateUp    int
-		rateDown  int
-		poolName  *string
+		profPrice    int64
+		profCurrency string
+		duration     int
+		archived     bool
+		rateUp       int
+		rateDown     int
+		poolName     *string
 	)
 	err = tx.QueryRow(ctx,
-		`SELECT price_iqd, duration_days, archived, rate_up_kbps, rate_down_kbps,
+		`SELECT price, currency, duration_days, archived, rate_up_kbps, rate_down_kbps,
 		        (SELECT name FROM ip_pools WHERE id = p.pool_id)
 		   FROM profiles p WHERE id = $1::uuid`, targetProfile).
-		Scan(&profPrice, &duration, &archived, &rateUp, &rateDown, &poolName)
+		Scan(&profPrice, &profCurrency, &duration, &archived, &rateUp, &rateDown, &poolName)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return renewResult{}, errNoProfile
 	}
@@ -214,14 +217,17 @@ func (m *Module) renewInTx(ctx context.Context, tx pgx.Tx, dbNow time.Time, p re
 		return renewResult{}, errProfileArchived
 	}
 
-	// Price resolution: subscriber override → profile (FR-19.2).
+	// Price resolution: subscriber override → profile (FR-19.2). An override's
+	// currency is always the profile's current currency (v2 phase 4, C6) —
+	// overriding into a different currency is out of scope for this phase.
 	price := resolvePrice(priceOverride, profPrice)
 
-	// Balance: lock the actor's balance row, enforce when required.
+	// Balance: lock the actor's balance row (in the profile's currency),
+	// enforce when required.
 	balanceDelta := int64(0)
 	if p.chargeBalance {
 		balanceDelta = -price
-		bal, err := lockBalance(ctx, tx, p.actorManagerID)
+		bal, err := lockBalance(ctx, tx, p.actorManagerID, profCurrency)
 		if err != nil {
 			return renewResult{}, err
 		}
@@ -233,7 +239,8 @@ func (m *Module) renewInTx(ctx context.Context, tx pgx.Tx, dbNow time.Time, p re
 	// Ledger entry.
 	txID, err := insertLedger(ctx, tx, ledgerEntry{
 		Type:           p.ledgerType,
-		AmountIQD:      balanceDelta,
+		Amount:         balanceDelta,
+		Currency:       profCurrency,
 		ActorManagerID: p.actorManagerID,
 		SubscriberID:   p.subscriberID,
 		Source:         p.source,
@@ -244,7 +251,7 @@ func (m *Module) renewInTx(ctx context.Context, tx pgx.Tx, dbNow time.Time, p re
 		return renewResult{}, err
 	}
 	if p.chargeBalance {
-		if err := recomputeBalance(ctx, tx, p.actorManagerID); err != nil {
+		if err := recomputeBalance(ctx, tx, p.actorManagerID, profCurrency); err != nil {
 			return renewResult{}, err
 		}
 	}
@@ -283,7 +290,8 @@ func (m *Module) renewInTx(ctx context.Context, tx pgx.Tx, dbNow time.Time, p re
 		ReceiptNo:    receiptNo,
 		LedgerTxID:   txID,
 		SubscriberID: p.subscriberID,
-		AmountIQD:    price,
+		Amount:       price,
+		Currency:     profCurrency,
 		Method:       p.method,
 		Source:       p.source,
 		ShareToken:   randToken(),
@@ -295,7 +303,8 @@ func (m *Module) renewInTx(ctx context.Context, tx pgx.Tx, dbNow time.Time, p re
 		LedgerTxID:   txID,
 		ReceiptNo:    receiptNo,
 		NewExpiresAt: newExpiry.UTC(),
-		priceIQD:     price,
+		Currency:     profCurrency,
+		price:        price,
 		rate:         resolveRate(rateOverride, rateUp, rateDown),
 		poolName:     strOr(poolName, ""),
 	}, nil

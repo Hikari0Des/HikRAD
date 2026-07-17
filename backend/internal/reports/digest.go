@@ -81,9 +81,13 @@ func (m *Module) digestHandler(w http.ResponseWriter, r *http.Request) {
 		m.internalError(w, "digest renewals count", err)
 		return
 	}
+	// v2 phase 4 (FR-70.2): the daily digest headline stays IQD-scoped —
+	// summing across currencies here would produce a meaningless blended
+	// number for a plain-text summary message. Non-IQD activity is real and
+	// visible in the full revenue/settlement reports, just not this headline.
 	err = m.db.QueryRow(ctx,
-		`SELECT COALESCE(sum(amount_iqd),0)::bigint FROM payments
-		  WHERE method IN ('renewal','cash','voucher') AND (at AT TIME ZONE 'Asia/Baghdad')::date = `+todayStart).
+		`SELECT COALESCE(sum(amount),0)::bigint FROM payments
+		  WHERE method IN ('renewal','cash','voucher') AND currency = 'IQD' AND (at AT TIME ZONE 'Asia/Baghdad')::date = `+todayStart).
 		Scan(&resp.Renewals.AmountIQD)
 	if err != nil {
 		m.internalError(w, "digest renewals amount", err)
@@ -91,8 +95,8 @@ func (m *Module) digestHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	var revenue int64
 	err = m.db.QueryRow(ctx,
-		`SELECT COALESCE(sum(amount_iqd),0)::bigint FROM payments
-		  WHERE (at AT TIME ZONE 'Asia/Baghdad')::date = `+todayStart).
+		`SELECT COALESCE(sum(amount),0)::bigint FROM payments
+		  WHERE currency = 'IQD' AND (at AT TIME ZONE 'Asia/Baghdad')::date = `+todayStart).
 		Scan(&revenue)
 	if err != nil {
 		m.internalError(w, "digest revenue", err)

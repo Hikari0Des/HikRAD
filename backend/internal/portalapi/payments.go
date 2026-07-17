@@ -123,7 +123,7 @@ func (m *Module) getPaymentIntentHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	httpapi.JSON(w, http.StatusOK, map[string]any{
-		"id": v.ID, "gateway": v.Gateway, "state": v.State, "amount_iqd": v.AmountIQD,
+		"id": v.ID, "gateway": v.Gateway, "state": v.State, "amount": v.Amount, "currency": v.Currency,
 		"gateway_ref": v.GatewayRef, "new_expires_at": v.NewExpiresAt,
 	})
 }

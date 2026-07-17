@@ -150,23 +150,24 @@ func redeemErrorFor(o redeemOutcome) (code, msg string, bad bool) {
 // --- Batch list + void ------------------------------------------------------
 
 type batchSummary struct {
-	ID           string     `json:"id"`
-	ProfileID    string     `json:"profile_id"`
-	Prefix       string     `json:"prefix"`
-	Count        int        `json:"count"`
-	UnitPriceIQD int64      `json:"unit_price_iqd"`
-	State        string     `json:"state"`
-	ExpiresAt    *time.Time `json:"expires_at"`
-	CreatedAt    time.Time  `json:"created_at"`
-	Used         int        `json:"used"`
-	Unused       int        `json:"unused"`
-	Void         int        `json:"void"`
-	Expired      int        `json:"expired"`
+	ID        string     `json:"id"`
+	ProfileID string     `json:"profile_id"`
+	Prefix    string     `json:"prefix"`
+	Count     int        `json:"count"`
+	UnitPrice int64      `json:"unit_price"`
+	Currency  string     `json:"currency"`
+	State     string     `json:"state"`
+	ExpiresAt *time.Time `json:"expires_at"`
+	CreatedAt time.Time  `json:"created_at"`
+	Used      int        `json:"used"`
+	Unused    int        `json:"unused"`
+	Void      int        `json:"void"`
+	Expired   int        `json:"expired"`
 }
 
 func (m *Module) listBatchesHandler(w http.ResponseWriter, r *http.Request) {
 	rows, err := m.db.Query(r.Context(),
-		`SELECT b.id::text, b.profile_id::text, b.prefix, b.count, b.unit_price_iqd, b.state,
+		`SELECT b.id::text, b.profile_id::text, b.prefix, b.count, b.unit_price, b.currency, b.state,
 		        b.expires_at, b.created_at,
 		        count(*) FILTER (WHERE v.state = 'used')                              AS used,
 		        count(*) FILTER (WHERE v.state = 'unused'
@@ -186,7 +187,7 @@ func (m *Module) listBatchesHandler(w http.ResponseWriter, r *http.Request) {
 	items := []batchSummary{}
 	for rows.Next() {
 		var b batchSummary
-		if err := rows.Scan(&b.ID, &b.ProfileID, &b.Prefix, &b.Count, &b.UnitPriceIQD, &b.State,
+		if err := rows.Scan(&b.ID, &b.ProfileID, &b.Prefix, &b.Count, &b.UnitPrice, &b.Currency, &b.State,
 			&b.ExpiresAt, &b.CreatedAt, &b.Used, &b.Unused, &b.Void, &b.Expired); err != nil {
 			m.internalError(w, "scan batch", err)
 			return
@@ -238,14 +239,15 @@ func (m *Module) voidBatchHandler(w http.ResponseWriter, r *http.Request) {
 	defer tx.Rollback(ctx)
 
 	var (
-		creator   *string
-		unitPrice int64
-		state     string
+		creator      *string
+		unitPrice    int64
+		unitCurrency string
+		state        string
 	)
 	err = tx.QueryRow(ctx,
-		`SELECT creator_manager_id::text, unit_price_iqd, state
+		`SELECT creator_manager_id::text, unit_price, currency, state
 		   FROM voucher_batches WHERE id = $1::uuid FOR UPDATE`, id).
-		Scan(&creator, &unitPrice, &state)
+		Scan(&creator, &unitPrice, &unitCurrency, &state)
 	if err != nil {
 		httpapi.Error(w, http.StatusNotFound, "not_found", "batch not found")
 		return
@@ -270,19 +272,19 @@ func (m *Module) voidBatchHandler(w http.ResponseWriter, r *http.Request) {
 	creditTx := ""
 	credit := unitPrice * int64(voided)
 	if credit > 0 && creator != nil && *creator != "" {
-		if _, err := lockBalance(ctx, tx, *creator); err != nil {
+		if _, err := lockBalance(ctx, tx, *creator, unitCurrency); err != nil {
 			m.internalError(w, "void lock", err)
 			return
 		}
 		creditTx, err = insertLedger(ctx, tx, ledgerEntry{
-			Type: "adjustment", AmountIQD: credit, ActorManagerID: *creator,
+			Type: "adjustment", Amount: credit, Currency: unitCurrency, ActorManagerID: *creator,
 			Source: "voucher", Reference: id, Note: "voucher batch void (unused credit)",
 		})
 		if err != nil {
 			m.internalError(w, "void credit", err)
 			return
 		}
-		if err := recomputeBalance(ctx, tx, *creator); err != nil {
+		if err := recomputeBalance(ctx, tx, *creator, unitCurrency); err != nil {
 			m.internalError(w, "void recompute", err)
 			return
 		}

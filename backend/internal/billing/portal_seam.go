@@ -41,20 +41,22 @@ type RenewRequest struct {
 }
 
 // RenewResult is the cross-package renewal result shape, JSON-tagged to match
-// F's already-written client exactly (frontend/portal/src/api/vouchers.ts
-// RenewResult) since portalapi serializes this struct directly.
+// F's client (frontend/portal/src/api/vouchers.ts RenewResult) since portalapi
+// serializes this struct directly. v2 phase 4 (FR-69.1): price_iqd -> price +
+// currency — a breaking rename, the frontend type updates in the same phase.
 type RenewResult struct {
 	LedgerTxID   string    `json:"ledger_tx_id"`
 	ReceiptNo    string    `json:"receipt_no"`
 	NewExpiresAt time.Time `json:"new_expires_at"`
-	PriceIQD     int64     `json:"price_iqd"`
+	Price        int64     `json:"price"`
+	Currency     string    `json:"currency"`
 	CoAResult    string    `json:"coa_result"`
 }
 
 func fromInternal(r renewResult) RenewResult {
 	return RenewResult{
 		LedgerTxID: r.LedgerTxID, ReceiptNo: r.ReceiptNo,
-		NewExpiresAt: r.NewExpiresAt, PriceIQD: r.priceIQD, CoAResult: r.CoAResult,
+		NewExpiresAt: r.NewExpiresAt, Price: r.price, Currency: r.Currency, CoAResult: r.CoAResult,
 	}
 }
 
@@ -183,7 +185,8 @@ type PaymentIntent struct {
 	ID           string
 	Gateway      string
 	State        string
-	AmountIQD    int64
+	Amount       int64
+	Currency     string
 	GatewayRef   string
 	NewExpiresAt *time.Time
 	CreatedAt    time.Time
@@ -201,7 +204,7 @@ func GetPaymentIntent(ctx context.Context, id, subscriberID string) (PaymentInte
 		return PaymentIntent{}, ErrIntentNotFound
 	}
 	return PaymentIntent{
-		ID: v.ID, Gateway: v.Gateway, State: v.State, AmountIQD: v.AmountIQD, GatewayRef: v.GatewayRef,
+		ID: v.ID, Gateway: v.Gateway, State: v.State, Amount: v.Amount, Currency: v.Currency, GatewayRef: v.GatewayRef,
 		NewExpiresAt: v.NewExpiresAt, CreatedAt: v.CreatedAt,
 	}, nil
 }
@@ -212,7 +215,8 @@ type PortalPaymentEntry struct {
 	ID        string
 	At        time.Time
 	Type      string
-	AmountIQD int64
+	Amount    int64
+	Currency  string
 	Source    string
 	Reference string
 }
@@ -228,7 +232,7 @@ func PortalPayments(ctx context.Context, subscriberID string, page httpapi.PageR
 	}
 	out := make([]PortalPaymentEntry, len(items))
 	for i, it := range items {
-		out[i] = PortalPaymentEntry{ID: it.ID, At: it.At, Type: it.Type, AmountIQD: it.AmountIQD, Source: it.Source, Reference: it.Reference}
+		out[i] = PortalPaymentEntry{ID: it.ID, At: it.At, Type: it.Type, Amount: it.Amount, Currency: it.Currency, Source: it.Source, Reference: it.Reference}
 	}
 	return out, next, nil
 }

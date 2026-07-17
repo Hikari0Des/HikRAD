@@ -30,39 +30,40 @@ var (
 // resolvePortalPrice mirrors renewInTx's price resolution (FR-19.2) as a
 // read-only lookup — the actual lock + charge happens inside renewInTx itself
 // when the intent later confirms. profileID "" keeps the subscriber's current
-// profile.
-func (m *Module) resolvePortalPrice(ctx context.Context, subscriberID, profileID string) (price int64, resolvedProfileID string, err error) {
+// profile. v2 phase 4 also returns the profile's currency.
+func (m *Module) resolvePortalPrice(ctx context.Context, subscriberID, profileID string) (price int64, currency, resolvedProfileID string, err error) {
 	var curProfile *string
 	var priceOverride *int64
 	err = m.db.QueryRow(ctx, `SELECT profile_id::text, price_override FROM subscribers WHERE id = $1::uuid`, subscriberID).
 		Scan(&curProfile, &priceOverride)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return 0, "", errNoSubscriber
+		return 0, "", "", errNoSubscriber
 	}
 	if err != nil {
-		return 0, "", err
+		return 0, "", "", err
 	}
 	resolvedProfileID = profileID
 	if resolvedProfileID == "" {
 		resolvedProfileID = strOr(curProfile, "")
 	}
 	if resolvedProfileID == "" {
-		return 0, "", errNoProfile
+		return 0, "", "", errNoProfile
 	}
 	var profPrice int64
+	var profCurrency string
 	var archived bool
-	err = m.db.QueryRow(ctx, `SELECT price_iqd, archived FROM profiles WHERE id = $1::uuid`, resolvedProfileID).
-		Scan(&profPrice, &archived)
+	err = m.db.QueryRow(ctx, `SELECT price, currency, archived FROM profiles WHERE id = $1::uuid`, resolvedProfileID).
+		Scan(&profPrice, &profCurrency, &archived)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return 0, "", errNoProfile
+		return 0, "", "", errNoProfile
 	}
 	if err != nil {
-		return 0, "", err
+		return 0, "", "", err
 	}
 	if archived {
-		return 0, "", errProfileArchived
+		return 0, "", "", errProfileArchived
 	}
-	return resolvePrice(priceOverride, profPrice), resolvedProfileID, nil
+	return resolvePrice(priceOverride, profPrice), profCurrency, resolvedProfileID, nil
 }
 
 // createIntent starts a new payment attempt (C3: POST /portal/payments/{gw}/create).
@@ -71,14 +72,14 @@ func (m *Module) createIntent(ctx context.Context, subscriberID, gatewayName, pr
 	if err != nil {
 		return "", "", err
 	}
-	price, resolvedProfile, err := m.resolvePortalPrice(ctx, subscriberID, profileID)
+	price, currency, resolvedProfile, err := m.resolvePortalPrice(ctx, subscriberID, profileID)
 	if err != nil {
 		return "", "", err
 	}
 	err = m.db.QueryRow(ctx,
-		`INSERT INTO payment_intents (subscriber_id, profile_id, gateway, amount_iqd)
-		 VALUES ($1::uuid, $2::uuid, $3, $4) RETURNING id::text`,
-		subscriberID, resolvedProfile, gatewayName, price).Scan(&intentID)
+		`INSERT INTO payment_intents (subscriber_id, profile_id, gateway, amount, currency)
+		 VALUES ($1::uuid, $2::uuid, $3, $4, $5) RETURNING id::text`,
+		subscriberID, resolvedProfile, gatewayName, price, currency).Scan(&intentID)
 	if err != nil {
 		return "", "", err
 	}
@@ -101,7 +102,8 @@ type intentView struct {
 	ID           string     `json:"id"`
 	Gateway      string     `json:"gateway"`
 	State        string     `json:"state"`
-	AmountIQD    int64      `json:"amount_iqd"`
+	Amount       int64      `json:"amount"`
+	Currency     string     `json:"currency"`
 	GatewayRef   string     `json:"gateway_ref"`
 	NewExpiresAt *time.Time `json:"new_expires_at,omitempty"`
 	CreatedAt    time.Time  `json:"created_at"`
@@ -112,9 +114,9 @@ func (m *Module) getIntent(ctx context.Context, id, subscriberID string) (intent
 	var v intentView
 	var ledgerTxID, gatewayRef *string
 	err := m.db.QueryRow(ctx,
-		`SELECT id::text, gateway, state, amount_iqd, created_at, ledger_tx_id::text, gateway_ref
+		`SELECT id::text, gateway, state, amount, currency, created_at, ledger_tx_id::text, gateway_ref
 		   FROM payment_intents WHERE id = $1::uuid AND subscriber_id = $2::uuid`,
-		id, subscriberID).Scan(&v.ID, &v.Gateway, &v.State, &v.AmountIQD, &v.CreatedAt, &ledgerTxID, &gatewayRef)
+		id, subscriberID).Scan(&v.ID, &v.Gateway, &v.State, &v.Amount, &v.Currency, &v.CreatedAt, &ledgerTxID, &gatewayRef)
 	if err != nil {
 		return intentView{}, err
 	}
@@ -139,7 +141,8 @@ type portalPaymentSummary struct {
 	ID        string    `json:"id"`
 	At        time.Time `json:"at"`
 	Type      string    `json:"type"` // payments.method: renewal|voucher_redeem|portal-<gw>|card-trial|card-<type>|refund
-	AmountIQD int64     `json:"amount_iqd"`
+	Amount    int64     `json:"amount"`
+	Currency  string    `json:"currency"`
 	Source    string    `json:"source"`
 	Reference string    `json:"reference"`
 }
@@ -157,7 +160,7 @@ func (m *Module) portalPayments(ctx context.Context, subscriberID string, page h
 		return nil, "", httpapi.ErrBadCursor
 	}
 	rows, err := m.db.Query(ctx,
-		`SELECT pay.receipt_no, pay.at, pay.method, pay.amount_iqd, pay.source, COALESCE(l.reference,'')
+		`SELECT pay.receipt_no, pay.at, pay.method, pay.amount, pay.currency, pay.source, COALESCE(l.reference,'')
 		   FROM payments pay
 		   LEFT JOIN ledger_transactions l ON l.id = pay.ledger_tx_id
 		  WHERE pay.subscriber_id = $1::uuid
@@ -172,7 +175,7 @@ func (m *Module) portalPayments(ctx context.Context, subscriberID string, page h
 	items := make([]portalPaymentSummary, 0, page.Limit)
 	for rows.Next() {
 		var s portalPaymentSummary
-		if err := rows.Scan(&s.ID, &s.At, &s.Type, &s.AmountIQD, &s.Source, &s.Reference); err != nil {
+		if err := rows.Scan(&s.ID, &s.At, &s.Type, &s.Amount, &s.Currency, &s.Source, &s.Reference); err != nil {
 			return nil, "", err
 		}
 		s.At = s.At.UTC()
@@ -204,14 +207,14 @@ func (m *Module) processCallback(ctx context.Context, gatewayName string, res ga
 		ID           string
 		SubscriberID string
 		ProfileID    string
-		AmountIQD    int64
+		Amount       int64
 		State        string
 	}
 	err := m.db.QueryRow(ctx,
-		`SELECT id::text, subscriber_id::text, profile_id::text, amount_iqd, state
+		`SELECT id::text, subscriber_id::text, profile_id::text, amount, state
 		   FROM payment_intents WHERE id = $1::uuid AND gateway = $2`,
 		res.OrderID, gatewayName).
-		Scan(&intent.ID, &intent.SubscriberID, &intent.ProfileID, &intent.AmountIQD, &intent.State)
+		Scan(&intent.ID, &intent.SubscriberID, &intent.ProfileID, &intent.Amount, &intent.State)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return errUnknownIntent
 	}
@@ -239,7 +242,7 @@ func (m *Module) processCallback(ctx context.Context, gatewayName string, res ga
 	// Tamper/mismatch guard (edge case): a gateway that reports an amount is
 	// cross-checked; adapters that cannot report one send 0 and are trusted on
 	// the intent's own recorded, pre-negotiated amount instead.
-	if res.AmountIQD != 0 && res.AmountIQD != intent.AmountIQD {
+	if res.AmountIQD != 0 && res.AmountIQD != intent.Amount {
 		return errAmountMismatch
 	}
 

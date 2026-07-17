@@ -145,6 +145,14 @@ func subscriberTiles(ctx context.Context) subTiles {
 // The view's amount column name isn't frozen in C5, so a small ordered set of
 // likely names is tried; any undefined-table/column degrades to 0 rather than
 // failing the whole dashboard while D's migration is still landing.
+//
+// v2 phase 4: fixed a pre-existing bug found while making this view
+// currency-aware — the WHERE clause filtered on a column named `day`, but
+// revenue_daily has always named it `date` (migration 0201), so every probe
+// in the candidate loop failed identically and this tile has always silently
+// reported 0. Also now IQD-scoped (FR-70.2): the view is grouped by currency
+// too (migration 0537), and a bare SUM would blend currencies — see
+// docs/ops/known-issues.md.
 func revenueToday(ctx context.Context) int64 {
 	if pkgDB == nil {
 		return 0
@@ -153,7 +161,7 @@ func revenueToday(ctx context.Context) int64 {
 		var v int64
 		err := pkgDB.QueryRow(ctx,
 			`SELECT COALESCE(SUM(`+col+`),0) FROM revenue_daily
-			  WHERE day = (now() AT TIME ZONE 'Asia/Baghdad')::date`).Scan(&v)
+			  WHERE date = (now() AT TIME ZONE 'Asia/Baghdad')::date AND currency = 'IQD'`).Scan(&v)
 		if err == nil {
 			return v
 		}

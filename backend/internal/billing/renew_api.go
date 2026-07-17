@@ -56,7 +56,7 @@ func (m *Module) renewHandler(w http.ResponseWriter, r *http.Request) {
 
 	_ = auth.Audit(r.Context(), "subscriber.renew", "subscriber", id, nil, map[string]any{
 		"ledger_tx_id": res.LedgerTxID, "receipt_no": res.ReceiptNo,
-		"new_expires_at": res.NewExpiresAt, "price_iqd": res.priceIQD, "coa_result": res.CoAResult,
+		"new_expires_at": res.NewExpiresAt, "price": res.price, "currency": res.Currency, "coa_result": res.CoAResult,
 	})
 	httpapi.JSON(w, http.StatusOK, res)
 }

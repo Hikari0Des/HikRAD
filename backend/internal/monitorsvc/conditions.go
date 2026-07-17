@@ -104,12 +104,22 @@ func (c *conditions) rejectSpike(ctx context.Context) {
 // agentBalanceLow is best-effort: agent balances are D's ledger domain and the
 // exact source isn't frozen for C, so it reads a balance view IF present and
 // otherwise no-ops (degrades cleanly while D's schema lands).
+//
+// v2 phase 4: fixed a pre-existing bug found while renaming balance_iqd ->
+// balance — the query selected a `name` column directly off manager_balances,
+// which never had one (that's on `managers`); every call always hit the
+// scan-error return and no-opped, so this alert has likely never fired since
+// it was written. Also now IQD-scoped (FR-70.2): balances are per-currency,
+// and a single "agent_balance_low" alert blending currencies would be
+// meaningless — see docs/ops/known-issues.md.
 func (c *conditions) agentBalanceLow(ctx context.Context) {
 	if c.db == nil {
 		return
 	}
 	rows, err := c.db.Query(ctx,
-		`SELECT manager_id::text, name, balance_iqd FROM manager_balances`)
+		`SELECT mb.manager_id::text, m.name, mb.balance
+		   FROM manager_balances mb JOIN managers m ON m.id = mb.manager_id
+		  WHERE mb.currency = 'IQD'`)
 	if err != nil {
 		return // view absent → skip
 	}
@@ -132,7 +142,7 @@ func (c *conditions) agentBalanceLow(ctx context.Context) {
 		c.alerts.Fire(ctx, fireInput{
 			ruleType: "agent_balance_low", state: "firing",
 			summary: fmt.Sprintf("Agent %s balance low: %d IQD", name, b.amount),
-			payload: map[string]any{"manager_id": b.id, "balance_iqd": b.amount},
+			payload: map[string]any{"manager_id": b.id, "balance": b.amount, "currency": "IQD"},
 			match:   func(r rule) bool { return amt <= numFromThreshold(r, "min_iqd", 0) },
 		})
 	}

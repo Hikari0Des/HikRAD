@@ -99,11 +99,14 @@ func (m *Module) generateBatch(ctx context.Context, in batchInput, creatorID str
 	}
 	defer tx.Rollback(ctx)
 
-	// Resolve the profile price (charge-at-generation basis) and reject archived.
+	// Resolve the profile price + currency (charge-at-generation basis) and
+	// reject archived. v2 phase 4 / FR-69.4: the batch carries the generating
+	// profile's currency; mechanism is otherwise unchanged from Phase 3.
 	var unitPrice int64
+	var unitCurrency string
 	var archived bool
-	err = tx.QueryRow(ctx, `SELECT price_iqd, archived FROM profiles WHERE id = $1::uuid`, in.ProfileID).
-		Scan(&unitPrice, &archived)
+	err = tx.QueryRow(ctx, `SELECT price, currency, archived FROM profiles WHERE id = $1::uuid`, in.ProfileID).
+		Scan(&unitPrice, &unitCurrency, &archived)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", nil, errNoProfile
 	}
@@ -116,7 +119,7 @@ func (m *Module) generateBatch(ctx context.Context, in batchInput, creatorID str
 
 	total := unitPrice * int64(in.Count)
 	if creatorID != "" {
-		bal, err := lockBalance(ctx, tx, creatorID)
+		bal, err := lockBalance(ctx, tx, creatorID, unitCurrency)
 		if err != nil {
 			return "", nil, err
 		}
@@ -129,7 +132,8 @@ func (m *Module) generateBatch(ctx context.Context, in batchInput, creatorID str
 	// bypass off is impossible here — vouchers always debit the creator.
 	genTx, err := insertLedger(ctx, tx, ledgerEntry{
 		Type:           "adjustment",
-		AmountIQD:      -total,
+		Amount:         -total,
+		Currency:       unitCurrency,
 		ActorManagerID: creatorID,
 		Source:         "voucher",
 		Note:           "voucher batch generation",
@@ -138,7 +142,7 @@ func (m *Module) generateBatch(ctx context.Context, in batchInput, creatorID str
 		return "", nil, err
 	}
 	if creatorID != "" {
-		if err := recomputeBalance(ctx, tx, creatorID); err != nil {
+		if err := recomputeBalance(ctx, tx, creatorID, unitCurrency); err != nil {
 			return "", nil, err
 		}
 	}
@@ -146,10 +150,10 @@ func (m *Module) generateBatch(ctx context.Context, in batchInput, creatorID str
 	var batchID string
 	err = tx.QueryRow(ctx,
 		`INSERT INTO voucher_batches
-		   (profile_id, prefix, count, unit_price_iqd, creator_manager_id, expires_at, gen_ledger_tx_id)
-		 VALUES ($1::uuid, $2, $3, $4, NULLIF($5,'')::uuid, $6, $7::uuid)
+		   (profile_id, prefix, count, unit_price, currency, creator_manager_id, expires_at, gen_ledger_tx_id)
+		 VALUES ($1::uuid, $2, $3, $4, $5, NULLIF($6,'')::uuid, $7, $8::uuid)
 		 RETURNING id::text`,
-		in.ProfileID, strings.ToUpper(in.Prefix), in.Count, unitPrice, creatorID, in.ExpiresAt, genTx).
+		in.ProfileID, strings.ToUpper(in.Prefix), in.Count, unitPrice, unitCurrency, creatorID, in.ExpiresAt, genTx).
 		Scan(&batchID)
 	if err != nil {
 		return "", nil, err

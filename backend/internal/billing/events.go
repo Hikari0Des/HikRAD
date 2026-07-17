@@ -16,7 +16,8 @@ import (
 type renewedEvent struct {
 	SubscriberID string    `json:"subscriber_id"`
 	ReceiptNo    string    `json:"receipt_no"`
-	AmountIQD    int64     `json:"amount_iqd"`
+	Amount       int64     `json:"amount"`
+	Currency     string    `json:"currency"`
 	NewExpiresAt time.Time `json:"new_expires_at"`
 	Source       string    `json:"source"`
 }
@@ -28,7 +29,8 @@ func (m *Module) publishRenewed(ctx context.Context, subscriberID string, res re
 	buf, err := json.Marshal(renewedEvent{
 		SubscriberID: subscriberID,
 		ReceiptNo:    res.ReceiptNo,
-		AmountIQD:    res.priceIQD,
+		Amount:       res.price,
+		Currency:     res.Currency,
 		NewExpiresAt: res.NewExpiresAt,
 		Source:       source,
 	})

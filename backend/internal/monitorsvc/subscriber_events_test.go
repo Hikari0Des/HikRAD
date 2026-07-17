@@ -98,7 +98,8 @@ func TestSubscriberEvents_RenewedDeliversWhatsAppReceipt(t *testing.T) {
 	payload, _ := json.Marshal(renewedEvent{
 		SubscriberID: subscriberID,
 		ReceiptNo:    "R-TEST-1",
-		AmountIQD:    25000,
+		Amount:       25000,
+		Currency:     "IQD",
 		NewExpiresAt: time.Now().Add(30 * 24 * time.Hour),
 		Source:       "voucher",
 	})

@@ -18,7 +18,8 @@ import (
 type Profile struct {
 	ID                  string  `json:"id"`
 	Name                string  `json:"name"`
-	PriceIQD            int64   `json:"price_iqd"`
+	Price               int64   `json:"price"`
+	Currency            string  `json:"currency"`
 	DurationDays        int     `json:"duration_days"`
 	RateDownKbps        int     `json:"rate_down_kbps"`
 	RateUpKbps          int     `json:"rate_up_kbps"`
@@ -49,7 +50,7 @@ type Profile struct {
 	UpdatedAt string            `json:"updated_at"`
 }
 
-const profileColumns = `id::text, name, price_iqd, duration_days, rate_down_kbps, rate_up_kbps,
+const profileColumns = `id::text, name, price, currency, duration_days, rate_down_kbps, rate_up_kbps,
 	pool_id::text, session_limit_default, quota_mode, quota_total_bytes, quota_down_bytes,
 	quota_up_bytes, throttle_rate, expiry_behavior, quota_behavior,
 	hotspot_rate_down_kbps, hotspot_rate_up_kbps,
@@ -60,7 +61,7 @@ const profileColumns = `id::text, name, price_iqd, duration_days, rate_down_kbps
 
 func scanProfile(row pgx.Row) (Profile, error) {
 	var p Profile
-	err := row.Scan(&p.ID, &p.Name, &p.PriceIQD, &p.DurationDays, &p.RateDownKbps, &p.RateUpKbps,
+	err := row.Scan(&p.ID, &p.Name, &p.Price, &p.Currency, &p.DurationDays, &p.RateDownKbps, &p.RateUpKbps,
 		&p.PoolID, &p.SessionLimitDefault, &p.QuotaMode, &p.QuotaTotalBytes, &p.QuotaDownBytes,
 		&p.QuotaUpBytes, &p.ThrottleRate, &p.ExpiryBehavior, &p.QuotaBehavior,
 		&p.HotspotRateDownKbps, &p.HotspotRateUpKbps,
@@ -151,14 +152,14 @@ func getProfile(ctx context.Context, db *pgxpool.Pool, id string) (Profile, erro
 func insertProfile(ctx context.Context, tx pgx.Tx, in profileInput) (Profile, error) {
 	return scanProfile(tx.QueryRow(ctx,
 		`INSERT INTO profiles
-		   (name, price_iqd, duration_days, rate_down_kbps, rate_up_kbps, pool_id,
+		   (name, price, currency, duration_days, rate_down_kbps, rate_up_kbps, pool_id,
 		    session_limit_default, quota_mode, quota_total_bytes, quota_down_bytes,
 		    quota_up_bytes, throttle_rate, expiry_behavior, quota_behavior,
 		    hotspot_rate_down_kbps, hotspot_rate_up_kbps,
 		    burst_rate, burst_threshold, burst_time, rate_priority, min_rate)
-		 VALUES ($1,$2,$3,$4,$5,$6::uuid,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7::uuid,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
 		 RETURNING `+profileColumns,
-		in.Name, in.PriceIQD, in.DurationDays, in.RateDownKbps, in.RateUpKbps, in.PoolID,
+		in.Name, in.Price, in.Currency, in.DurationDays, in.RateDownKbps, in.RateUpKbps, in.PoolID,
 		in.SessionLimitDefault, in.QuotaMode, in.QuotaTotalBytes, in.QuotaDownBytes,
 		in.QuotaUpBytes, in.ThrottleRate, in.ExpiryBehavior, in.QuotaBehavior,
 		in.HotspotRateDownKbps, in.HotspotRateUpKbps,
@@ -168,15 +169,15 @@ func insertProfile(ctx context.Context, tx pgx.Tx, in profileInput) (Profile, er
 func updateProfile(ctx context.Context, tx pgx.Tx, id string, in profileInput) (Profile, error) {
 	return scanProfile(tx.QueryRow(ctx,
 		`UPDATE profiles SET
-		    name=$2, price_iqd=$3, duration_days=$4, rate_down_kbps=$5, rate_up_kbps=$6,
-		    pool_id=$7::uuid, session_limit_default=$8, quota_mode=$9, quota_total_bytes=$10,
-		    quota_down_bytes=$11, quota_up_bytes=$12, throttle_rate=$13, expiry_behavior=$14,
-		    quota_behavior=$15, hotspot_rate_down_kbps=$16, hotspot_rate_up_kbps=$17,
-		    burst_rate=$19, burst_threshold=$20, burst_time=$21, rate_priority=$22, min_rate=$23,
-		    archived=$18
+		    name=$2, price=$3, currency=$4, duration_days=$5, rate_down_kbps=$6, rate_up_kbps=$7,
+		    pool_id=$8::uuid, session_limit_default=$9, quota_mode=$10, quota_total_bytes=$11,
+		    quota_down_bytes=$12, quota_up_bytes=$13, throttle_rate=$14, expiry_behavior=$15,
+		    quota_behavior=$16, hotspot_rate_down_kbps=$17, hotspot_rate_up_kbps=$18,
+		    burst_rate=$20, burst_threshold=$21, burst_time=$22, rate_priority=$23, min_rate=$24,
+		    archived=$19
 		  WHERE id=$1::uuid
 		 RETURNING `+profileColumns,
-		id, in.Name, in.PriceIQD, in.DurationDays, in.RateDownKbps, in.RateUpKbps, in.PoolID,
+		id, in.Name, in.Price, in.Currency, in.DurationDays, in.RateDownKbps, in.RateUpKbps, in.PoolID,
 		in.SessionLimitDefault, in.QuotaMode, in.QuotaTotalBytes, in.QuotaDownBytes,
 		in.QuotaUpBytes, in.ThrottleRate, in.ExpiryBehavior, in.QuotaBehavior,
 		in.HotspotRateDownKbps, in.HotspotRateUpKbps, in.Archived,

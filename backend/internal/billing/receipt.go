@@ -21,9 +21,13 @@ import (
 )
 
 // receiptData is everything a receipt template needs, loaded read-only.
+// v2 phase 4 (FR-70.1): the receipt shows the PAYMENT's own currency, never a
+// settings-level default — a payment always carries the currency it was
+// actually made in.
 type receiptData struct {
 	ReceiptNo  string
-	AmountIQD  int64
+	Amount     int64
+	Currency   string
 	Method     string
 	At         time.Time
 	Subscriber string
@@ -34,13 +38,13 @@ type receiptData struct {
 func (m *Module) loadReceiptBy(ctx context.Context, column, value string) (receiptData, error) {
 	var d receiptData
 	err := m.db.QueryRow(ctx,
-		`SELECT p.receipt_no, p.amount_iqd, p.method, p.at,
+		`SELECT p.receipt_no, p.amount, p.currency, p.method, p.at,
 		        COALESCE(s.name, ''), COALESCE(s.username::text, ''), COALESCE(pr.name, '')
 		   FROM payments p
 		   LEFT JOIN subscribers s ON s.id = p.subscriber_id
 		   LEFT JOIN profiles pr   ON pr.id = s.profile_id
 		  WHERE p.`+column+` = $1`, value).
-		Scan(&d.ReceiptNo, &d.AmountIQD, &d.Method, &d.At, &d.Subscriber, &d.Username, &d.Profile)
+		Scan(&d.ReceiptNo, &d.Amount, &d.Currency, &d.Method, &d.At, &d.Subscriber, &d.Username, &d.Profile)
 	if err != nil {
 		return receiptData{}, err
 	}
@@ -81,11 +85,10 @@ func (m *Module) writeReceipt(w http.ResponseWriter, r *http.Request, d receiptD
 	if lang != "ar" && lang != "ku" && lang != "en" {
 		lang = "en"
 	}
-	currency := m.getString(r.Context(), keyCurrency, "IQD")
 	numeral := m.getString(r.Context(), keyReceiptNumeral, "auto")
 	brand := m.branding(r.Context())
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_, _ = w.Write([]byte(renderReceipt(d, lang, currency, numeral, brand)))
+	_, _ = w.Write([]byte(renderReceipt(d, lang, numeral, brand)))
 }
 
 // receiptStrings holds the localized labels for a receipt template.
@@ -108,7 +111,7 @@ func receiptLabels(lang string) receiptStrings {
 // renderReceipt produces a self-contained print-ready HTML receipt. Print CSS is
 // sized for both A5 and 80mm thermal rolls; numbers/usernames stay LTR inside an
 // RTL page. Eastern-Arabic numerals are used for ar/ku unless overridden.
-func renderReceipt(d receiptData, lang, currency, numeral string, brand brandingConfig) string {
+func renderReceipt(d receiptData, lang, numeral string, brand brandingConfig) string {
 	l := receiptLabels(lang)
 	useArabicNum := numeral == "arabic" || (numeral == "auto" && l.RTL)
 
@@ -119,7 +122,7 @@ func renderReceipt(d receiptData, lang, currency, numeral string, brand branding
 		return s
 	}
 	esc := html.EscapeString
-	amount := num(formatThousands(d.AmountIQD)) + " " + esc(currency)
+	amount := num(formatThousands(d.Amount)) + " " + esc(d.Currency)
 	dir := "ltr"
 	align := "left"
 	if l.RTL {

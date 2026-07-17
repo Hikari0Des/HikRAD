@@ -187,11 +187,11 @@ func TestFormatThousands(t *testing.T) {
 // TestReceiptRendersBothLocales checks the receipt is RTL + Eastern-Arabic for ar
 // and LTR + Latin for en, with the amount and receipt number present (FR-21).
 func TestReceiptRendersBothLocales(t *testing.T) {
-	d := receiptData{ReceiptNo: "HR-000042", AmountIQD: 25000, Method: "renewal",
+	d := receiptData{ReceiptNo: "HR-000042", Amount: 25000, Currency: "IQD", Method: "renewal",
 		At: time.Date(2026, 7, 11, 9, 30, 0, 0, time.UTC), Subscriber: "Noor", Profile: "Home-20M"}
 	brand := brandingConfig{Name: "AlNoor ISP", Phone: "0770"}
 
-	en := renderReceipt(d, "en", "IQD", "auto", brand)
+	en := renderReceipt(d, "en", "auto", brand)
 	if !strings.Contains(en, `dir="ltr"`) || !strings.Contains(en, "25,000 IQD") || !strings.Contains(en, "HR-000042") {
 		t.Fatalf("en receipt missing expected content:\n%s", en)
 	}
@@ -199,14 +199,26 @@ func TestReceiptRendersBothLocales(t *testing.T) {
 		t.Fatal("en receipt missing localized label")
 	}
 
-	ar := renderReceipt(d, "ar", "IQD", "auto", brand)
+	ar := renderReceipt(d, "ar", "auto", brand)
 	if !strings.Contains(ar, `dir="rtl"`) || !strings.Contains(ar, "٢٥") || !strings.Contains(ar, "إيصال") {
 		t.Fatalf("ar receipt missing RTL/Eastern-Arabic/label:\n%s", ar)
 	}
 	// Latin override on an RTL locale keeps Latin digits.
-	arLatin := renderReceipt(d, "ar", "IQD", "latin", brand)
+	arLatin := renderReceipt(d, "ar", "latin", brand)
 	if !strings.Contains(arLatin, "25,000") {
 		t.Fatal("ar receipt with latin numerals should keep Latin digits")
+	}
+}
+
+// TestReceiptRendersNonIQDCurrency (v2 phase 4): a USD payment's receipt
+// shows USD, never a settings-level default currency.
+func TestReceiptRendersNonIQDCurrency(t *testing.T) {
+	d := receiptData{ReceiptNo: "HR-000043", Amount: 2500, Currency: "USD", Method: "renewal",
+		At: time.Date(2026, 7, 11, 9, 30, 0, 0, time.UTC), Subscriber: "Noor", Profile: "Home-USD"}
+	brand := brandingConfig{Name: "AlNoor ISP"}
+	en := renderReceipt(d, "en", "auto", brand)
+	if !strings.Contains(en, "2,500 USD") {
+		t.Fatalf("expected the receipt to show USD, got:\n%s", en)
 	}
 }
 

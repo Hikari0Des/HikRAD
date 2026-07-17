@@ -16,7 +16,8 @@ import (
 // pointers: absent/null = inherit or unlimited.
 type profileInput struct {
 	Name                string  `json:"name"`
-	PriceIQD            int64   `json:"price_iqd"`
+	Price               int64   `json:"price"`
+	Currency            string  `json:"currency"`
 	DurationDays        int     `json:"duration_days"`
 	RateDownKbps        int     `json:"rate_down_kbps"`
 	RateUpKbps          int     `json:"rate_up_kbps"`
@@ -78,8 +79,11 @@ func (in *profileInput) validate() []httpapi.FieldError {
 	if in.Name == "" {
 		add("name", "this field is required")
 	}
-	if in.PriceIQD < 0 {
-		add("price_iqd", "must not be negative")
+	if in.Price < 0 {
+		add("price", "must not be negative")
+	}
+	if in.Currency == "" {
+		in.Currency = "IQD"
 	}
 	if in.DurationDays < 1 {
 		add("duration_days", "must be at least 1")

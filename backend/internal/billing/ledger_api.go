@@ -39,6 +39,11 @@ func ledgerFilters(r *http.Request, scope *auth.ManagerScope, startArg int) (str
 	if v := q.Get("type"); v != "" {
 		add("type = $%d", v)
 	}
+	// v2 phase 4 (FR-70.2): reports/ledger views run per currency, never
+	// summed across one — this filter is how a caller picks which.
+	if v := q.Get("currency"); v != "" {
+		add("currency = $%d", v)
+	}
 	if v := q.Get("from"); v != "" {
 		if t, err := time.Parse(time.RFC3339, v); err == nil {
 			add("at >= $%d", t)
@@ -60,7 +65,8 @@ type ledgerItem struct {
 	ID             string    `json:"id"`
 	At             time.Time `json:"at"`
 	Type           string    `json:"type"`
-	AmountIQD      int64     `json:"amount_iqd"`
+	Amount         int64     `json:"amount"`
+	Currency       string    `json:"currency"`
 	ActorManagerID *string   `json:"actor_manager_id"`
 	SubscriberID   *string   `json:"subscriber_id"`
 	Source         string    `json:"source"`
@@ -87,7 +93,7 @@ func (m *Module) ledgerListHandler(w http.ResponseWriter, r *http.Request) {
 		where += fmt.Sprintf("%s(at, id) < ($%d::timestamptz, $%d::uuid)", conj, len(args)+1, len(args)+2)
 		args = append(args, page.Cursor[0], page.Cursor[1])
 	}
-	q := `SELECT id::text, at, type, amount_iqd, actor_manager_id::text, subscriber_id::text,
+	q := `SELECT id::text, at, type, amount, currency, actor_manager_id::text, subscriber_id::text,
 	             source, reference, reverses_id::text, note
 	        FROM ledger_transactions` + where +
 		fmt.Sprintf(" ORDER BY at DESC, id DESC LIMIT %d", page.Limit+1)
@@ -101,7 +107,7 @@ func (m *Module) ledgerListHandler(w http.ResponseWriter, r *http.Request) {
 	items := []ledgerItem{}
 	for rows.Next() {
 		var it ledgerItem
-		if err := rows.Scan(&it.ID, &it.At, &it.Type, &it.AmountIQD, &it.ActorManagerID,
+		if err := rows.Scan(&it.ID, &it.At, &it.Type, &it.Amount, &it.Currency, &it.ActorManagerID,
 			&it.SubscriberID, &it.Source, &it.Reference, &it.ReversesID, &it.Note); err != nil {
 			m.internalError(w, "ledger scan", err)
 			return
@@ -130,7 +136,7 @@ func (m *Module) ledgerExportHandler(w http.ResponseWriter, r *http.Request) {
 	scope := auth.ScopeFilter(r.Context())
 	where, args := ledgerFilters(r, scope, 1)
 	q := `SELECT id::text, to_char(at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"'), type,
-	             amount_iqd, COALESCE(actor_manager_id::text,''), COALESCE(subscriber_id::text,''),
+	             amount, currency, COALESCE(actor_manager_id::text,''), COALESCE(subscriber_id::text,''),
 	             source, reference, COALESCE(reverses_id::text,''), note
 	        FROM ledger_transactions` + where + ` ORDER BY at DESC, id DESC`
 
@@ -143,17 +149,17 @@ func (m *Module) ledgerExportHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
 	w.Header().Set("Content-Disposition", `attachment; filename="ledger.csv"`)
-	_, _ = w.Write([]byte("id,at,type,amount_iqd,actor_manager_id,subscriber_id,source,reference,reverses_id,note\n"))
+	_, _ = w.Write([]byte("id,at,type,amount,currency,actor_manager_id,subscriber_id,source,reference,reverses_id,note\n"))
 	for rows.Next() {
 		var (
-			id, at, typ, actor, sub, source, ref, rev, note string
-			amount                                          int64
+			id, at, typ, currency, actor, sub, source, ref, rev, note string
+			amount                                                    int64
 		)
-		if err := rows.Scan(&id, &at, &typ, &amount, &actor, &sub, &source, &ref, &rev, &note); err != nil {
+		if err := rows.Scan(&id, &at, &typ, &amount, &currency, &actor, &sub, &source, &ref, &rev, &note); err != nil {
 			return // partial CSV already sent; log-and-stop
 		}
-		fmt.Fprintf(w, "%s,%s,%s,%d,%s,%s,%s,%s,%s,%s\n",
-			id, at, typ, amount, actor, sub, source, csvField(ref), rev, csvField(note))
+		fmt.Fprintf(w, "%s,%s,%s,%d,%s,%s,%s,%s,%s,%s,%s\n",
+			id, at, typ, amount, currency, actor, sub, source, csvField(ref), rev, csvField(note))
 	}
 }
 

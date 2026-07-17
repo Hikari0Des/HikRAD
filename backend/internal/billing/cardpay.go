@@ -216,8 +216,16 @@ func (m *Module) rejectCard(ctx context.Context, cardID, approverID, reason stri
 	}
 
 	if trialLedgerTxID != nil {
+		// The reversal always nets to 0 (the trial itself was a 0-amount entry,
+		// AC-59b) but still carries the trial entry's own currency for an
+		// honest ledger reversal (v2 phase 4, mirrors FR-69.5's refund rule).
+		var trialCurrency string
+		if err := tx.QueryRow(ctx, `SELECT currency FROM ledger_transactions WHERE id = $1::uuid`, *trialLedgerTxID).
+			Scan(&trialCurrency); err != nil {
+			return err
+		}
 		if _, err := insertLedger(ctx, tx, ledgerEntry{
-			Type: "refund", AmountIQD: 0, ActorManagerID: approverID, SubscriberID: subscriberID,
+			Type: "refund", Amount: 0, Currency: trialCurrency, ActorManagerID: approverID, SubscriberID: subscriberID,
 			Source: "card-reject", ReversesID: *trialLedgerTxID, Note: reason,
 		}); err != nil && !isUniqueViolation(err) {
 			return err
@@ -328,23 +336,24 @@ func (m *Module) latestCardPayment(ctx context.Context, subscriberID string) (my
 // cardPaymentSummary is one row of the admin verification queue (FR-59.2).
 // card_code_enc is deliberately never selected here.
 type cardPaymentSummary struct {
-	ID           string     `json:"id"`
-	SubscriberID string     `json:"subscriber_id"`
-	Username     string     `json:"username"`
-	ProfileID    string     `json:"profile_id"`
-	ProfileName  string     `json:"profile_name"`
-	RequestedIQD int64      `json:"requested_price_iqd"`
-	CardType     string     `json:"card_type"`
-	State        string     `json:"state"`
-	CreatedAt    time.Time  `json:"created_at"`
-	DecidedAt    *time.Time `json:"decided_at,omitempty"`
-	RejectReason string     `json:"reject_reason,omitempty"`
+	ID              string     `json:"id"`
+	SubscriberID    string     `json:"subscriber_id"`
+	Username        string     `json:"username"`
+	ProfileID       string     `json:"profile_id"`
+	ProfileName     string     `json:"profile_name"`
+	RequestedAmount int64      `json:"requested_amount"`
+	Currency        string     `json:"currency"`
+	CardType        string     `json:"card_type"`
+	State           string     `json:"state"`
+	CreatedAt       time.Time  `json:"created_at"`
+	DecidedAt       *time.Time `json:"decided_at,omitempty"`
+	RejectReason    string     `json:"reject_reason,omitempty"`
 }
 
 func (m *Module) listCardPayments(ctx context.Context, state string) ([]cardPaymentSummary, error) {
 	rows, err := m.db.Query(ctx,
 		`SELECT cp.id::text, cp.subscriber_id::text, s.username, cp.profile_id::text, p.name,
-		        p.price_iqd, cp.card_type, cp.state, cp.created_at, cp.decided_at, COALESCE(cp.reject_reason,'')
+		        p.price, p.currency, cp.card_type, cp.state, cp.created_at, cp.decided_at, COALESCE(cp.reject_reason,'')
 		   FROM card_payments cp
 		   JOIN subscribers s ON s.id = cp.subscriber_id
 		   JOIN profiles p ON p.id = cp.profile_id
@@ -358,7 +367,7 @@ func (m *Module) listCardPayments(ctx context.Context, state string) ([]cardPaym
 	for rows.Next() {
 		var s cardPaymentSummary
 		if err := rows.Scan(&s.ID, &s.SubscriberID, &s.Username, &s.ProfileID, &s.ProfileName,
-			&s.RequestedIQD, &s.CardType, &s.State, &s.CreatedAt, &s.DecidedAt, &s.RejectReason); err != nil {
+			&s.RequestedAmount, &s.Currency, &s.CardType, &s.State, &s.CreatedAt, &s.DecidedAt, &s.RejectReason); err != nil {
 			return nil, err
 		}
 		out = append(out, s)

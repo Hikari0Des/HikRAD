@@ -25,10 +25,14 @@ var revenueGroupExpr = map[string]string{
 	"method":  `p.method`,
 }
 
+// revenueRow is one (key, currency) bucket — v2 phase 4 / FR-70.2: reports
+// run per currency, never summed across one, so currency is part of the
+// group, not a display afterthought.
 type revenueRow struct {
-	Key       string `json:"key"`
-	AmountIQD int64  `json:"amount_iqd"`
-	Count     int    `json:"count"`
+	Key      string `json:"key"`
+	Currency string `json:"currency"`
+	Amount   int64  `json:"amount"`
+	Count    int    `json:"count"`
 }
 
 // revenueQuery builds the shared SELECT for both the JSON and CSV paths.
@@ -42,11 +46,11 @@ func revenueQuery(groupBy string, scope *auth.ManagerScope) (string, string) {
 	if scope != nil {
 		where += " AND l.actor_manager_id = $3::uuid"
 	}
-	q := `SELECT ` + keyExpr + ` AS key, sum(p.amount_iqd)::bigint AS amount, count(*)::int AS cnt
+	q := `SELECT ` + keyExpr + ` AS key, p.currency, sum(p.amount)::bigint AS amount, count(*)::int AS cnt
 	        FROM payments p
 	        JOIN ledger_transactions l ON l.id = p.ledger_tx_id
 	        LEFT JOIN subscribers s ON s.id = p.subscriber_id` +
-		where + ` GROUP BY key ORDER BY key`
+		where + ` GROUP BY key, p.currency ORDER BY key, p.currency`
 	return q, groupBy
 }
 
@@ -68,14 +72,16 @@ func (m *Module) revenueHandler(w http.ResponseWriter, r *http.Request) {
 	defer rows.Close()
 
 	out := []revenueRow{}
-	var total int64
+	// Totals per currency (v2 phase 4, FR-70.2) — never a single blended
+	// figure across currencies.
+	totals := map[string]int64{}
 	for rows.Next() {
 		var rr revenueRow
-		if err := rows.Scan(&rr.Key, &rr.AmountIQD, &rr.Count); err != nil {
+		if err := rows.Scan(&rr.Key, &rr.Currency, &rr.Amount, &rr.Count); err != nil {
 			m.internalError(w, "revenue scan", err)
 			return
 		}
-		total += rr.AmountIQD
+		totals[rr.Currency] += rr.Amount
 		out = append(out, rr)
 	}
 	if err := rows.Err(); err != nil {
@@ -89,10 +95,10 @@ func (m *Module) revenueHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		recs := make([][]string, len(out))
 		for i, rr := range out {
-			recs[i] = []string{rr.Key, itoa64(rr.AmountIQD), itoa(rr.Count)}
+			recs[i] = []string{rr.Key, rr.Currency, itoa64(rr.Amount), itoa(rr.Count)}
 		}
-		writeCSV(w, "revenue.csv", []string{"key", "amount_iqd", "count"}, recs)
+		writeCSV(w, "revenue.csv", []string{"key", "currency", "amount", "count"}, recs)
 		return
 	}
-	httpapi.JSON(w, http.StatusOK, map[string]any{"total_iqd": total, "rows": out})
+	httpapi.JSON(w, http.StatusOK, map[string]any{"totals": totals, "rows": out})
 }

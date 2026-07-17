@@ -154,7 +154,7 @@ func seedProfiles(ctx context.Context, db *pgxpool.Pool) (map[string]string, err
 		err := db.QueryRow(ctx, `SELECT id::text FROM profiles WHERE name = $1`, p.name).Scan(&id)
 		if err == nil {
 			if _, err := db.Exec(ctx,
-				`UPDATE profiles SET price_iqd=$2, duration_days=$3, rate_down_kbps=$4, rate_up_kbps=$5
+				`UPDATE profiles SET price=$2, duration_days=$3, rate_down_kbps=$4, rate_up_kbps=$5
 				  WHERE id = $1::uuid`, id, p.priceIQD, p.durationDays, p.downKbps, p.upKbps); err != nil {
 				return nil, err
 			}
@@ -162,7 +162,7 @@ func seedProfiles(ctx context.Context, db *pgxpool.Pool) (map[string]string, err
 			continue
 		}
 		if err := db.QueryRow(ctx,
-			`INSERT INTO profiles (name, price_iqd, duration_days, rate_down_kbps, rate_up_kbps)
+			`INSERT INTO profiles (name, price, duration_days, rate_down_kbps, rate_up_kbps)
 			 VALUES ($1,$2,$3,$4,$5) RETURNING id::text`,
 			p.name, p.priceIQD, p.durationDays, p.downKbps, p.upKbps).Scan(&id); err != nil {
 			return nil, err

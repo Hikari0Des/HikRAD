@@ -14,56 +14,70 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// ledgerEntry is one row to append.
+// ledgerEntry is one row to append. Amount is signed, minor units of Currency
+// (v2 phase 4, FR-68/69 — was AmountIQD, always-IQD).
 type ledgerEntry struct {
 	Type           string
-	AmountIQD      int64 // signed balance effect on ActorManagerID
+	Amount         int64  // signed balance effect on ActorManagerID, minor units of Currency
+	Currency       string // required — every entry moves money in exactly one currency
 	ActorManagerID string
 	SubscriberID   string // "" -> NULL
 	Source         string
 	Reference      string
 	ReversesID     string // "" -> NULL
 	Note           string
+	// CurrencyRateID stamps the currency_rates row an "exchange" entry used
+	// (FR-68.1: every rate actually used is stamped so history never
+	// re-values); "" -> NULL for every other entry type.
+	CurrencyRateID string
 }
 
 // insertLedger appends one entry within tx and returns its id.
 func insertLedger(ctx context.Context, tx pgx.Tx, e ledgerEntry) (string, error) {
+	if e.Currency == "" {
+		e.Currency = "IQD"
+	}
 	var id string
 	err := tx.QueryRow(ctx,
 		`INSERT INTO ledger_transactions
-		   (type, amount_iqd, actor_manager_id, subscriber_id, source, reference, reverses_id, note)
-		 VALUES ($1, $2, NULLIF($3,'')::uuid, NULLIF($4,'')::uuid, $5, $6, NULLIF($7,'')::uuid, $8)
+		   (type, amount, currency, actor_manager_id, subscriber_id, source, reference, reverses_id, note, currency_rate_id)
+		 VALUES ($1, $2, $3, NULLIF($4,'')::uuid, NULLIF($5,'')::uuid, $6, $7, NULLIF($8,'')::uuid, $9, NULLIF($10,'')::uuid)
 		 RETURNING id::text`,
-		e.Type, e.AmountIQD, e.ActorManagerID, e.SubscriberID, e.Source, e.Reference, e.ReversesID, e.Note,
+		e.Type, e.Amount, e.Currency, e.ActorManagerID, e.SubscriberID, e.Source, e.Reference, e.ReversesID, e.Note, e.CurrencyRateID,
 	).Scan(&id)
 	return id, err
 }
 
-// lockBalance ensures a manager_balances row exists and locks it FOR UPDATE,
-// serializing concurrent balance movements for that manager. Returns the current
+// lockBalance ensures a manager_balances row exists for (managerID, currency)
+// and locks it FOR UPDATE, serializing concurrent balance movements for that
+// manager IN THAT CURRENCY (v2 phase 4: balances are per-currency — a lock on
+// one currency never blocks or is confused with another). Returns the current
 // cached balance.
-func lockBalance(ctx context.Context, tx pgx.Tx, managerID string) (int64, error) {
+func lockBalance(ctx context.Context, tx pgx.Tx, managerID, currency string) (int64, error) {
 	if _, err := tx.Exec(ctx,
-		`INSERT INTO manager_balances (manager_id, balance_iqd) VALUES ($1::uuid, 0)
-		 ON CONFLICT (manager_id) DO NOTHING`, managerID); err != nil {
+		`INSERT INTO manager_balances (manager_id, currency, balance) VALUES ($1::uuid, $2, 0)
+		 ON CONFLICT (manager_id, currency) DO NOTHING`, managerID, currency); err != nil {
 		return 0, err
 	}
 	var bal int64
 	err := tx.QueryRow(ctx,
-		`SELECT balance_iqd FROM manager_balances WHERE manager_id = $1::uuid FOR UPDATE`,
-		managerID).Scan(&bal)
+		`SELECT balance FROM manager_balances WHERE manager_id = $1::uuid AND currency = $2 FOR UPDATE`,
+		managerID, currency).Scan(&bal)
 	return bal, err
 }
 
-// recomputeBalance sets manager_balances.balance_iqd to the exact ledger sum for
-// the manager — the invariant that makes cache ≡ ledger true after every entry.
-func recomputeBalance(ctx context.Context, tx pgx.Tx, managerID string) error {
+// recomputeBalance sets manager_balances.balance to the exact ledger sum for
+// the manager IN THAT CURRENCY — the invariant that makes cache ≡ ledger true
+// after every entry. Summing across currencies here would be the single most
+// consequential bug in this phase (AC-69c) — every caller must pass the
+// specific currency the entry it just inserted actually moved.
+func recomputeBalance(ctx context.Context, tx pgx.Tx, managerID, currency string) error {
 	_, err := tx.Exec(ctx,
 		`UPDATE manager_balances
-		    SET balance_iqd = (SELECT COALESCE(sum(amount_iqd),0)
-		                         FROM ledger_transactions WHERE actor_manager_id = $1::uuid),
+		    SET balance = (SELECT COALESCE(sum(amount),0)
+		                     FROM ledger_transactions WHERE actor_manager_id = $1::uuid AND currency = $2),
 		        updated_at = now()
-		  WHERE manager_id = $1::uuid`, managerID)
+		  WHERE manager_id = $1::uuid AND currency = $2`, managerID, currency)
 	return err
 }
 
@@ -82,7 +96,8 @@ type paymentRow struct {
 	ReceiptNo    string
 	LedgerTxID   string
 	SubscriberID string // "" -> NULL
-	AmountIQD    int64  // gross (signed: refunds negative)
+	Amount       int64  // gross (signed: refunds negative), minor units of Currency
+	Currency     string
 	Method       string
 	Source       string
 	ShareToken   string
@@ -90,11 +105,14 @@ type paymentRow struct {
 
 // insertPayment writes the receipt/payment row within tx.
 func insertPayment(ctx context.Context, tx pgx.Tx, p paymentRow) error {
+	if p.Currency == "" {
+		p.Currency = "IQD"
+	}
 	_, err := tx.Exec(ctx,
 		`INSERT INTO payments
-		   (receipt_no, ledger_tx_id, subscriber_id, amount_iqd, method, source, share_token)
-		 VALUES ($1, $2::uuid, NULLIF($3,'')::uuid, $4, $5, $6, $7)`,
-		p.ReceiptNo, p.LedgerTxID, p.SubscriberID, p.AmountIQD, p.Method, p.Source, p.ShareToken)
+		   (receipt_no, ledger_tx_id, subscriber_id, amount, currency, method, source, share_token)
+		 VALUES ($1, $2::uuid, NULLIF($3,'')::uuid, $4, $5, $6, $7, $8)`,
+		p.ReceiptNo, p.LedgerTxID, p.SubscriberID, p.Amount, p.Currency, p.Method, p.Source, p.ShareToken)
 	return err
 }
 

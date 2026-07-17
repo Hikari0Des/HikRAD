@@ -62,18 +62,22 @@ func (m *Module) refundHandler(w http.ResponseWriter, r *http.Request) {
 	defer tx.Rollback(ctx)
 
 	// Load the original entry (must belong to this subscriber) and its gross.
+	// v2 phase 4 / FR-69.5: the refund reverses in the ORIGINAL entry's own
+	// currency, at no rate at all — read here, never re-resolved from today's
+	// profile price or today's rate table.
 	var (
-		origType   string
-		origAmount int64
-		origActor  *string
-		origSub    *string
-		origGross  int64
+		origType     string
+		origAmount   int64
+		origCurrency string
+		origActor    *string
+		origSub      *string
+		origGross    int64
 	)
 	err = tx.QueryRow(ctx,
-		`SELECT l.type, l.amount_iqd, l.actor_manager_id::text, l.subscriber_id::text,
-		        COALESCE((SELECT amount_iqd FROM payments WHERE ledger_tx_id = l.id LIMIT 1), 0)
+		`SELECT l.type, l.amount, l.currency, l.actor_manager_id::text, l.subscriber_id::text,
+		        COALESCE((SELECT amount FROM payments WHERE ledger_tx_id = l.id LIMIT 1), 0)
 		   FROM ledger_transactions l WHERE l.id = $1::uuid`, in.LedgerTxID).
-		Scan(&origType, &origAmount, &origActor, &origSub, &origGross)
+		Scan(&origType, &origAmount, &origCurrency, &origActor, &origSub, &origGross)
 	if errors.Is(err, pgx.ErrNoRows) {
 		httpapi.Error(w, http.StatusNotFound, "not_found", "transaction not found")
 		return
@@ -116,7 +120,7 @@ func (m *Module) refundHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if actor != "" {
-		if _, err := lockBalance(ctx, tx, actor); err != nil {
+		if _, err := lockBalance(ctx, tx, actor, origCurrency); err != nil {
 			m.internalError(w, "refund lock", err)
 			return
 		}
@@ -126,7 +130,8 @@ func (m *Module) refundHandler(w http.ResponseWriter, r *http.Request) {
 	// index rejects a second refund of the same tx (23505).
 	refundID, err := insertLedger(ctx, tx, ledgerEntry{
 		Type:           "refund",
-		AmountIQD:      -origAmount,
+		Amount:         -origAmount,
+		Currency:       origCurrency,
 		ActorManagerID: actor,
 		SubscriberID:   subID,
 		Source:         "panel",
@@ -142,7 +147,7 @@ func (m *Module) refundHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if actor != "" {
-		if err := recomputeBalance(ctx, tx, actor); err != nil {
+		if err := recomputeBalance(ctx, tx, actor, origCurrency); err != nil {
 			m.internalError(w, "refund recompute", err)
 			return
 		}
@@ -156,7 +161,7 @@ func (m *Module) refundHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := insertPayment(ctx, tx, paymentRow{
 		ReceiptNo: receiptNo, LedgerTxID: refundID, SubscriberID: subID,
-		AmountIQD: -origGross, Method: "refund", Source: "panel", ShareToken: randToken(),
+		Amount: -origGross, Currency: origCurrency, Method: "refund", Source: "panel", ShareToken: randToken(),
 	}); err != nil {
 		m.internalError(w, "refund payment", err)
 		return
