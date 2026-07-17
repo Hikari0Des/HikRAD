@@ -60,16 +60,11 @@ func (m *Module) Register(r chi.Router, d httpapi.Deps) {
 	r.With(m.requireSubscriber).Get("/api/v1/portal/usage", m.usageHandler)
 	r.With(m.requireSubscriber).Get("/api/v1/portal/payments", m.paymentsHandler)
 
-	// Renewal (FR-42): voucher + e-wallet gateway.
+	// Renewal (FR-42): voucher redeem + the unified Pay screen (v2-2, C4/C5/C13).
 	r.With(m.requireSubscriber).Post("/api/v1/portal/vouchers/redeem", m.redeemVoucherHandler)
-	r.With(m.requireSubscriber).Get("/api/v1/portal/payments/gateways", m.listGatewaysHandler)
-	r.With(m.requireSubscriber).Post("/api/v1/portal/payments/{gateway}/create", m.createPaymentHandler)
-	r.With(m.requireSubscriber).Get("/api/v1/portal/payments/intents/{id}", m.getPaymentIntentHandler)
-
-	// Scratch-card payments (C8, FR-59).
-	r.With(m.requireSubscriber).Get("/api/v1/portal/card-payments/types", m.cardTypesHandler)
-	r.With(m.requireSubscriber).Get("/api/v1/portal/card-payments/mine", m.myCardPaymentHandler)
-	r.With(m.requireSubscriber).Post("/api/v1/portal/card-payments", m.submitCardHandler)
+	r.With(m.requireSubscriber).Get("/api/v1/portal/pay-methods", m.payMethodsHandler)
+	r.With(m.requireSubscriber).Post("/api/v1/portal/payment-tickets", m.submitTicketHandler)
+	r.With(m.requireSubscriber).Get("/api/v1/portal/payment-tickets/latest", m.latestTicketHandler)
 
 	// Public branding read (C5: manifests, login page).
 	r.Get("/api/v1/branding", m.brandingHandler)

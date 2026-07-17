@@ -3,9 +3,10 @@ package profiles
 // DB-backed tests for the delete guard (gated on HIKRAD_TEST_DB_URL, matching
 // the repo pattern in internal/auth and internal/subscribers).
 //
-// Why this file exists: profileInUse hand-writes a column list against FOUR
+// Why this file exists: profileInUse hand-writes a column list against
 // tables owned by other phases (subscribers 0100, voucher_batches 0202,
-// payment_intents 0302, card_payments 0304). Nothing in the package ever
+// payment_tickets 0583 — v2-2's generalization of the retired
+// payment_intents 0302/card_payments 0304). Nothing in the package ever
 // executed that SQL, so a wrong column name was indistinguishable from a
 // correct one until an operator hit it in production — which is exactly what
 // happened: it read vouchers.profile_id, but a voucher inherits its plan from
@@ -131,14 +132,9 @@ func TestProfileInUse_FindsEachReference(t *testing.T) {
 			mustExec(t, db, `INSERT INTO voucher_batches (profile_id, count, unit_price)
 			                 VALUES ($1::uuid, 5, 1000)`, profileID)
 		}},
-		{"payment intent for the plan", func(t *testing.T, profileID string) {
-			mustExec(t, db, `INSERT INTO payment_intents (subscriber_id, profile_id, gateway, amount)
-			                 VALUES ($1::uuid, $2::uuid, 'test', 1000)`,
-				newSubscriber(t, db, filler), profileID)
-		}},
-		{"card payment for the plan", func(t *testing.T, profileID string) {
-			mustExec(t, db, `INSERT INTO card_payments (subscriber_id, profile_id, card_type, card_code_enc)
-			                 VALUES ($1::uuid, $2::uuid, 'test', '\x00'::bytea)`,
+		{"payment ticket for the plan", func(t *testing.T, profileID string) {
+			mustExec(t, db, `INSERT INTO payment_tickets (subscriber_id, profile_id, method_key, amount, currency)
+			                 VALUES ($1::uuid, $2::uuid, 'scratch_card', 1000, 'IQD')`,
 				newSubscriber(t, db, filler), profileID)
 		}},
 	} {

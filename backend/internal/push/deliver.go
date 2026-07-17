@@ -53,6 +53,17 @@ func DeliverToSubscriber(ctx context.Context, subscriberID string, payload Paylo
 	return deliverAll(ctx, subs, payload)
 }
 
+// DeliverToManager sends payload to one manager's own panel subscriptions
+// (v2-2, FR-80.2: a payment ticket landing in/being decided in THEIR queue —
+// unlike DeliverPanel's broadcast to every admin's alert subscriptions).
+func DeliverToManager(ctx context.Context, managerID string, payload Payload) error {
+	subs, err := listForManager(ctx, pkgDB, managerID)
+	if err != nil {
+		return err
+	}
+	return deliverAll(ctx, subs, payload)
+}
+
 func deliverAll(ctx context.Context, subs []Subscription, payload Payload) error {
 	if len(subs) == 0 {
 		return nil

@@ -13,11 +13,11 @@ import (
 // Permission strings this module introduces (checked by string, never by role
 // name — frozen contract C2/C7). renew/topup/export live in the auth package.
 const (
-	permRefund             = "refund"
-	permVouchersView       = "vouchers.view"
-	permVouchersCreate     = "vouchers.create"
-	permGatewaysManage     = "payment_gateways.manage" // Phase 4 C3
-	permCardPaymentsVerify = "card_payments.verify"    // Phase 4 C8, FR-59.2
+	permRefund               = "refund"
+	permVouchersView         = "vouchers.view"
+	permVouchersCreate       = "vouchers.create"
+	permPaymentTicketsVerify = "payment_tickets.verify" // v2-2, FR-79.2 (generalizes Phase 4's card_payments.verify)
+	permProvidersManage      = "payment_providers.manage" // v2-2, FR-77.1
 )
 
 // Settings keys.

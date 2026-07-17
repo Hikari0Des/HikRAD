@@ -31,7 +31,10 @@ var settingsGroups = map[string][]string{
 	"backups":        {"schedule_hour", "retention_count", "path"},
 	"data_retention": {"raw_months", "rollup_years"},
 	"remote_access":  {"enabled", "token"}, // token is write-only; see below
-	"card_payments":  {"types", "reject_cooldown_days"},
+	// v2-2 (Decision 37): reject_cooldown_days is retired — FR-78.3's
+	// per-cycle trial-eligibility rule (reset only on approval) supersedes
+	// the old fixed cooldown, so there is nothing left to configure here.
+	"card_payments": {"types"},
 }
 
 // remoteAccessTokenEncKey is where the encrypted tunnel token actually lives;

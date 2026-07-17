@@ -197,11 +197,15 @@ func updateProfile(ctx context.Context, tx pgx.Tx, id string, in profileInput) (
 // could be deleted at all — see docs/ops/known-issues.md.
 func profileInUse(ctx context.Context, db *pgxpool.Pool, id string) (bool, error) {
 	var inUse bool
+	// v2-2: payment_intents/card_payments are RETIRED (Decision 37) — replaced
+	// by payment_tickets, which generalizes card_payments's own profile_id
+	// reference exactly (see docs/ops/known-issues.md for why this guard's
+	// table list must stay in lockstep with schema changes, on pain of
+	// repeating the exact 42703 bug this function's own history already hit).
 	err := db.QueryRow(ctx,
 		`SELECT EXISTS (SELECT 1 FROM subscribers WHERE profile_id = $1::uuid OR pending_profile_id = $1::uuid)
 		     OR EXISTS (SELECT 1 FROM voucher_batches WHERE profile_id = $1::uuid)
-		     OR EXISTS (SELECT 1 FROM payment_intents WHERE profile_id = $1::uuid)
-		     OR EXISTS (SELECT 1 FROM card_payments WHERE profile_id = $1::uuid)`,
+		     OR EXISTS (SELECT 1 FROM payment_tickets WHERE profile_id = $1::uuid)`,
 		id).Scan(&inUse)
 	return inUse, err
 }

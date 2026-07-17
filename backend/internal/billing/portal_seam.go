@@ -152,63 +152,6 @@ func translateRenewErr(err error) error {
 	}
 }
 
-// --- Gateway layer (C3) -----------------------------------------------------
-
-// ListEnabledGateways is what the portal renewal screen offers.
-func ListEnabledGateways(ctx context.Context) ([]string, error) {
-	if singleton == nil {
-		return nil, ErrNotReady
-	}
-	return singleton.listEnabledGateways(ctx)
-}
-
-var ErrGatewayUnavailable = errors.New("billing: gateway not available")
-
-// CreatePaymentIntent starts an e-wallet payment (C3: POST /portal/payments/{gw}/create).
-func CreatePaymentIntent(ctx context.Context, subscriberID, gateway, profileID string) (intentID, redirectURL string, err error) {
-	if singleton == nil {
-		return "", "", ErrNotReady
-	}
-	id, url, err := singleton.createIntent(ctx, subscriberID, gateway, profileID)
-	if err != nil {
-		if errors.Is(err, errGatewayDisabled) || errors.Is(err, errUnknownGateway) {
-			return "", "", ErrGatewayUnavailable
-		}
-		return "", "", translateRenewErr(err)
-	}
-	return id, url, nil
-}
-
-// PaymentIntent is the cross-package poll response shape (C3: GET
-// /portal/payments/intents/{id}).
-type PaymentIntent struct {
-	ID           string
-	Gateway      string
-	State        string
-	Amount       int64
-	Currency     string
-	GatewayRef   string
-	NewExpiresAt *time.Time
-	CreatedAt    time.Time
-}
-
-var ErrIntentNotFound = errors.New("billing: payment intent not found")
-
-// GetPaymentIntent is IDOR-scoped: the intent must belong to subscriberID.
-func GetPaymentIntent(ctx context.Context, id, subscriberID string) (PaymentIntent, error) {
-	if singleton == nil {
-		return PaymentIntent{}, ErrNotReady
-	}
-	v, err := singleton.getIntent(ctx, id, subscriberID)
-	if err != nil {
-		return PaymentIntent{}, ErrIntentNotFound
-	}
-	return PaymentIntent{
-		ID: v.ID, Gateway: v.Gateway, State: v.State, Amount: v.Amount, Currency: v.Currency, GatewayRef: v.GatewayRef,
-		NewExpiresAt: v.NewExpiresAt, CreatedAt: v.CreatedAt,
-	}, nil
-}
-
 // PortalPaymentEntry is one row of GET /portal/payments (own ledger slice),
 // shape matched to F's already-written client (frontend/portal/src/api/usage.ts).
 type PortalPaymentEntry struct {
@@ -237,84 +180,109 @@ func PortalPayments(ctx context.Context, subscriberID string, page httpapi.PageR
 	return out, next, nil
 }
 
-// --- Scratch-card payments (C8) --------------------------------------------
+// --- Unified payment tickets (v2-2, C4/C5/C13) ------------------------------
 
-// CardSubmitResult is the C8 submit response shape.
-type CardSubmitResult struct {
+// UploadedFile is the cross-package attachment shape portalapi builds from a
+// multipart form part.
+type UploadedFile struct {
+	Filename    string
+	ContentType string
+	Data        []byte
+}
+
+// ResolvePayMethods is the portal Pay screen's tile list (C4/C13). PayMethod
+// itself is method_settings.go's already-exported type — same package, no
+// wrapping needed.
+func ResolvePayMethods(ctx context.Context, subscriberID string) ([]PayMethod, error) {
+	if singleton == nil {
+		return nil, ErrNotReady
+	}
+	return resolvePayMethods(ctx, singleton.db, subscriberID)
+}
+
+// SubmitTicketRequest is the cross-package submission shape (C5/C13),
+// assembled by portalapi from a multipart form.
+type SubmitTicketRequest struct {
+	SubscriberID string
+	MethodKey    string
+	// Provider fields (kind="provider" only):
+	Amount            int64
+	TransferReference string
+	TransferDate      *time.Time
+	Note              string
+	Attachments       []UploadedFile
+	// Scratch-card fields (kind="scratch_card" only):
+	CardType string
+	CardCode string
+}
+
+// TicketSubmitResult is the cross-package submission result shape.
+type TicketSubmitResult struct {
 	ID             string
 	State          string
-	TrialExpiresAt time.Time
+	TrialGranted   bool
+	TrialExpiresAt *time.Time
 }
 
 var (
+	ErrMethodNotAllowed   = errors.New("billing: payment method not enabled for this subscriber")
+	ErrTicketPending      = errors.New("billing: a payment ticket is already pending")
 	ErrCardTypeNotAllowed = errors.New("billing: card type not allowed")
-	ErrCardPending        = errors.New("billing: a card payment is already pending")
 )
 
-// CardCooldownError carries the exact instant card submissions unblock again
-// (FR-59.4), so the portal can surface it rather than a vague message.
-type CardCooldownError struct{ RetryAt time.Time }
-
-func (e *CardCooldownError) Error() string {
-	return "billing: card submissions are blocked until " + e.RetryAt.Format(time.RFC3339)
-}
-
-// SubmitCard is the portal-facing card-payment submission (FR-59.1).
-func SubmitCard(ctx context.Context, subscriberID, cardType, code string) (CardSubmitResult, error) {
+// SubmitTicket is the portal-facing unified submission (FR-78.2, C5/C13).
+func SubmitTicket(ctx context.Context, req SubmitTicketRequest) (TicketSubmitResult, error) {
 	if singleton == nil {
-		return CardSubmitResult{}, ErrNotReady
+		return TicketSubmitResult{}, ErrNotReady
 	}
-	r, err := singleton.submitCard(ctx, subscriberID, cardType, code)
+	files := make([]uploadedFile, len(req.Attachments))
+	for i, f := range req.Attachments {
+		files[i] = uploadedFile{Filename: f.Filename, ContentType: f.ContentType, Data: f.Data}
+	}
+	r, err := singleton.submitTicket(ctx, submitTicketParams{
+		SubscriberID: req.SubscriberID, MethodKey: req.MethodKey,
+		Amount: req.Amount, TransferReference: req.TransferReference, TransferDate: req.TransferDate,
+		Note: req.Note, Attachments: files, CardType: req.CardType, CardCode: req.CardCode,
+	})
 	if err != nil {
-		var cd *cardCooldownError
 		switch {
+		case errors.Is(err, errMethodNotAllowed):
+			return TicketSubmitResult{}, ErrMethodNotAllowed
+		case errors.Is(err, errTicketPending):
+			return TicketSubmitResult{}, ErrTicketPending
 		case errors.Is(err, errCardTypeNotAllowed):
-			return CardSubmitResult{}, ErrCardTypeNotAllowed
-		case errors.Is(err, errCardPending):
-			return CardSubmitResult{}, ErrCardPending
-		case errors.As(err, &cd):
-			return CardSubmitResult{}, &CardCooldownError{RetryAt: cd.RetryAt}
+			return TicketSubmitResult{}, ErrCardTypeNotAllowed
 		default:
-			return CardSubmitResult{}, translateRenewErr(err)
+			return TicketSubmitResult{}, translateRenewErr(err)
 		}
 	}
-	return CardSubmitResult{ID: r.ID, State: r.State, TrialExpiresAt: r.TrialExpiresAt}, nil
+	return TicketSubmitResult{ID: r.ID, State: r.State, TrialGranted: r.TrialGranted, TrialExpiresAt: r.TrialExpiresAt}, nil
 }
 
-// CardTypes returns the settings-configurable list of accepted card types
-// (portal's card-type picker; no frozen route in C8, narrowest addition —
-// see status note).
-func CardTypes(ctx context.Context) []string {
-	if singleton == nil {
-		return defaultCardTypes
-	}
-	return singleton.cardTypes(ctx)
-}
-
-// MyCardPayment is the portal's own latest-record view.
-type MyCardPayment struct {
+// MyTicket is the portal's own latest-record view (C13's "pending — under
+// review" banner, generalizing cardpay.go's MyCardPayment).
+type MyTicket struct {
 	ID             string
-	CardType       string
+	MethodKey      string
 	State          string
+	TrialGranted   bool
 	TrialExpiresAt time.Time
 	RejectReason   string
 	CreatedAt      time.Time
 }
 
-// LatestCardPayment returns subscriberID's single most recent card payment
-// (any state), or ok=false when they have none — backs the portal's "pending
-// ISP verification" banner (no frozen route in C8, narrowest addition — see
-// status note).
-func LatestCardPayment(ctx context.Context, subscriberID string) (MyCardPayment, bool, error) {
+// LatestTicket returns subscriberID's single most recent ticket (any
+// method/state), or ok=false when they have none.
+func LatestTicket(ctx context.Context, subscriberID string) (MyTicket, bool, error) {
 	if singleton == nil {
-		return MyCardPayment{}, false, ErrNotReady
+		return MyTicket{}, false, ErrNotReady
 	}
-	v, ok, err := singleton.latestCardPayment(ctx, subscriberID)
+	v, ok, err := singleton.latestTicket(ctx, subscriberID)
 	if err != nil || !ok {
-		return MyCardPayment{}, false, err
+		return MyTicket{}, false, err
 	}
-	return MyCardPayment{
-		ID: v.ID, CardType: v.CardType, State: v.State, TrialExpiresAt: v.TrialExpiresAt,
-		RejectReason: v.RejectReason, CreatedAt: v.CreatedAt,
+	return MyTicket{
+		ID: v.ID, MethodKey: v.MethodKey, State: v.State, TrialGranted: v.TrialGranted,
+		TrialExpiresAt: v.TrialExpiresAt, RejectReason: v.RejectReason, CreatedAt: v.CreatedAt,
 	}, true, nil
 }

@@ -98,6 +98,23 @@ func listForSubscriber(ctx context.Context, db *pgxpool.Pool, subscriberID strin
 	return scanSubs(rows)
 }
 
+// listForManager returns one manager's own panel subscriptions (v2-2, FR-80.2:
+// targeting the OWNING manager specifically, unlike DeliverPanel's broadcast
+// to every admin's alert subscriptions).
+func listForManager(ctx context.Context, db *pgxpool.Pool, managerID string) ([]Subscription, error) {
+	rows, err := db.Query(ctx,
+		`SELECT id::text, surface, manager_id::text, endpoint, p256dh, auth
+		   FROM push_subscriptions WHERE surface = $1 AND manager_id = $2::uuid`,
+		surfacePanel, managerID)
+	if err != nil {
+		if isUndefinedTable(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return scanSubs(rows)
+}
+
 func scanSubs(rows pgx.Rows) ([]Subscription, error) {
 	defer rows.Close()
 	var out []Subscription

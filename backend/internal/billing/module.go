@@ -90,21 +90,23 @@ func (m *Module) Register(r chi.Router, d httpapi.Deps) {
 	// and digests (frozen GET /internal/stats/subscribers).
 	r.Get("/internal/stats/subscribers", m.subscriberStatsHandler)
 
-	// Payment gateway layer (Phase 4, C3, FR-23): the public webhook every
-	// gateway posts to, admin config, and the mock adapter's dev-only
-	// simulator. Portal-facing create/poll/list-gateways routes live in
-	// portalapi (subscriber-token auth) via the portal_seam.go wrappers.
-	r.Post("/api/v1/payments/{gateway}/callback", m.paymentCallbackHandler)
-	r.With(auth.Require(permGatewaysManage)).Get("/api/v1/payment-gateways", m.listGatewayConfigsHandler)
-	r.With(auth.Require(permGatewaysManage)).Put("/api/v1/payment-gateways/{gateway}", m.putGatewayConfigHandler)
-	r.Post("/api/v1/dev/mock-gateway/simulate", m.mockSimulateHandler)
+	// Manual payment providers (v2-2, FR-77-80, contracts C1-C10). Replaces
+	// the Phase-4 gateway surface entirely (C12) — no callback webhook, no
+	// gateway config, no mock simulator; a human verifies every ticket.
+	r.With(auth.Require("")).Get("/api/v1/payment-providers", m.listProvidersHandler)
+	r.With(auth.Require(permProvidersManage)).Post("/api/v1/payment-providers", m.createProviderHandler)
+	r.With(auth.Require(permProvidersManage)).Put("/api/v1/payment-providers/{id}", m.updateProviderHandler)
 
-	// Scratch-card payments (Phase 4, C8, FR-59): admin verification queue.
-	// The portal-facing submit endpoint lives in portalapi.
-	r.With(auth.Require(permCardPaymentsVerify)).Get("/api/v1/card-payments", m.listCardPaymentsHandler)
-	r.With(auth.Require(permCardPaymentsVerify)).Post("/api/v1/card-payments/{id}/reveal", m.revealCardPaymentHandler)
-	r.With(auth.Require(permCardPaymentsVerify)).Post("/api/v1/card-payments/{id}/approve", m.approveCardPaymentHandler)
-	r.With(auth.Require(permCardPaymentsVerify)).Post("/api/v1/card-payments/{id}/reject", m.rejectCardPaymentHandler)
+	r.With(auth.Require("")).Get("/api/v1/managers/{id}/provider-accounts", m.listProviderAccountsHandler)
+	r.With(auth.Require("")).Put("/api/v1/managers/{id}/provider-accounts/{providerId}", m.putProviderAccountHandler)
+	r.With(auth.Require("")).Get("/api/v1/managers/{id}/method-settings", m.listMethodSettingsHandler)
+	r.With(auth.Require("")).Put("/api/v1/managers/{id}/method-settings", m.putMethodSettingHandler)
+
+	r.With(auth.Require(permPaymentTicketsVerify)).Get("/api/v1/payment-tickets", m.listTicketsHandler)
+	r.With(auth.Require(permPaymentTicketsVerify)).Get("/api/v1/payment-tickets/{id}", m.ticketDetailHandler)
+	r.With(auth.Require(permPaymentTicketsVerify)).Post("/api/v1/payment-tickets/{id}/approve", m.approveTicketHandler)
+	r.With(auth.Require(permPaymentTicketsVerify)).Post("/api/v1/payment-tickets/{id}/reject", m.rejectTicketHandler)
+	r.With(auth.Require(permPaymentTicketsVerify)).Get("/api/v1/payment-tickets/{id}/attachments/{attachmentId}", m.getAttachmentHandler)
 
 	// v2 phase 9 (FR-71/73/74, contract C7): plan cost, overheads, reseller
 	// wholesale pricing. All three are admin-only writes; reads are admin-only
@@ -117,9 +119,6 @@ func (m *Module) Register(r chi.Router, d httpapi.Deps) {
 	r.With(auth.Require("reseller_prices.manage")).Post("/api/v1/reseller-prices", m.createResellerPriceHandler)
 
 	wireOnce.Do(func() {
-		// Reconciliation worker (C3): polls gateway QueryStatus for intents
-		// stuck pending/confirmed. Runs for the process lifetime.
-		go m.runReconciliation(context.Background())
 		// B's hotspot-voucher login redeems through this seam (C3 internal redeem
 		// API); B never imports billing.
 		radius.SetVoucherAuthenticator(&voucherAuthenticator{m: m})

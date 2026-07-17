@@ -155,10 +155,11 @@ var errHasFinancialHistory = errors.New("subscriber has billing history")
 // `ledger_transactions.subscriber_id` and `payments.subscriber_id` are ON DELETE
 // SET NULL, so the money rows would survive with no owner — revenue totals stay
 // correct while the customer they came from silently disappears from every
-// per-subscriber report and receipt. `card_payments` / `payment_intents` are NO
-// ACTION and would instead fail with a raw FK error the operator cannot read.
-// Neither is an acceptable answer to "remove this subscriber", so the honest one
-// is: a customer who has paid you is disabled, not deleted.
+// per-subscriber report and receipt. `payment_tickets` (v2-2; generalizes the
+// retired `card_payments`/`payment_intents`, Decision 37) is NO ACTION and
+// would instead fail with a raw FK error the operator cannot read. Neither is
+// an acceptable answer to "remove this subscriber", so the honest one is: a
+// customer who has paid you is disabled, not deleted.
 //
 // A never-used account — the mis-typed row an operator actually wants gone — has
 // no such rows and deletes cleanly.
@@ -167,8 +168,7 @@ func hasFinancialHistory(ctx context.Context, db *pgxpool.Pool, id string) (bool
 	err := db.QueryRow(ctx,
 		`SELECT EXISTS (SELECT 1 FROM ledger_transactions WHERE subscriber_id = $1::uuid)
 		     OR EXISTS (SELECT 1 FROM payments WHERE subscriber_id = $1::uuid)
-		     OR EXISTS (SELECT 1 FROM card_payments WHERE subscriber_id = $1::uuid)
-		     OR EXISTS (SELECT 1 FROM payment_intents WHERE subscriber_id = $1::uuid)`,
+		     OR EXISTS (SELECT 1 FROM payment_tickets WHERE subscriber_id = $1::uuid)`,
 		id).Scan(&exists)
 	return exists, err
 }

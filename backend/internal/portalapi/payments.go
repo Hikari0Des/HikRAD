@@ -1,17 +1,19 @@
 package portalapi
 
-// Portal renewal surface (contracts C3, C8, FR-42): voucher redeem, e-wallet
-// gateway create/poll, scratch-card submission. Every handler resolves the
-// subscriber id from the token only (IDOR rule) and delegates the actual
-// money/lifecycle work to billing's exported seam (portal_seam.go) — every
-// renewal here converges on the same single path panel/agent/voucher use.
+// Portal renewal surface (v2-2 contracts C4/C5/C13, FR-42/78): voucher
+// redeem, the unified Pay screen (pay-methods, ticket submission, latest
+// ticket). Every handler resolves the subscriber id from the token only
+// (IDOR rule) and delegates the actual money/lifecycle work to billing's
+// exported seam (portal_seam.go) — every renewal here converges on the same
+// single path panel/agent/voucher use.
 
 import (
 	"errors"
+	"io"
 	"net/http"
+	"strconv"
 	"time"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/hikrad/hikrad/internal/billing"
 	"github.com/hikrad/hikrad/internal/httpapi"
 )
@@ -64,119 +66,89 @@ func (m *Module) redeemVoucherHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// --- E-wallet gateway (contract C3) -----------------------------------------
+// --- Unified Pay screen (v2-2 contracts C4/C5/C13, FR-78) -------------------
 
-type gatewayItem struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
-}
+const maxTicketUploadBytes = 32 << 20 // 5 attachments * 10MB budget + form overhead (ticket_attachments.go enforces the real per-file/count caps)
 
-func (m *Module) listGatewaysHandler(w http.ResponseWriter, r *http.Request) {
-	names, err := billing.ListEnabledGateways(r.Context())
-	if err != nil {
-		m.internalError(w, "list gateways", err)
-		return
-	}
-	items := make([]gatewayItem, len(names))
-	for i, n := range names {
-		items[i] = gatewayItem{ID: n, Name: gatewayDisplayName(n)}
-	}
-	httpapi.JSON(w, http.StatusOK, map[string]any{"items": items})
-}
-
-func gatewayDisplayName(id string) string {
-	switch id {
-	case "mock":
-		return "Mock Gateway (demo)"
-	case "zaincash":
-		return "ZainCash"
-	default:
-		return id
-	}
-}
-
-type createPaymentRequest struct {
-	ProfileID string `json:"profile_id,omitempty"`
-}
-
-func (m *Module) createPaymentHandler(w http.ResponseWriter, r *http.Request) {
+// payMethodsHandler serves GET /portal/pay-methods (C4/C13): exactly what
+// the subscriber's owning manager has enabled + configured, no fallback.
+func (m *Module) payMethodsHandler(w http.ResponseWriter, r *http.Request) {
 	sub, _ := SubscriberFrom(r.Context())
-	gateway := chi.URLParam(r, "gateway")
-	var in createPaymentRequest
-	if r.ContentLength != 0 && !httpapi.Bind(w, r, &in) {
-		return
-	}
-	id, redirectURL, err := billing.CreatePaymentIntent(r.Context(), sub.ID, gateway, in.ProfileID)
+	methods, err := billing.ResolvePayMethods(r.Context(), sub.ID)
 	if err != nil {
-		writePaymentError(w, err)
+		m.internalError(w, "resolve pay methods", err)
 		return
 	}
-	httpapi.JSON(w, http.StatusOK, map[string]any{"redirect_url": redirectURL, "intent_id": id})
+	httpapi.JSON(w, http.StatusOK, map[string]any{"items": methods})
 }
 
-func (m *Module) getPaymentIntentHandler(w http.ResponseWriter, r *http.Request) {
+// submitTicketHandler serves POST /portal/payment-tickets (C5/C13): a
+// multipart form (JSON-ish fields alongside file parts) so a subscriber can
+// attach a transfer screenshot in the same request. Scratch-card submissions
+// use the same route with only method_key/card_type/card_code set.
+func (m *Module) submitTicketHandler(w http.ResponseWriter, r *http.Request) {
 	sub, _ := SubscriberFrom(r.Context())
-	id := chi.URLParam(r, "id")
-	v, err := billing.GetPaymentIntent(r.Context(), id, sub.ID)
+	if err := r.ParseMultipartForm(maxTicketUploadBytes); err != nil {
+		httpapi.Error(w, http.StatusBadRequest, "bad_request", "could not parse form")
+		return
+	}
+	methodKey := r.FormValue("method_key")
+	if methodKey == "" {
+		httpapi.Error(w, http.StatusUnprocessableEntity, "validation_failed", "request validation failed",
+			httpapi.FieldError{Field: "method_key", Message: "this field is required"})
+		return
+	}
+	req := billing.SubmitTicketRequest{
+		SubscriberID:      sub.ID,
+		MethodKey:         methodKey,
+		TransferReference: r.FormValue("transfer_reference"),
+		Note:              r.FormValue("note"),
+		CardType:          r.FormValue("card_type"),
+		CardCode:          r.FormValue("card_code"),
+	}
+	if v := r.FormValue("amount"); v != "" {
+		if n, err := strconv.ParseInt(v, 10, 64); err == nil {
+			req.Amount = n
+		}
+	}
+	if v := r.FormValue("transfer_date"); v != "" {
+		if t, err := time.Parse(time.RFC3339, v); err == nil {
+			req.TransferDate = &t
+		}
+	}
+	if r.MultipartForm != nil {
+		for _, fh := range r.MultipartForm.File["attachments"] {
+			f, err := fh.Open()
+			if err != nil {
+				continue
+			}
+			data, err := io.ReadAll(io.LimitReader(f, maxTicketUploadBytes))
+			f.Close()
+			if err != nil {
+				continue
+			}
+			req.Attachments = append(req.Attachments, billing.UploadedFile{
+				Filename: fh.Filename, ContentType: fh.Header.Get("Content-Type"), Data: data,
+			})
+		}
+	}
+	res, err := billing.SubmitTicket(r.Context(), req)
 	if err != nil {
-		httpapi.Error(w, http.StatusNotFound, "not_found", "payment intent not found")
+		writeTicketSubmitError(w, err)
 		return
 	}
 	httpapi.JSON(w, http.StatusOK, map[string]any{
-		"id": v.ID, "gateway": v.Gateway, "state": v.State, "amount": v.Amount, "currency": v.Currency,
-		"gateway_ref": v.GatewayRef, "new_expires_at": v.NewExpiresAt,
+		"id": res.ID, "state": res.State, "trial_granted": res.TrialGranted, "trial_expires_at": res.TrialExpiresAt,
 	})
 }
 
-func writePaymentError(w http.ResponseWriter, err error) {
-	switch err {
-	case billing.ErrGatewayUnavailable:
-		// Graceful degradation (NFR-7): the gateway is off/unreachable; the
-		// portal falls back to voucher, which remains available regardless.
-		httpapi.Error(w, http.StatusServiceUnavailable, "gateway_unavailable", "billing.error.gateway_unavailable")
-	case billing.ErrNoProfile:
-		httpapi.Error(w, http.StatusUnprocessableEntity, "no_profile", "subscriber has no profile to renew")
-	case billing.ErrProfileArchived:
-		httpapi.Error(w, http.StatusUnprocessableEntity, "profile_archived", "the selected profile is archived")
-	case billing.ErrSubscriberNotFound:
-		httpapi.Error(w, http.StatusNotFound, "not_found", "subscriber not found")
-	default:
-		httpapi.Error(w, http.StatusInternalServerError, "internal", "internal server error")
-	}
-}
-
-// --- Scratch-card payments (C8, FR-59) --------------------------------------
-
-type cardTypeItem struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
-}
-
-func (m *Module) cardTypesHandler(w http.ResponseWriter, r *http.Request) {
-	ids := billing.CardTypes(r.Context())
-	items := make([]cardTypeItem, len(ids))
-	for i, id := range ids {
-		items[i] = cardTypeItem{ID: id, Name: cardDisplayName(id)}
-	}
-	httpapi.JSON(w, http.StatusOK, map[string]any{"items": items})
-}
-
-func cardDisplayName(id string) string {
-	switch id {
-	case "zain":
-		return "Zain Cash Card"
-	case "asiacell":
-		return "Asiacell Card"
-	default:
-		return id
-	}
-}
-
-func (m *Module) myCardPaymentHandler(w http.ResponseWriter, r *http.Request) {
+// latestTicketHandler serves GET /portal/payment-tickets/latest (C13's
+// "pending — under review" banner).
+func (m *Module) latestTicketHandler(w http.ResponseWriter, r *http.Request) {
 	sub, _ := SubscriberFrom(r.Context())
-	v, ok, err := billing.LatestCardPayment(r.Context(), sub.ID)
+	v, ok, err := billing.LatestTicket(r.Context(), sub.ID)
 	if err != nil {
-		m.internalError(w, "my card payment", err)
+		m.internalError(w, "latest payment ticket", err)
 		return
 	}
 	if !ok {
@@ -184,40 +156,19 @@ func (m *Module) myCardPaymentHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpapi.JSON(w, http.StatusOK, map[string]any{
-		"id": v.ID, "card_type": v.CardType, "state": v.State,
+		"id": v.ID, "method_key": v.MethodKey, "state": v.State, "trial_granted": v.TrialGranted,
 		"trial_expires_at": v.TrialExpiresAt, "reject_reason": v.RejectReason, "created_at": v.CreatedAt,
 	})
 }
 
-type submitCardRequest struct {
-	CardType string `json:"card_type" validate:"required"`
-	Code     string `json:"code" validate:"required"`
-}
-
-func (m *Module) submitCardHandler(w http.ResponseWriter, r *http.Request) {
-	sub, _ := SubscriberFrom(r.Context())
-	var in submitCardRequest
-	if !httpapi.Bind(w, r, &in) {
-		return
-	}
-	res, err := billing.SubmitCard(r.Context(), sub.ID, in.CardType, in.Code)
-	if err != nil {
-		writeCardSubmitError(w, err)
-		return
-	}
-	httpapi.JSON(w, http.StatusOK, map[string]any{"state": res.State, "trial_expires_at": res.TrialExpiresAt})
-}
-
-func writeCardSubmitError(w http.ResponseWriter, err error) {
-	var cd *billing.CardCooldownError
+func writeTicketSubmitError(w http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, billing.ErrCardPending):
-		httpapi.Error(w, http.StatusConflict, "card_payment_pending", "a card payment is already pending")
-	case errors.As(err, &cd):
-		httpapi.Error(w, http.StatusUnprocessableEntity, "card_payment_cooldown",
-			"card submissions are blocked until "+cd.RetryAt.Format(time.RFC3339))
+	case errors.Is(err, billing.ErrMethodNotAllowed):
+		httpapi.Error(w, http.StatusForbidden, "method_not_allowed", "billing.error.method_not_allowed")
+	case errors.Is(err, billing.ErrTicketPending):
+		httpapi.Error(w, http.StatusConflict, "ticket_pending", "billing.error.ticket_pending")
 	case errors.Is(err, billing.ErrCardTypeNotAllowed):
-		httpapi.Error(w, http.StatusUnprocessableEntity, "card_code_invalid", "unsupported card type")
+		httpapi.Error(w, http.StatusUnprocessableEntity, "card_code_invalid", "billing.error.card_code_invalid")
 	case errors.Is(err, billing.ErrNoProfile):
 		httpapi.Error(w, http.StatusUnprocessableEntity, "no_profile", "subscriber has no profile to renew")
 	case errors.Is(err, billing.ErrSubscriberNotFound):
