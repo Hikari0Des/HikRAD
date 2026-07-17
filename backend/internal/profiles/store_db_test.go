@@ -58,7 +58,7 @@ func newProfile(t *testing.T, db *pgxpool.Pool, name string) string {
 	t.Helper()
 	var id string
 	if err := db.QueryRow(context.Background(),
-		`INSERT INTO profiles (name, price_iqd, duration_days, rate_down_kbps, rate_up_kbps)
+		`INSERT INTO profiles (name, price, duration_days, rate_down_kbps, rate_up_kbps)
 		 VALUES ($1, 1000, 30, 2048, 1024) RETURNING id::text`, name).Scan(&id); err != nil {
 		t.Fatalf("insert profile: %v", err)
 	}
@@ -128,11 +128,11 @@ func TestProfileInUse_FindsEachReference(t *testing.T) {
 				uniqName("sub"), filler, profileID)
 		}},
 		{"voucher batch sold on the plan", func(t *testing.T, profileID string) {
-			mustExec(t, db, `INSERT INTO voucher_batches (profile_id, count, unit_price_iqd)
+			mustExec(t, db, `INSERT INTO voucher_batches (profile_id, count, unit_price)
 			                 VALUES ($1::uuid, 5, 1000)`, profileID)
 		}},
 		{"payment intent for the plan", func(t *testing.T, profileID string) {
-			mustExec(t, db, `INSERT INTO payment_intents (subscriber_id, profile_id, gateway, amount_iqd)
+			mustExec(t, db, `INSERT INTO payment_intents (subscriber_id, profile_id, gateway, amount)
 			                 VALUES ($1::uuid, $2::uuid, 'test', 1000)`,
 				newSubscriber(t, db, filler), profileID)
 		}},

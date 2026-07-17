@@ -39,7 +39,7 @@ func mkProfile(t *testing.T, db *pgxpool.Pool, down, up int, hsDown, hsUp *int) 
 	var id string
 	if err := db.QueryRow(context.Background(),
 		`INSERT INTO profiles
-		   (name, price_iqd, duration_days, rate_down_kbps, rate_up_kbps,
+		   (name, price, duration_days, rate_down_kbps, rate_up_kbps,
 		    session_limit_default, hotspot_rate_down_kbps, hotspot_rate_up_kbps)
 		 VALUES ($1, 1000, 30, $2, $3, 3, $4, $5) RETURNING id::text`,
 		uniqName("prof"), down, up, hsDown, hsUp).Scan(&id); err != nil {

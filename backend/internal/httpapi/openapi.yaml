@@ -202,11 +202,12 @@ components:
         created_at: { type: string, format: date-time }
     Profile:
       type: object
-      required: [id, name, price_iqd, duration_days, rate_down_kbps, rate_up_kbps, created_at]
+      required: [id, name, price, currency, duration_days, rate_down_kbps, rate_up_kbps, created_at]
       properties:
         id: { type: string, format: uuid }
         name: { type: string }
-        price_iqd: { type: integer, format: int64 }
+        price: { type: integer, format: int64 }
+        currency: { type: string }
         duration_days: { type: integer }
         rate_down_kbps: { type: integer }
         rate_up_kbps: { type: integer }

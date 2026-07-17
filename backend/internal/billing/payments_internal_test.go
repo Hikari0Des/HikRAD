@@ -57,8 +57,8 @@ func mkTestProfile(t *testing.T, db *pgxpool.Pool, price int64, days int) string
 	t.Helper()
 	var id string
 	if err := db.QueryRow(context.Background(),
-		`INSERT INTO profiles (name, price_iqd, duration_days, rate_down_kbps, rate_up_kbps)
-		 VALUES ($1, $2, $3, 10240, 2048) RETURNING id::text`,
+		`INSERT INTO profiles (name, price, currency, duration_days, rate_down_kbps, rate_up_kbps)
+		 VALUES ($1, $2, 'IQD', $3, 10240, 2048) RETURNING id::text`,
 		uniqTestName("prof"), price, days).Scan(&id); err != nil {
 		t.Fatal(err)
 	}
@@ -93,7 +93,7 @@ func TestProcessCallbackAmountMismatch(t *testing.T) {
 	ref := uniqTestName("ref")
 	var intentID string
 	if err := db.QueryRow(ctx,
-		`INSERT INTO payment_intents (subscriber_id, profile_id, gateway, amount_iqd, gateway_ref)
+		`INSERT INTO payment_intents (subscriber_id, profile_id, gateway, amount, gateway_ref)
 		 VALUES ($1::uuid, $2::uuid, 'mock', 25000, $3) RETURNING id::text`, sub, prof, ref).Scan(&intentID); err != nil {
 		t.Fatal(err)
 	}
@@ -124,7 +124,7 @@ func TestProcessCallbackReplayIdempotent(t *testing.T) {
 	ref := uniqTestName("ref")
 	var intentID string
 	if err := db.QueryRow(ctx,
-		`INSERT INTO payment_intents (subscriber_id, profile_id, gateway, amount_iqd, gateway_ref)
+		`INSERT INTO payment_intents (subscriber_id, profile_id, gateway, amount, gateway_ref)
 		 VALUES ($1::uuid, $2::uuid, 'mock', 25000, $3) RETURNING id::text`, sub, prof, ref).Scan(&intentID); err != nil {
 		t.Fatal(err)
 	}
@@ -161,7 +161,7 @@ func TestReconcileExpiresStaleIntent(t *testing.T) {
 
 	var intentID string
 	if err := db.QueryRow(ctx,
-		`INSERT INTO payment_intents (subscriber_id, profile_id, gateway, amount_iqd, gateway_ref, created_at)
+		`INSERT INTO payment_intents (subscriber_id, profile_id, gateway, amount, gateway_ref, created_at)
 		 VALUES ($1::uuid, $2::uuid, 'mock', 1000, $3, now() - interval '49 hours') RETURNING id::text`,
 		sub, prof, uniqTestName("ref")).Scan(&intentID); err != nil {
 		t.Fatal(err)
@@ -294,7 +294,7 @@ func TestCardRejectNetsZeroAndCooldown(t *testing.T) {
 		t.Fatalf("expected 1 reversing ledger entry, got %d", n)
 	}
 	var sum int64
-	_ = db.QueryRow(ctx, `SELECT COALESCE(sum(amount_iqd),0) FROM ledger_transactions WHERE subscriber_id = $1::uuid`, sub).Scan(&sum)
+	_ = db.QueryRow(ctx, `SELECT COALESCE(sum(amount),0) FROM ledger_transactions WHERE subscriber_id = $1::uuid`, sub).Scan(&sum)
 	if sum != 0 {
 		t.Fatalf("ledger sum for subscriber = %d, want 0 (nets to zero)", sum)
 	}

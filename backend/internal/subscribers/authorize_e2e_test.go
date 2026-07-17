@@ -69,7 +69,7 @@ func TestAuthViewDrivesAuthorize(t *testing.T) {
 	// A profile whose expiry behavior is the walled-garden expired pool (FR-9B),
 	// with a Hotspot rate so FR-58 can be checked.
 	r := e.do(t, "POST", "/api/v1/profiles", map[string]any{
-		"name": uniq("Plan_"), "price_iqd": 20000, "duration_days": 30,
+		"name": uniq("Plan_"), "price": 20000, "duration_days": 30,
 		"rate_down_kbps": 10240, "rate_up_kbps": 10240,
 		"expiry_behavior": "expired_pool", "hotspot_rate_down_kbps": 5120, "hotspot_rate_up_kbps": 5120,
 	})

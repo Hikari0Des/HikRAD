@@ -148,14 +148,14 @@ func TestIntegration(t *testing.T) {
 		var list struct {
 			Items []struct {
 				Name         string `json:"name"`
-				PriceIQD     int64  `json:"price_iqd"`
+				Price        int64  `json:"price"`
 				DurationDays int    `json:"duration_days"`
 			} `json:"items"`
 		}
 		body := getJSON(t, srv.URL+"/api/v1/profiles", access, &list)
 		found := false
 		for _, p := range list.Items {
-			if p.Name == "Basic 10M" && p.PriceIQD == 25000 && p.DurationDays == 30 {
+			if p.Name == "Basic 10M" && p.Price == 25000 && p.DurationDays == 30 {
 				found = true
 			}
 		}

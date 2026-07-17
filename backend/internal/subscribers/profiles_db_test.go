@@ -10,21 +10,21 @@ func TestProfileValidation(t *testing.T) {
 
 	// quota_mode=total requires quota_total_bytes.
 	if r := e.do(t, "POST", "/api/v1/profiles", map[string]any{
-		"name": uniq("Q_"), "price_iqd": 1, "duration_days": 30,
+		"name": uniq("Q_"), "price": 1, "duration_days": 30,
 		"rate_down_kbps": 1024, "rate_up_kbps": 1024, "quota_mode": "total",
 	}); r.status != http.StatusUnprocessableEntity {
 		t.Errorf("quota total without bytes = %d, want 422: %s", r.status, r.body)
 	}
 	// quota_behavior=throttle requires throttle_rate.
 	if r := e.do(t, "POST", "/api/v1/profiles", map[string]any{
-		"name": uniq("T_"), "price_iqd": 1, "duration_days": 30,
+		"name": uniq("T_"), "price": 1, "duration_days": 30,
 		"rate_down_kbps": 1024, "rate_up_kbps": 1024, "quota_behavior": "throttle",
 	}); r.status != http.StatusUnprocessableEntity {
 		t.Errorf("throttle without rate = %d, want 422: %s", r.status, r.body)
 	}
 	// Valid profile with a total quota → created, defaults applied.
 	r := e.do(t, "POST", "/api/v1/profiles", map[string]any{
-		"name": uniq("OK_"), "price_iqd": 1000, "duration_days": 30,
+		"name": uniq("OK_"), "price": 1000, "duration_days": 30,
 		"rate_down_kbps": 10240, "rate_up_kbps": 10240,
 		"quota_mode": "total", "quota_total_bytes": 100000000000,
 	})
@@ -54,7 +54,7 @@ func TestProfileApplyNowSemantics(t *testing.T) {
 
 	// apply=now (default): reports applied=now + online_affected (empty offline).
 	r := e.do(t, "PUT", "/api/v1/profiles/"+profID, map[string]any{
-		"name": uniq("App2_"), "price_iqd": 2000, "duration_days": 30,
+		"name": uniq("App2_"), "price": 2000, "duration_days": 30,
 		"rate_down_kbps": 20480, "rate_up_kbps": 20480,
 	})
 	if r.status != http.StatusOK {
@@ -74,7 +74,7 @@ func TestProfileApplyNowSemantics(t *testing.T) {
 
 	// apply=next_renewal: persists only.
 	r = e.do(t, "PUT", "/api/v1/profiles/"+profID+"?apply=next_renewal", map[string]any{
-		"name": uniq("App3_"), "price_iqd": 3000, "duration_days": 30,
+		"name": uniq("App3_"), "price": 3000, "duration_days": 30,
 		"rate_down_kbps": 30720, "rate_up_kbps": 30720,
 	})
 	r.into(t, &out)

@@ -164,7 +164,7 @@ func (e testEnv) login(t *testing.T, user, pass string) string {
 func (e testEnv) createProfile(t *testing.T, name string, down, up int) string {
 	t.Helper()
 	r := e.do(t, "POST", "/api/v1/profiles", map[string]any{
-		"name": name, "price_iqd": 10000, "duration_days": 30,
+		"name": name, "price": 10000, "duration_days": 30,
 		"rate_down_kbps": down, "rate_up_kbps": up,
 	})
 	if r.status != http.StatusCreated {

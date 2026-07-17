@@ -155,7 +155,7 @@ func (e env) panelLogin(t *testing.T, user, pass string) string {
 func (e env) createProfile(t *testing.T, price int64, days int) string {
 	t.Helper()
 	r := e.do(t, "POST", "/api/v1/profiles", e.adminToken, map[string]any{
-		"name": uniq("plan_"), "price_iqd": price, "duration_days": days,
+		"name": uniq("plan_"), "price": price, "currency": "IQD", "duration_days": days,
 		"rate_down_kbps": 10240, "rate_up_kbps": 2048,
 	})
 	if r.status != http.StatusCreated {

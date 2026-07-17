@@ -57,7 +57,7 @@ func TestManagerDeleteGuards(t *testing.T) {
 	// trigger blocks the FK SET NULL, mapped to 409 has_history.
 	m := createManager(t, e, admin, uniq("agent"), "agent", false)
 	if _, err := e.db.Exec(context.Background(),
-		`INSERT INTO ledger_transactions (type, amount_iqd, actor_manager_id, source, note)
+		`INSERT INTO ledger_transactions (type, amount, actor_manager_id, source, note)
 		 VALUES ('topup', 1000, $1::uuid, 'panel', 'removal-test')`, m.ID); err != nil {
 		t.Fatalf("plant ledger row: %v", err)
 	}

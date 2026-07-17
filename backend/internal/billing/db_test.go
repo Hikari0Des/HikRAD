@@ -165,7 +165,7 @@ func (e env) login(t *testing.T, user, pass string) string {
 func (e env) createProfile(t *testing.T, price int64, days int) string {
 	t.Helper()
 	r := e.do(t, "POST", "/api/v1/profiles", e.token, map[string]any{
-		"name": uniq("plan_"), "price_iqd": price, "duration_days": days,
+		"name": uniq("plan_"), "price": price, "currency": "IQD", "duration_days": days,
 		"rate_down_kbps": 10240, "rate_up_kbps": 2048,
 	})
 	if r.status != http.StatusCreated {
@@ -212,7 +212,7 @@ func (e env) ledgerSum(t *testing.T, mgr string) int64 {
 	t.Helper()
 	var n int64
 	if err := e.db.QueryRow(context.Background(),
-		`SELECT COALESCE(sum(amount_iqd),0) FROM ledger_transactions WHERE actor_manager_id=$1::uuid`, mgr).
+		`SELECT COALESCE(sum(amount),0) FROM ledger_transactions WHERE actor_manager_id=$1::uuid AND currency='IQD'`, mgr).
 		Scan(&n); err != nil {
 		t.Fatal(err)
 	}
@@ -223,7 +223,7 @@ func (e env) cachedBalance(t *testing.T, mgr string) int64 {
 	t.Helper()
 	var n int64
 	if err := e.db.QueryRow(context.Background(),
-		`SELECT COALESCE((SELECT balance_iqd FROM manager_balances WHERE manager_id=$1::uuid),0)`, mgr).
+		`SELECT COALESCE((SELECT balance FROM manager_balances WHERE manager_id=$1::uuid AND currency='IQD'),0)`, mgr).
 		Scan(&n); err != nil {
 		t.Fatal(err)
 	}
@@ -265,7 +265,7 @@ func TestRenewWritesLedgerAndExtendsExpiry(t *testing.T) {
 		t.Fatalf("expected 1 renewal ledger row, got %d", n)
 	}
 	_ = e.db.QueryRow(context.Background(),
-		`SELECT count(*) FROM payments WHERE receipt_no=$1 AND amount_iqd=25000`, out.ReceiptNo).Scan(&n)
+		`SELECT count(*) FROM payments WHERE receipt_no=$1 AND amount=25000`, out.ReceiptNo).Scan(&n)
 	if n != 1 {
 		t.Fatalf("expected payment row for receipt %s", out.ReceiptNo)
 	}
@@ -299,7 +299,7 @@ func TestBalanceBlockingAndTopup(t *testing.T) {
 	}
 
 	// Top-up unblocks.
-	tr := e.do(t, "POST", "/api/v1/managers/"+agentID+"/topup", e.token, map[string]any{"amount_iqd": 25000, "note": "cash"})
+	tr := e.do(t, "POST", "/api/v1/managers/"+agentID+"/topup", e.token, map[string]any{"amount": 25000, "currency": "IQD", "note": "cash"})
 	if tr.status != http.StatusOK {
 		t.Fatalf("topup = %d: %s", tr.status, tr.body)
 	}
@@ -328,7 +328,7 @@ func TestBalanceEqualsLedgerProperty(t *testing.T) {
 	prof := e.createProfile(t, 1000, 30)
 	agentID, agentTok := e.seedAgent(t)
 	// Fund generously so renewals rarely block (blocking is fine — it just skips).
-	e.do(t, "POST", "/api/v1/managers/"+agentID+"/topup", e.token, map[string]any{"amount_iqd": 1000000})
+	e.do(t, "POST", "/api/v1/managers/"+agentID+"/topup", e.token, map[string]any{"amount": 1000000, "currency": "IQD"})
 
 	// Give the agent a handful of their own subscribers.
 	subs := make([]string, 5)
@@ -347,7 +347,7 @@ func TestBalanceEqualsLedgerProperty(t *testing.T) {
 			defer wg.Done()
 			switch i % 3 {
 			case 0:
-				e.do(t, "POST", "/api/v1/managers/"+agentID+"/topup", e.token, map[string]any{"amount_iqd": 500})
+				e.do(t, "POST", "/api/v1/managers/"+agentID+"/topup", e.token, map[string]any{"amount": 500, "currency": "IQD"})
 			default:
 				sub := subs[i%len(subs)]
 				r := e.do(t, "POST", "/api/v1/subscribers/"+sub+"/renew", agentTok, map[string]any{})
@@ -438,7 +438,7 @@ func TestRefundReversalMath(t *testing.T) {
 	agentID, agentTok := e.seedAgent(t)
 	_, _ = e.db.Exec(context.Background(),
 		`UPDATE subscribers SET owner_manager_id=$1::uuid WHERE id=$2::uuid`, agentID, sub)
-	e.do(t, "POST", "/api/v1/managers/"+agentID+"/topup", e.token, map[string]any{"amount_iqd": 25000})
+	e.do(t, "POST", "/api/v1/managers/"+agentID+"/topup", e.token, map[string]any{"amount": 25000, "currency": "IQD"})
 
 	r := e.do(t, "POST", "/api/v1/subscribers/"+sub+"/renew", agentTok, map[string]any{})
 	if r.status != http.StatusOK {
@@ -485,7 +485,7 @@ func TestLedgerImmutability(t *testing.T) {
 	r.into(t, &out)
 
 	if _, err := e.db.Exec(context.Background(),
-		`UPDATE ledger_transactions SET amount_iqd=0 WHERE id=$1::uuid`, out.LedgerTxID); err == nil {
+		`UPDATE ledger_transactions SET amount=0 WHERE id=$1::uuid`, out.LedgerTxID); err == nil {
 		t.Fatal("expected UPDATE on ledger to be refused")
 	}
 	if _, err := e.db.Exec(context.Background(),
