@@ -8,6 +8,7 @@ package auth
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -29,6 +30,23 @@ type Preferences struct {
 	LandingPage       string                   `json:"landing_page,omitempty"`
 	TablePageSize     int                      `json:"table_page_size,omitempty"`
 	NotificationPrefs map[string]NotifChannels `json:"notification_prefs,omitempty"`
+	// DashboardLayout (v2-10, FR-90.1) is one more optional key — no schema
+	// version bump, no migration. nil (key absent) means "default layout";
+	// a non-nil value (even an empty widget list) is an explicit choice,
+	// re-filtered by the caller's current permissions at render time, never
+	// a stored snapshot (FR-90.3).
+	DashboardLayout *DashboardLayout `json:"dashboard_layout,omitempty"`
+}
+
+// DashboardLayout is v2-10 contract C2's stored shape.
+type DashboardLayout struct {
+	Widgets []DashboardWidgetRef `json:"widgets"`
+}
+
+// DashboardWidgetRef is one entry of a stored dashboard layout.
+type DashboardWidgetRef struct {
+	ID   string `json:"id"`
+	Size string `json:"size"` // "1x" | "2x"
 }
 
 // validNotificationKeys is the closed set C1 validates notification_prefs
@@ -53,6 +71,28 @@ var validThemes = map[string]bool{"": true, "light": true, "dark": true, "system
 var validLanguages = map[string]bool{"": true, "en": true, "ar": true, "ku": true}
 var validNumerals = map[string]bool{"": true, "auto": true, "latn": true, "arab": true}
 var validTablePageSizes = map[int]bool{0: true, 10: true, 25: true, 50: true, 100: true}
+
+// validDashboardWidgetIDs is v2-10 contract C1's catalog id set, duplicated
+// here rather than imported: internal/monitorsvc imports internal/auth (for
+// auth.Require/Manager/ScopeFilter), so the reverse import would cycle.
+// Mirrors the existing subscribers/importer phone-validation duplication
+// pattern in this codebase — this package only needs to know the closed set
+// exists, never permissions or sizes, which stay in monitorsvc's catalog.
+var validDashboardWidgetIDs = map[string]bool{
+	"online-now":              true,
+	"revenue-today":           true,
+	"radius-rps":              true,
+	"subs-active":             true,
+	"subs-expired":            true,
+	"subs-expiring":           true,
+	"pipeline-health":         true,
+	"nas-health":              true,
+	"my-balance":              true,
+	"pending-payment-tickets": true,
+	"alerts-feed":             true,
+}
+
+var validDashboardWidgetSizes = map[string]bool{"1x": true, "2x": true}
 
 // GetPreferences resolves a manager's preferences (C1/C2). A manager with no
 // row gets the zero-value document — never an error — since "no preferences
@@ -109,6 +149,17 @@ func validatePreferences(p Preferences) []fieldErrorLike {
 	for key := range p.NotificationPrefs {
 		if !validNotificationKeys[key] {
 			errs = append(errs, fieldErrorLike{"notification_prefs." + key, "unknown notification key"})
+		}
+	}
+	if p.DashboardLayout != nil {
+		for i, w := range p.DashboardLayout.Widgets {
+			prefix := fmt.Sprintf("dashboard_layout.widgets.%d.", i)
+			if !validDashboardWidgetIDs[w.ID] {
+				errs = append(errs, fieldErrorLike{prefix + "id", "unknown widget id"})
+			}
+			if !validDashboardWidgetSizes[w.Size] {
+				errs = append(errs, fieldErrorLike{prefix + "size", "must be one of: 1x 2x"})
+			}
 		}
 	}
 	return errs

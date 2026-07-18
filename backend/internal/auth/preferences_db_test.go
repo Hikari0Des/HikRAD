@@ -15,6 +15,7 @@ type prefsBody struct {
 	LandingPage       string                     `json:"landing_page,omitempty"`
 	TablePageSize     int                        `json:"table_page_size,omitempty"`
 	NotificationPrefs map[string]map[string]bool `json:"notification_prefs,omitempty"`
+	DashboardLayout   *DashboardLayout           `json:"dashboard_layout,omitempty"`
 }
 
 // TestPreferencesNoRowDefaultsToZeroValue — gate item 2 (C1/C2): a manager
