@@ -98,9 +98,18 @@ wait_for_api_health() {
 }
 
 max_available_schema_version() {
-    # shellcheck disable=SC2012
-    ls "$HIKRAD_CHECKOUT"/backend/migrations/*.up.sql 2>/dev/null \
-        | sed -E 's#.*/([0-9]+)_.*#\1#' | sort -n | tail -1
+    # Bundle-mode installs (v2 phase 5, FR-81) ship migrations/ as a sibling
+    # of compose.yml, not under backend/ (there is no backend/ at all — no
+    # source tree). Source-mode installs keep today's backend/migrations/
+    # layout. Try bundle-mode's location first, fall back to source-mode's.
+    local dir
+    for dir in "$(dirname "$HIKRAD_COMPOSE_FILE")/migrations" "$HIKRAD_CHECKOUT/backend/migrations"; do
+        if [ -d "$dir" ]; then
+            # shellcheck disable=SC2012
+            ls "$dir"/*.up.sql 2>/dev/null | sed -E 's#.*/([0-9]+)_.*#\1#' | sort -n | tail -1
+            return
+        fi
+    done
 }
 
 record_backup_run() { # record_backup_run FILENAME SIZE_BYTES STATUS ERROR SCHEMA_VERSION TRIGGER
@@ -292,6 +301,21 @@ rollback_update_images() {
     done < "$rollback_file"
 }
 
+# rollback_release_dir restores $1's previous contents from $1.rollback, if
+# one exists (bundle-mode updates only — see cmd_update). Unlike source
+# mode's synthesized image names, a bundle-mode compose.yml pins an exact
+# version tag per release, so re-tagging old image ids alone (rollback_
+# update_images) cannot rescue a failed update on its own: compose.yml
+# itself must revert too, or `docker compose up` keeps looking for the NEW
+# version's tags. A one-deep backup (not a full versioned history) is the
+# minimum that makes rollback actually work, at negligible extra complexity.
+rollback_release_dir() {
+    local release_dir="$1"
+    [ -d "$release_dir.rollback" ] || return 0
+    rm -rf "$release_dir"
+    mv "$release_dir.rollback" "$release_dir"
+}
+
 cmd_update() {
     local bundle=""
     while [ $# -gt 0 ]; do
@@ -306,15 +330,71 @@ cmd_update() {
 
     local rollback_file; rollback_file="$(mktemp)"
     for svc in hikrad-api hikrad-acct hikrad-monitor; do
-        local ref id
-        ref="$(compose config --images 2>/dev/null | grep "^${svc}" || true)"
+        local id tag
         id="$(compose images -q "$svc" 2>/dev/null | head -1)"
-        [ -n "$id" ] && echo "hikrad-$svc:latest=$id" >> "$rollback_file"
+        if [ -n "$id" ]; then
+            # The image's own current RepoTag — whatever compose.yml resolves
+            # this service to right now (a build:-synthesized "hikrad-<svc>"
+            # name in source mode, or the pinned "ghcr.io/hikrad/<svc>:vX.Y.Z"
+            # tag in bundle mode) — so re-tagging the OLD id back onto it
+            # actually restores what `docker compose up` will look for.
+            tag="$(docker inspect --format '{{index .RepoTags 0}}' "$id" 2>/dev/null || true)"
+            [ -n "$tag" ] && echo "$tag=$id" >> "$rollback_file"
+        fi
     done
 
     if [ -n "$bundle" ]; then
-        log "Loading offline image bundle $bundle…"
-        docker load -i "$bundle" || die "failed to load bundle $bundle"
+        [ -f "$bundle" ] || die "--bundle file not found: $bundle"
+        log "Verifying release bundle $bundle before using anything from it…"
+        local scratch; scratch="$(mktemp -d)"
+        tar -xf "$bundle" -C "$scratch"
+        if ! bash "$scratch/scripts/verify-bundle.sh" "$scratch"; then
+            rm -rf "$scratch"
+            die "bundle verification failed — refusing to update from $bundle (nothing was changed)"
+        fi
+
+        log "Bundle verified. Loading images into Docker…"
+        for image_tar in "$scratch"/images/*.tar; do
+            [ -e "$image_tar" ] || continue
+            docker load -i "$image_tar" || { rm -rf "$scratch"; die "docker load failed for $(basename "$image_tar")"; }
+        done
+
+        # Stage into $HIKRAD_ROOT/release regardless of this install's prior
+        # delivery mode (bundle-mode's own compose.yml/scripts/migrations
+        # already live there; a source-mode install converting to bundle
+        # updates gets a fresh, dedicated location here rather than this
+        # overwriting its git checkout's deploy/compose.yml). Overwritten
+        # only now, after verification already succeeded (FR-81.3).
+        local root; root="$(dirname "$HIKRAD_ENV_FILE")"
+        local release_dir="$root/release"
+        rm -rf "$release_dir.rollback"
+        [ -d "$release_dir" ] && cp -r "$release_dir" "$release_dir.rollback"
+        RELEASE_DIR_FOR_ROLLBACK="$release_dir"   # read by the failure branches below
+        mkdir -p "$release_dir"
+        cp -r "$scratch/compose.yml" "$scratch/freeradius" "$scratch/caddy" \
+              "$scratch/scripts" "$scratch/migrations" "$scratch/manifest.json" "$release_dir/"
+        [ -f "$scratch/VERSION" ] && cp "$scratch/VERSION" "$release_dir/"
+        rm -rf "$scratch"
+
+        HIKRAD_COMPOSE_FILE="$release_dir/compose.yml"
+        HIKRAD_CHECKOUT="$release_dir"
+        if command -v install >/dev/null 2>&1; then
+            install -m 0755 "$release_dir/scripts/hikrad" /usr/local/bin/hikrad 2>/dev/null \
+                || log "WARNING: could not refresh /usr/local/bin/hikrad from the verified bundle — copy $release_dir/scripts/hikrad there manually."
+        fi
+        # Persist the switch so the NEXT `hikrad` invocation (a fresh process,
+        # which re-sources install.meta from scratch) resolves the same path
+        # this one just switched to mid-run.
+        if [ -f "$META" ]; then
+            sed -i \
+                -e "s#^HIKRAD_COMPOSE_FILE=.*#HIKRAD_COMPOSE_FILE=$HIKRAD_COMPOSE_FILE#" \
+                -e "s#^HIKRAD_CHECKOUT=.*#HIKRAD_CHECKOUT=$HIKRAD_CHECKOUT#" \
+                "$META"
+            grep -q '^HIKRAD_DELIVERY_MODE=' "$META" \
+                && sed -i "s#^HIKRAD_DELIVERY_MODE=.*#HIKRAD_DELIVERY_MODE=bundle#" "$META" \
+                || echo "HIKRAD_DELIVERY_MODE=bundle" >> "$META"
+        fi
+        log "Release staged at $release_dir (delivery mode: bundle)."
     else
         if [ -d "$HIKRAD_CHECKOUT/.git" ]; then
             log "Pulling latest source…"
@@ -326,7 +406,8 @@ cmd_update() {
 
     log "Applying update (hikrad-api runs forward-only migrations on boot)…"
     compose up -d || {
-        log "compose up failed — rolling back images."
+        log "compose up failed — rolling back images${RELEASE_DIR_FOR_ROLLBACK:+ and the release directory}."
+        [ -n "${RELEASE_DIR_FOR_ROLLBACK:-}" ] && rollback_release_dir "$RELEASE_DIR_FOR_ROLLBACK"
         rollback_update_images "$rollback_file"
         compose up -d || true
         rm -f "$rollback_file"
@@ -334,7 +415,8 @@ cmd_update() {
     }
 
     if ! wait_for_api_health 120; then
-        log "hikrad-api did not become healthy after update — rolling back images."
+        log "hikrad-api did not become healthy after update — rolling back images${RELEASE_DIR_FOR_ROLLBACK:+ and the release directory}."
+        [ -n "${RELEASE_DIR_FOR_ROLLBACK:-}" ] && rollback_release_dir "$RELEASE_DIR_FOR_ROLLBACK"
         rollback_update_images "$rollback_file"
         compose up -d
         rm -f "$rollback_file"

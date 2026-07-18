@@ -1,9 +1,17 @@
 #!/usr/bin/env bash
 # install.sh — HikRAD production installer (FR-49.1/49.4/49.5; Phase 1 Agent
-# A, finalized Phase 5).
+# A, finalized Phase 5; bundle mode added v2 phase 5, FR-81.4).
 #
-# Run as root from an unpacked HikRAD release/checkout on Ubuntu 22.04/24.04:
-#   sudo ./scripts/install.sh [--no-start] [--domain panel.example.isp]
+# Two modes:
+#   Source (dev-only, unchanged):
+#     sudo ./scripts/install.sh [--no-start] [--domain panel.example.isp]
+#     Run from an unpacked HikRAD checkout — docker compose builds images
+#     from backend/deploy/frontend. This is what `make up` uses.
+#   Bundle (production — no source tree, no Go/Node toolchain required):
+#     sudo ./scripts/install.sh --bundle hikrad-vX.Y.Z.tar [--no-start] [--domain ...]
+#     Verifies the bundle's signature (scripts/verify-bundle.sh) BEFORE
+#     touching anything, then uses its compose.yml (image: tags, no build:)
+#     and runtime config — no image is ever built on the customer's server.
 #
 # What it does on a clean server:
 #   1. Verifies the OS (Ubuntu 22.04/24.04) and warns (never blocks — small
@@ -12,13 +20,16 @@
 #   3. Creates /opt/hikrad/{data,backups,licenses} and generates secrets
 #      into /opt/hikrad/.env (HIKRAD_ENV=prod), including a backup
 #      passphrase printed ONCE below — write it down (FR-51.1, deliberately
-#      unrecoverable if both copies are lost).
+#      unrecoverable if both copies are lost). With --bundle: also verifies
+#      and stages the release into /opt/hikrad/release/ (FR-81.3/81.4).
 #   4. Installs the `hikrad` CLI wrapper to /usr/local/bin and a nightly
 #      backup cron entry (FR-51.1).
 #   5. With --domain: points Caddy at that hostname for Let's Encrypt;
 #      without it, Caddy's default self-signed cert is used (NFR-4, FR-49.5).
-#   6. Starts the stack: docker compose up -d --build. The first-run wizard
-#      (license, admin, branding, NAS, profile) then runs at the panel URL.
+#   6. Starts the stack: `docker compose up -d --build` in source mode, or
+#      `docker compose up -d` (images already loaded from the bundle, no
+#      build) in bundle mode. The first-run wizard (license, admin, branding,
+#      NAS, profile) then runs at the panel URL.
 #
 # Idempotent: re-running against an existing install NEVER touches data/. It
 # offers an update/repair menu instead (interactive) or prints guidance and
@@ -30,6 +41,8 @@
 #   HIKRAD_SKIP_DOCKER    =1 skips Docker presence/install
 #   --no-start            do everything except `docker compose up`
 #   --domain <fqdn>       configure Caddy for Let's Encrypt on this hostname
+#   --bundle <path>       install from a signed offline bundle (FR-81) instead
+#                         of building images from source — see above
 
 set -euo pipefail
 
@@ -38,12 +51,14 @@ REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 HIKRAD_ROOT="${HIKRAD_ROOT:-/opt/hikrad}"
 NO_START=0
 DOMAIN=""
+BUNDLE=""
 
 while [ $# -gt 0 ]; do
     case "$1" in
         --no-start) NO_START=1; shift ;;
         --domain) DOMAIN="${2:?--domain requires a hostname}"; shift 2 ;;
-        -h|--help) sed -n '2,29p' "$0"; exit 0 ;;
+        --bundle) BUNDLE="${2:?--bundle requires a path to a hikrad-vX.Y.Z.tar file}"; shift 2 ;;
+        -h|--help) sed -n '2,36p' "$0"; exit 0 ;;
         *) echo "error: unknown argument '$1' (see --help)" >&2; exit 1 ;;
     esac
 done
@@ -82,6 +97,27 @@ fi
 
 REPAIR_ONLY=0
 [ "${choice:-}" = "2" ] && REPAIR_ONLY=1
+
+# RELEASE_DIR / CHECKOUT_DIR / SCRIPTS_SRC_DIR (v2 phase 5, FR-81.4): where
+# compose.yml + runtime config, the "checkout-equivalent" root (VERSION,
+# migrations), and the scripts/ to install the CLI wrapper from actually
+# live — source mode vs. bundle mode. Resolved once, used by every step
+# below (both the REPAIR_ONLY branch, whose idempotent chown/cert fixups run
+# unconditionally, and the fresh-install branch). On a repair of an existing
+# install, these are read back out of install.meta rather than re-derived —
+# a repair run does not necessarily pass --bundle again, and the original
+# install's own compose file is the only source of truth for where its
+# runtime config actually lives.
+if [ -f "$HIKRAD_ROOT/install.meta" ]; then
+    # shellcheck disable=SC1091
+    . "$HIKRAD_ROOT/install.meta"
+    RELEASE_DIR="$(dirname "$HIKRAD_COMPOSE_FILE")"
+    CHECKOUT_DIR="$HIKRAD_CHECKOUT"
+else
+    RELEASE_DIR="$REPO_DIR/deploy"
+    CHECKOUT_DIR="$REPO_DIR"
+fi
+SCRIPTS_SRC_DIR="$SCRIPT_DIR"
 
 if [ "$REPAIR_ONLY" -eq 0 ]; then
     # --- 1. OS + privilege + hardware checks ---------------------------------
@@ -137,10 +173,49 @@ if [ "$REPAIR_ONLY" -eq 0 ]; then
         echo "HIKRAD_BACKUP_DIR=$HIKRAD_ROOT/backups"
     } >> "$HIKRAD_ROOT/.env"
 
+    # --- 3a. Bundle staging (FR-81.3/81.4, v2 phase 5): verify, THEN place --
+    # A bundle is extracted to its own scratch dir and verified there before
+    # anything is copied into $HIKRAD_ROOT — a failed verification leaves the
+    # live install (if any) completely untouched (FR-81.3's "no partial
+    # effect"). Only on success do RELEASE_DIR/CHECKOUT_DIR/SCRIPTS_SRC_DIR
+    # get pointed at the now-staged, verified copy for the rest of this run.
+    HIKRAD_DELIVERY_MODE=source
+    if [ -n "$BUNDLE" ]; then
+        [ -f "$BUNDLE" ] || die "--bundle file not found: $BUNDLE"
+        log "Verifying release bundle $BUNDLE before using anything from it…"
+        BUNDLE_SCRATCH="$(mktemp -d)"
+        trap 'rm -rf "$BUNDLE_SCRATCH"' EXIT
+        tar -xf "$BUNDLE" -C "$BUNDLE_SCRATCH"
+        bash "$BUNDLE_SCRATCH/scripts/verify-bundle.sh" "$BUNDLE_SCRATCH" \
+            || die "bundle verification failed — refusing to install from $BUNDLE (nothing was changed)"
+
+        log "Bundle verified. Loading images into Docker…"
+        for image_tar in "$BUNDLE_SCRATCH"/images/*.tar; do
+            [ -e "$image_tar" ] || continue   # empty images/ (HIKRAD_SKIP_IMAGE_BUILD rehearsal bundles)
+            log "  docker load -i $(basename "$image_tar")"
+            docker load -i "$image_tar"
+        done
+
+        log "Staging release into $HIKRAD_ROOT/release…"
+        mkdir -p "$HIKRAD_ROOT/release"
+        cp -r "$BUNDLE_SCRATCH/compose.yml" "$BUNDLE_SCRATCH/freeradius" "$BUNDLE_SCRATCH/caddy" \
+              "$BUNDLE_SCRATCH/scripts" "$BUNDLE_SCRATCH/migrations" "$BUNDLE_SCRATCH/manifest.json" \
+              "$HIKRAD_ROOT/release/"
+        [ -f "$BUNDLE_SCRATCH/VERSION" ] && cp "$BUNDLE_SCRATCH/VERSION" "$HIKRAD_ROOT/release/"
+        rm -rf "$BUNDLE_SCRATCH"
+        trap - EXIT
+
+        RELEASE_DIR="$HIKRAD_ROOT/release"
+        CHECKOUT_DIR="$HIKRAD_ROOT/release"
+        SCRIPTS_SRC_DIR="$HIKRAD_ROOT/release/scripts"
+        HIKRAD_DELIVERY_MODE=bundle
+        log "Release staged at $RELEASE_DIR (delivery mode: bundle — no source tree, no build on this server)."
+    fi
+
     # --- 3b. TLS: Let's Encrypt if --domain given, else self-signed default --
     if [ -n "$DOMAIN" ]; then
         log "Configuring Caddy for Let's Encrypt on $DOMAIN…"
-        CADDYFILE="$REPO_DIR/deploy/caddy/Caddyfile"
+        CADDYFILE="$RELEASE_DIR/caddy/Caddyfile"
         cp "$CADDYFILE" "$CADDYFILE.orig"
         sed -i \
             -e "s/^:443 {/${DOMAIN}:443 {/" \
@@ -151,12 +226,15 @@ if [ "$REPAIR_ONLY" -eq 0 ]; then
         log "No --domain given: using a self-signed cert (browsers will warn until you trust it, or re-run with --domain later)."
     fi
 
-    # Record where the compose sources live so the `hikrad` wrapper finds them.
+    # Record where the release sources live so the `hikrad` wrapper finds
+    # them, and how this install obtained its images (HIKRAD_DELIVERY_MODE:
+    # bundle|source — hikrad update reads this to decide its own default mode).
     cat > "$HIKRAD_ROOT/install.meta" <<EOF
 # Written by install.sh $(date -u +%Y-%m-%dT%H:%M:%SZ) — read by /usr/local/bin/hikrad.
-HIKRAD_CHECKOUT=$REPO_DIR
-HIKRAD_COMPOSE_FILE=$REPO_DIR/deploy/compose.yml
+HIKRAD_CHECKOUT=$CHECKOUT_DIR
+HIKRAD_COMPOSE_FILE=$RELEASE_DIR/compose.yml
 HIKRAD_ENV_FILE=$HIKRAD_ROOT/.env
+HIKRAD_DELIVERY_MODE=$HIKRAD_DELIVERY_MODE
 EOF
 fi
 
@@ -181,7 +259,7 @@ chown 10002:10002 "$HIKRAD_ROOT/data/acct-spill"
 # the Phase-5 M4 gate rehearsal against a real MikroTik: silent timeout,
 # nothing in FreeRADIUS's clients-generated.conf despite the NAS existing in
 # HikRAD). Same fix shape as acct-spill just below.
-chown 10001:10001 "$REPO_DIR/deploy/freeradius/clients-generated.conf"
+chown 10001:10001 "$RELEASE_DIR/freeradius/clients-generated.conf"
 
 # --- 3d2. FreeRADIUS control-socket dir (idempotent; also runs on repair) ---
 # Shared between hikrad-api and freeradius (FR-13.2/AC-13a) so hikrad-api can
@@ -222,7 +300,11 @@ if [ ! -f "$CERT_DIR/cert.pem" ]; then
 fi
 
 # --- 4. CLI wrapper + nightly backup cron (idempotent; also runs on repair) --
-if install -m 0755 "$SCRIPT_DIR/hikrad" /usr/local/bin/hikrad 2>/dev/null; then
+# SCRIPTS_SRC_DIR is the verified bundle's scripts/ on a fresh --bundle
+# install (never the customer's own unverified bootstrap copy of this file —
+# see the 3a staging block above), or $SCRIPT_DIR unchanged in every other
+# case (source install, or any repair, matching pre-v2-phase-5 behavior).
+if install -m 0755 "$SCRIPTS_SRC_DIR/hikrad" /usr/local/bin/hikrad 2>/dev/null; then
     log "Installed CLI wrapper: /usr/local/bin/hikrad"
 else
     log "WARNING: could not install /usr/local/bin/hikrad — copy scripts/hikrad there manually."
@@ -248,8 +330,13 @@ fi
 if [ "$NO_START" -eq 1 ]; then
     log "--no-start given: skipping compose up. Start later with: hikrad up"
 else
-    log "Starting the stack (first build can take a few minutes)…"
-    docker compose --env-file "$HIKRAD_ROOT/.env" -f "$REPO_DIR/deploy/compose.yml" up -d --build
+    if [ "$HIKRAD_DELIVERY_MODE" = "bundle" ]; then
+        log "Starting the stack (images already loaded from the bundle — no build)…"
+        docker compose --env-file "$HIKRAD_ROOT/.env" -f "$RELEASE_DIR/compose.yml" up -d
+    else
+        log "Starting the stack (first build can take a few minutes)…"
+        docker compose --env-file "$HIKRAD_ROOT/.env" -f "$RELEASE_DIR/compose.yml" up -d --build
+    fi
     log "Stack started. Panel: https://<this-server>/  (first-run wizard: license, admin, branding, NAS, profile)"
 fi
 
