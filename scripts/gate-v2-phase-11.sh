@@ -129,14 +129,39 @@ check "internal/portalapi unit+DB suite green" "$GO" -C backend test ./internal/
 check "internal/radius unit+DB suite green" "$GO" -C backend test ./internal/radius/...
 check "internal/billing unit+DB suite green" "$GO" -C backend test ./internal/billing/...
 
-# --- Item 14: docs accuracy --------------------------------------------------
+# --- Item 14: fixed attribution present (FR-93.1) ----------------------------
+echo "-- Fixed HikRAD attribution present (both apps, shell + login) --"
+check "panel PoweredByFooter test present and green" \
+  sh -c 'cd frontend/panel && npx vitest run src/shell/PoweredByFooter.test.tsx'
+check "portal PoweredByFooter test present and green" \
+  sh -c 'cd frontend/portal && npx vitest run src/shell/PoweredByFooter.test.tsx'
+
+# --- Item 15: fixed attribution structurally non-configurable (FR-93.2) -----
+echo "-- Fixed attribution is not settings-driven (grep) --"
+check "panel PoweredByFooter reads no branding/settings source" \
+  sh -c '! grep -Ei "useBranding|fetch\(|branding" frontend/panel/src/shell/PoweredByFooter.tsx 2>/dev/null | grep -q .'
+check "portal PoweredByFooter reads no branding/settings source" \
+  sh -c '! grep -Ei "useBranding|fetch\(|branding" frontend/portal/src/shell/PoweredByFooter.tsx 2>/dev/null | grep -q .'
+check "no settings group field named like an attribution toggle exists" \
+  sh -c '! grep -Ei "attribution|powered_by|poweredby" backend/internal/platform/setupapi/settings_api.go 2>/dev/null | grep -q .'
+
+# --- Item 16: fixed attribution absent from print surfaces (FR-93.3) -------
+echo "-- Fixed attribution absent from print surfaces --"
+check "receipt.go contains no 'Powered by' literal" \
+  sh -c '! grep -i "powered by" backend/internal/billing/receipt.go 2>/dev/null | grep -q .'
+check "hotspot.go contains no 'Powered by' literal" \
+  sh -c '! grep -i "powered by" backend/internal/radius/hotspot.go 2>/dev/null | grep -q .'
+check "PrintHeader.tsx contains no 'Powered by' literal" \
+  sh -c '! grep -i "powered by" frontend/panel/src/pages/reports/PrintHeader.tsx 2>/dev/null | grep -q .'
+
+# --- Item 17: docs accuracy --------------------------------------------------
 echo "-- Docs --"
-check "PRD carries FR-91 and FR-92" \
-  sh -c 'grep -q "FR-91" docs/PRD.md && grep -q "FR-92" docs/PRD.md'
+check "PRD carries FR-91, FR-92, and FR-93" \
+  sh -c 'grep -q "FR-91" docs/PRD.md && grep -q "FR-92" docs/PRD.md && grep -q "FR-93" docs/PRD.md'
 check "sub-PRD 01 carries FR-91" \
   sh -c 'grep -q "FR-91" docs/prd/01-platform-install-licensing.md'
-check "sub-PRD 07 carries FR-92" \
-  sh -c 'grep -q "FR-92" docs/prd/07-subscriber-portal-pwa.md'
+check "sub-PRD 07 carries FR-92 and FR-93" \
+  sh -c 'grep -q "FR-92" docs/prd/07-subscriber-portal-pwa.md && grep -q "FR-93" docs/prd/07-subscriber-portal-pwa.md'
 check "sub-PRD 08 references the branding endpoint" \
   sh -c 'grep -q "branding" docs/prd/08-reports.md'
 check "known-issues.md branding row present" \

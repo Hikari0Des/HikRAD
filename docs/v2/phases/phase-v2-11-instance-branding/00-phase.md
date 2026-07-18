@@ -1,15 +1,19 @@
 # Phase v2-11 — Instance Branding
 
 Source brief: [docs/v2/11-instance-branding.md](../../11-instance-branding.md). Requirements
-FR-91 (identity settings + disk-backed logo upload + public identity endpoint)
-and FR-92 (threading that identity through every surface), committed by PRD
-Decision 42. FR-91 owned by sub-PRD
+FR-91 (identity settings + disk-backed logo upload + public identity endpoint),
+FR-92 (threading that identity through every surface), and FR-93 (a fixed,
+non-configurable "Powered by HikRAD" attribution — added by Decision 43 while
+this brief was still awaiting confirmation, before any feature code was
+written), committed by PRD Decisions 42 and 43. FR-91 owned by sub-PRD
 [01-platform-install-licensing.md](../../../prd/01-platform-install-licensing.md)
-(extends FR-53's existing Settings module); FR-92 owned by sub-PRD
+(extends FR-53's existing Settings module); FR-92/FR-93 owned by sub-PRD
 [07-subscriber-portal-pwa.md](../../../prd/07-subscriber-portal-pwa.md)
-(extends FR-43/FR-54); sub-PRD 08's report-header text now names FR-91's
-endpoint as its source, no new FR (same "consumer, not owner" pattern 08
-already follows for every other domain's data).
+(extends FR-43/FR-54 — FR-93 joins FR-92 under the same owner rather than
+getting a domain of its own, since it is the fixed floor under the same
+identity-threading surface, not a new area); sub-PRD 08's report-header text
+now names FR-91's endpoint as its source, no new FR (same "consumer, not
+owner" pattern 08 already follows for every other domain's data).
 
 ## 1. Problem (restated from the source brief, sharpened by kickoff research)
 
@@ -58,6 +62,15 @@ job is: fix the one broken settings-read pattern at its source (once, in
 validation, and add the two consumers (panel chrome, receipts) that were
 never wired in the first place.
 
+**Added by Decision 43, while this brief was still awaiting confirmation:**
+the owner clarified that full customer rebranding is intentional and should
+ship exactly as FR-91/92 describe — a customer may rename and re-color
+*everything* — but a small, fixed "Powered by HikRAD" mark must remain
+somewhere the customer's own product access can never remove or edit (C10).
+The two requirements are not in tension: FR-91/92 govern the *configurable*
+identity layer (name/logo/color, entirely the customer's), FR-93 is a single
+fixed line underneath it that never reads from that layer at all.
+
 ## 2. Scope for this implementation pass
 
 1. **Settings + storage** — `internal/platform` gains the corrected branding
@@ -75,14 +88,20 @@ never wired in the first place.
    already call the now-fixed endpoint correctly. This pass re-verifies them
    rather than reimplementing them, and only touches them if the fix
    surfaces a real regression.
-4. **Gate** — DB-gated tests proving every one of the three original bugs is
-   fixed, upload validation, panel threading, and an NFR-7 offline/no-
-   external-fetch check; `scripts/gate-v2-phase-11.sh`; `gate-result.md`.
+4. **Fixed attribution** — a hardcoded `<PoweredByHikRAD>`-style footer
+   component, shared (`@hikrad/shared` or duplicated once per app if a
+   shared component would need its own new export surface — implementer's
+   call), mounted in both apps' shells and login pages (C10).
+5. **Gate** — DB-gated tests proving every one of the three original bugs is
+   fixed, upload validation, panel threading, the fixed attribution's
+   presence and non-configurability, and an NFR-7 offline/no-external-fetch
+   check; `scripts/gate-v2-phase-11.sh`; `gate-result.md`.
 
 Commit in reviewable chunks, in the order the kickoff prompt specified:
 **settings + upload (C1/C2/C3) → Hotspot + receipts fixed on the same
 underlying read (C4/C5) → panel shells/logins (C6) → PWA manifests
-re-verified (C7) → print surfaces re-verified (C8)**.
+re-verified (C7) → print surfaces re-verified (C8) → fixed attribution
+footer (C10)**.
 
 ## Migration budget
 
@@ -323,6 +342,50 @@ local-disk/DB reads (NFR-7); the gate's offline leg greps for this the same
 way `scripts/lint-vendor-isolation.sh` already greps `internal/radius` for a
 different invariant.
 
+### C10. Fixed HikRAD attribution (FR-93, Decision 43) — the one place branding is deliberately NOT data-driven
+
+Every other contract in this file threads `branding.*` settings (C1) through
+a consumer. C10 is the opposite by design: a mark that must **never** read
+from C1, C2, or `platform.LoadIdentity` at all, so there is no settings
+field anywhere a customer's admin account could set to hide or change it.
+
+- **Component:** one small footer component per app —
+  `frontend/panel/src/shell/PoweredByFooter.tsx` and
+  `frontend/portal/src/shell/PoweredByFooter.tsx` (kept as two small files
+  rather than a `@hikrad/shared` export: putting it in the shared package
+  would mean a customer's rebrand could theoretically be achieved by
+  patching one shared file instead of two, which is a strictly *smaller*
+  barrier than intended — two independent, duplicated components is the
+  deliberately-chosen redundancy here, not an oversight). Content: a single
+  literal string `"Powered by HikRAD"` (locale key `common.poweredBy`,
+  trilingual like every other UI string — the *translation* is normal i18n,
+  the brand word `"HikRAD"` inside every translation is not a
+  template/interpolation slot, it's typed literally into each of the three
+  locale files) at small/muted text weight, non-interactive (no click
+  target, no outbound link — avoids any question of an unwanted network
+  navigation and keeps the element as inert as possible).
+- **Mount points:** `AppShell.tsx` (panel, below the routed content, present
+  on every authenticated route) and panel `LoginPage.tsx`; `PortalLayout.tsx`
+  (portal shell) and portal `LoginPage.tsx`. Both apps' installed-PWA shells
+  render the same components (no separate PWA-only variant), so the mark
+  survives standalone-mode launch identically to the browser-tab case.
+- **Never settings-driven (FR-93.2):** `PoweredByFooter` takes no props,
+  calls no branding API, and reads no settings key — it cannot be hidden by
+  any `PUT` to any settings endpoint, because no settings endpoint has any
+  effect on it. The gate's grep leg (item 15 below) enforces this by
+  asserting the component's source contains no `useBranding`/`fetch`/
+  `branding` reference at all — a structural guarantee, not a review-time
+  one.
+- **Scope boundary (FR-93.3):** not mounted in `PrintHeader.tsx` (reports),
+  `receipt.go`'s rendered HTML, or any voucher template — those stay fully
+  the ISP's own commercial documents, unchanged by this contract.
+- **Residual-risk note carried from the PRD (FR-93.4):** this is a product-UI
+  guarantee, not a binary-tamper guarantee — same posture as FR-82.4's
+  license-cracking risk acceptance. Nothing in this phase attempts code
+  obfuscation or a runtime integrity check of the footer's presence; that
+  would be a different, explicitly out-of-scope class of work (and this repo
+  already has a standing non-goal against exactly that, FR-82.4).
+
 ## Integration gate
 
 Green when all pass (scriptable legs in `scripts/gate-v2-phase-11.sh`;
@@ -369,11 +432,33 @@ otherwise — same convention as every prior phase):
     en/ar/ku).
 13. **Full regression** — `internal/platform`, `internal/portalapi`,
     `internal/radius`, `internal/billing` unit + DB-gated suites stay green.
-14. **Docs accuracy** — PRD carries FR-91/FR-92; sub-PRDs 01/07/08 carry
-    their respective pieces (already committed in this phase's Step-1 docs
-    commit, verified again here); `docs/ops/known-issues.md`'s branding row
-    updated from "Open" to "Fixed" once this phase's fix commit lands, plus
-    any further bug found while building.
+14. **Fixed attribution present, everywhere it should be (FR-93.1)** — a
+    component test per app asserts `PoweredByFooter` (or the literal string
+    `"Powered by HikRAD"`/its localized equivalent) renders on: the
+    authenticated shell, the login screen, in **both** panel and portal —
+    even when a full custom identity (name/logo/color) is configured via
+    FR-91, proving the two coexist rather than one crowding out the other.
+15. **Fixed attribution is structurally non-configurable (FR-93.2, grep)** —
+    `PoweredByFooter.tsx` (both apps) contains no reference to
+    `useBranding`, `branding`, or any `fetch`/settings call; no settings
+    group anywhere in `backend/internal/platform/setupapi/settings_api.go`'s
+    `settingsGroups` map contains a field whose name matches
+    `*attribution*`/`*powered_by*`/`*footer*` — asserting the negative
+    (no such toggle exists) is exactly what this leg exists to prove, not
+    just that a toggle currently defaults to "on."
+16. **Fixed attribution absent from print surfaces (FR-93.3)** — a rendered
+    receipt (C5), a report print-header snapshot (C8), and the Hotspot
+    package's `login.html` (C4) each contain no "HikRAD" attribution text
+    beyond whatever the *configured* identity itself produces (i.e., an
+    unbranded instance's receipt naturally says "HikRAD" as the fallback
+    identity per C5 — that's C1's generic-default behavior, not C10's mark;
+    this leg specifically checks for the literal `"Powered by"` phrase,
+    which should appear in none of the three).
+17. **Docs accuracy** — PRD carries FR-91/FR-92/FR-93; sub-PRDs 01/07/08
+    carry their respective pieces (already committed in this phase's Step-1
+    docs commits, verified again here); `docs/ops/known-issues.md`'s
+    branding row updated from "Open" to "Fixed" once this phase's fix commit
+    lands, plus any further bug found while building.
 
 Human/hardware legs: **none** — no router/device dependency (the Hotspot
 package is generated and inspected as a file, never uploaded to a live

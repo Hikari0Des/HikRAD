@@ -1,6 +1,6 @@
 # HikRAD — Sub-PRD 07: Subscriber Portal, Localization & PWA
 
-> Derived from [docs/PRD.md](../PRD.md) v1.0 on 2026-07-08; updated 2026-07-10 for master v1.2 (Decision 21: portal shows consumed data only, never quota ceiling/remaining; FR-44 promoted C→S); updated 2026-07-17 for master v1.8 (FR-42 amended, Decision 37, v2-2 — e-wallet gateway list replaced by the unified Pay screen; the payment logic itself is owned by [05](05-billing-payments-vouchers.md) FR-77–80, this file owns only the portal UI surface); updated 2026-07-18 for master Decision 42 — v2 phase 11: FR-92, instance identity threaded through the portal + both apps' PWA manifests. Owns: FR-41, FR-42, FR-43, FR-44, FR-54, FR-92 · NFR-6 · Risk: RTL/trilingual UI effort
+> Derived from [docs/PRD.md](../PRD.md) v1.0 on 2026-07-08; updated 2026-07-10 for master v1.2 (Decision 21: portal shows consumed data only, never quota ceiling/remaining; FR-44 promoted C→S); updated 2026-07-17 for master v1.8 (FR-42 amended, Decision 37, v2-2 — e-wallet gateway list replaced by the unified Pay screen; the payment logic itself is owned by [05](05-billing-payments-vouchers.md) FR-77–80, this file owns only the portal UI surface); updated 2026-07-18 for master Decision 42 — v2 phase 11: FR-92, instance identity threaded through the portal + both apps' PWA manifests; updated 2026-07-18 for master Decision 43 — v2 phase 11 scope clarified: FR-93, fixed non-editable HikRAD attribution. Owns: FR-41, FR-42, FR-43, FR-44, FR-54, FR-92, FR-93 · NFR-6 · Risk: RTL/trilingual UI effort
 > Depends on: [04-subscribers-profiles](04-subscribers-profiles.md) (subscriber state, quota), [03-lossless-accounting-live-monitoring](03-lossless-accounting-live-monitoring.md) (usage graph data), [05-billing-payments-vouchers](05-billing-payments-vouchers.md) (voucher redeem + e-wallet payment APIs, payment history), [06-managers-roles-security](06-managers-roles-security.md) (password storage + rate-limit policy), [01-platform-install-licensing](01-platform-install-licensing.md) (branding settings, Caddy/HTTPS) · Depended on by: none (leaf module), though the **panel PWA packaging** in FR-54 wraps the panel built by modules 02–06/08.
 
 ## 1. Scope & context
@@ -59,6 +59,21 @@ The subscriber-facing surface (**Noor**'s product) and two cross-cutting fronten
 **Acceptance:**
 - **AC-92a** — Given a configured instance name/logo, when the portal login page loads with no session, then it shows that name/logo (not "HikRAD"), and when the panel PWA manifest is fetched, its `name`/`short_name`/icons match.
 - **AC-92b** — Given the server is completely unreachable (airplane mode) on a device that already installed the PWA, then the installed app still launches with its last-known icon/name — no broken icon, no reversion to the generic mark.
+
+### FR-93 (S) — v2: Fixed HikRAD attribution
+
+**Master (Decision 43):** a small, permanent "Powered by HikRAD" mark stays present regardless of how fully a customer rebrands (FR-91/92) every other surface.
+
+*Elaboration:*
+- **FR-93.1** — A hardcoded, trilingual footer line (`common.poweredBy` or similar locale key, literal text "HikRAD" embedded directly, never interpolated from `branding.name`) renders in the panel and portal shells, and on both apps' login screens — every authenticated screen, plus the pre-auth login page, plus the installed-PWA shell (so it survives standalone-mode launch, not just the browser tab). Small and unobtrusive by design (footer-line weight, not a banner), never blocking or overlapping primary content.
+- **FR-93.2** — **Not sourced from settings, not configurable.** No `branding.*` key, no new settings field, and no toggle anywhere in Settings drives this mark — it ships the same way on every install, independent of what the admin has configured for FR-91's identity. This is the one place in the phase where "settings-driven" is deliberately *not* the mechanism.
+- **FR-93.3** — Scope is the running software's own UI only: panel, portal, both PWAs. **Not** shown on printed receipts (FR-21), vouchers, or reports (FR-45–48) — those are the ISP's own commercial documents handed to their subscribers, and FR-91/92 already give the ISP full control of those surfaces.
+- **FR-93.4** — Residual-risk posture, restated explicitly so it isn't mistaken for a gap: a customer with file-level access to their own on-prem deployment could still edit the shipped frontend bundle to remove this mark, exactly as they could edit any other shipped file. The guarantee this FR makes is that the *product's own UI* (Settings, panel, portal) never offers a path to hide or change it — the same "no DRM/anti-tamper, residual risk accepted by design" posture [01](01-platform-install-licensing.md) FR-82.4 already establishes for the license itself, not a stronger one.
+
+**Acceptance:**
+- **AC-93a** — Given an admin has renamed the instance and uploaded a new logo/colors (FR-91), when any panel or portal screen (including the login screens and an installed PWA) is viewed, then the customer's identity shows everywhere FR-92 specifies **and** a "Powered by HikRAD" mark is still visible in the footer.
+- **AC-93b** — Given Settings > Branding (or any other settings screen), then no field, toggle, or hidden API parameter exists anywhere that hides or edits the attribution mark — verified by the phase gate's grep/contract leg, not by review alone.
+- **AC-93c** — Given a printed receipt, voucher, or report, then no HikRAD attribution appears on it (scope boundary, FR-93.3).
 
 ### NFR-6 (owned) — Localization (product-wide)
 **Master:** All UI strings externalized; Arabic and Kurdish Sorani with true RTL layout (mirrored navigation, charts LTR inside RTL pages); English as development baseline; numerals and currency per locale.
