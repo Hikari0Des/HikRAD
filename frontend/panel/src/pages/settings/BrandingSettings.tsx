@@ -1,22 +1,30 @@
-import { useRef } from 'react'
+import { useRef, useState } from 'react'
 
 import { LoadingState, useT } from '@hikrad/shared'
 
+import { deleteBrandingLogo, uploadBrandingLogo } from '../../api/branding'
+import { ApiError } from '../../api/client'
 import { useAuth } from '../../auth/AuthContext'
 import { PERM_SETTINGS_EDIT } from '../../auth/permissions'
 import { Button } from '../../components/Button'
 import { Field, TextInput } from '../../components/form'
+import { useToast } from '../../components/Toast'
 import { useSettingsGroup } from './useSettingsGroup'
 
-const MAX_LOGO_BYTES = 512 * 1024
-
-/** Branding settings (FR-53.1): ISP name/colors + a logo with icon preview. */
+/** Branding settings (FR-53.1, v2 phase 11 FR-91): ISP name/colors + a
+ * disk-backed logo with icon preview. The logo uploads/deletes immediately
+ * through its own endpoint (contract C3) — it is server-managed and
+ * rejected by this screen's own name/color save (see
+ * validateServerManagedFields on the backend), so it is never part of the
+ * `submit()` body below. */
 export function BrandingSettings() {
   const t = useT()
   const { can } = useAuth()
+  const { toast } = useToast()
   const canEdit = can(PERM_SETTINGS_EDIT)
   const g = useSettingsGroup('branding')
   const fileRef = useRef<HTMLInputElement>(null)
+  const [uploading, setUploading] = useState(false)
 
   if (!g.loaded) return <LoadingState />
 
@@ -31,7 +39,6 @@ export function BrandingSettings() {
     await g.save(
       {
         name: v.name ?? 'HikRAD',
-        logo_url: v.logo_url ?? null,
         primary_color: v.primary_color ?? '#08748f',
         secondary_color: v.secondary_color ?? '#0f172a',
       },
@@ -40,16 +47,37 @@ export function BrandingSettings() {
     )
   }
 
-  function onLogoChosen(e: React.ChangeEvent<HTMLInputElement>) {
+  async function onLogoChosen(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
+    if (fileRef.current) fileRef.current.value = ''
     if (!file) return
-    if (file.size > MAX_LOGO_BYTES) {
-      g.setField('logo_url', v.logo_url ?? null)
-      return
+    setUploading(true)
+    try {
+      const res = await uploadBrandingLogo(file)
+      g.setField('logo_url', res.logo_url ?? null)
+      toast(t('settings.saved'), 'ok')
+    } catch (err) {
+      const message =
+        err instanceof ApiError && err.fieldErrors.length > 0
+          ? err.fieldErrors[0].message
+          : t('common.error.body')
+      toast(message, 'danger')
+    } finally {
+      setUploading(false)
     }
-    const reader = new FileReader()
-    reader.onload = () => g.setField('logo_url', reader.result as string)
-    reader.readAsDataURL(file)
+  }
+
+  async function onRemoveLogo() {
+    setUploading(true)
+    try {
+      await deleteBrandingLogo()
+      g.setField('logo_url', null)
+      toast(t('settings.saved'), 'ok')
+    } catch {
+      toast(t('common.error.body'), 'danger')
+    } finally {
+      setUploading(false)
+    }
   }
 
   return (
@@ -85,13 +113,23 @@ export function BrandingSettings() {
                 type="file"
                 accept="image/png,image/svg+xml,image/jpeg"
                 className="hidden"
-                onChange={onLogoChosen}
+                onChange={(e) => void onLogoChosen(e)}
               />
-              <Button variant="secondary" size="sm" onClick={() => fileRef.current?.click()}>
-                {t('settings.branding.upload')}
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={uploading}
+                onClick={() => fileRef.current?.click()}
+              >
+                {uploading ? t('ui.working') : t('settings.branding.upload')}
               </Button>
               {v.logo_url ? (
-                <Button variant="ghost" size="sm" onClick={() => g.setField('logo_url', null)}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={uploading}
+                  onClick={() => void onRemoveLogo()}
+                >
                   {t('ui.remove')}
                 </Button>
               ) : null}

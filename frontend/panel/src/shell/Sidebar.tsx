@@ -5,6 +5,7 @@ import { useT } from '@hikrad/shared'
 
 import { listTickets } from '../api/paymentTickets'
 import { useAuth } from '../auth/AuthContext'
+import { brandInitial, useBranding } from '../branding'
 import {
   PERM_AUDIT_VIEW,
   PERM_PAYMENT_TICKETS_VERIFY,
@@ -118,11 +119,26 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const t = useT()
   const { can } = useAuth()
   const pendingTickets = usePendingTicketCount(can(PERM_PAYMENT_TICKETS_VERIFY))
+  const branding = useBranding()
 
   return (
     <div className="flex h-full flex-col">
-      <div className="border-b border-surface-sunken px-4 py-4">
-        <span className="text-xl font-bold text-brand">{t('common.productName')}</span>
+      <div className="flex items-center gap-2 border-b border-surface-sunken px-4 py-4">
+        {branding.logo_url ? (
+          <img
+            src={branding.logo_url}
+            alt={branding.name}
+            className="h-7 w-7 shrink-0 object-contain"
+          />
+        ) : (
+          <span
+            aria-hidden="true"
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-brand text-sm font-bold text-ink-inverse"
+          >
+            {brandInitial(branding.name)}
+          </span>
+        )}
+        <span className="truncate text-xl font-bold text-brand">{branding.name}</span>
       </div>
       <nav className="flex-1 overflow-y-auto p-2">
         {NAV_GROUPS.map((group, gi) => {

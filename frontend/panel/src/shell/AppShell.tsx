@@ -8,6 +8,7 @@ import { useT } from '@hikrad/shared'
 import { LicenseBanner } from '../license/LicenseBanner'
 import { LicenseProvider } from '../license/LicenseContext'
 import { CriticalBanner, NotificationProvider } from './notifications'
+import { PoweredByFooter } from './PoweredByFooter'
 import { SidebarContent } from './Sidebar'
 import { TopBar } from './TopBar'
 
@@ -68,6 +69,7 @@ export function AppShell() {
             <main className="mx-auto w-full max-w-6xl p-4 md:p-6">
               <Outlet />
             </main>
+            <PoweredByFooter />
           </div>
         </div>
       </NotificationProvider>

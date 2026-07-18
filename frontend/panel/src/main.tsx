@@ -7,6 +7,7 @@ import '@hikrad/shared/ui.css'
 
 import { App } from './App'
 import { AuthProvider } from './auth/AuthContext'
+import { BrandingProvider } from './branding'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { ToastProvider } from './components/Toast'
 import { BrandedManifestLink } from './pwa/BrandedManifestLink'
@@ -27,20 +28,22 @@ initTheme()
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <I18nProvider>
-      <BrandedManifestLink />
-      <OfflineBanner />
-      <ErrorBoundary>
-        <BrowserRouter>
-          <AuthProvider>
-            <ToastProvider>
-              <NotificationClickRouter />
-              <App />
-            </ToastProvider>
-          </AuthProvider>
-        </BrowserRouter>
-      </ErrorBoundary>
-      <InstallBanner />
-      <UpdateToast />
+      <BrandingProvider>
+        <BrandedManifestLink />
+        <OfflineBanner />
+        <ErrorBoundary>
+          <BrowserRouter>
+            <AuthProvider>
+              <ToastProvider>
+                <NotificationClickRouter />
+                <App />
+              </ToastProvider>
+            </AuthProvider>
+          </BrowserRouter>
+        </ErrorBoundary>
+        <InstallBanner />
+        <UpdateToast />
+      </BrandingProvider>
     </I18nProvider>
   </StrictMode>,
 )

@@ -1,6 +1,6 @@
 import { useFormatters, useT } from '@hikrad/shared'
 
-import { useBranding } from '../../hooks/useBranding'
+import { useBranding } from '../../branding'
 
 /** ISP header + generated-at, shown only in the print view (task 1). */
 export function PrintHeader({ reportTitle }: { reportTitle: string }) {

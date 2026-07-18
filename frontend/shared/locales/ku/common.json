@@ -2,6 +2,7 @@
   "_comment": "Kurdish (Sorani) — drafted by the dev team, needs native review before the v1 cut (sub-PRD 07 risk note). Keys must always match en; i18n:check enforces it. Fallback chain is ku→en, never ku→ar.",
   "common": {
     "productName": "HikRAD",
+    "poweredBy": "پاڵپشتی HikRAD",
     "loading": "باردەکرێت…",
     "retry": "دووبارە هەوڵ بدەرەوە",
     "empty": {

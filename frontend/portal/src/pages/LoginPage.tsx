@@ -6,6 +6,7 @@ import { useT } from '@hikrad/shared'
 import { useAuth } from '../auth/AuthContext'
 import { brandInitial, useBranding } from '../branding'
 import { LanguageSwitcher } from '../components/LanguageSwitcher'
+import { PoweredByFooter } from '../shell/PoweredByFooter'
 
 /** Branded subscriber login (FR-41.1, FR-43): same credential as PPPoE,
  * rate-limited server-side (NFR-4.6), friendly errors for the disabled/
@@ -120,6 +121,7 @@ export function LoginPage() {
       <div className="flex justify-center">
         <LanguageSwitcher />
       </div>
+      <PoweredByFooter />
     </div>
   )
 }

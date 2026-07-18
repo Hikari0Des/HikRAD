@@ -1,6 +1,7 @@
 {
   "common": {
     "productName": "HikRAD",
+    "poweredBy": "مدعوم من HikRAD",
     "loading": "جارٍ التحميل…",
     "retry": "حاول مرة أخرى",
     "empty": {

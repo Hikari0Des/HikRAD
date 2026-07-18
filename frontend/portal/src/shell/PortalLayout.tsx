@@ -6,6 +6,7 @@ import { useAuth } from '../auth/AuthContext'
 import { brandInitial, useBranding } from '../branding'
 import { LanguageSwitcher } from '../components/LanguageSwitcher'
 import { ThemeSwitcher } from '../components/ThemeSwitcher'
+import { PoweredByFooter } from './PoweredByFooter'
 
 const TABS = [
   { to: '/home', key: 'portal.nav.home' },
@@ -70,6 +71,7 @@ export function PortalLayout() {
 
       <main className="flex-1 px-4 pb-20 pt-2">
         <Outlet />
+        <PoweredByFooter />
       </main>
 
       <nav

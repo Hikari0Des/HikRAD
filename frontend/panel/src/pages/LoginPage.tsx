@@ -5,7 +5,9 @@ import { useT } from '@hikrad/shared'
 
 import { ApiError, NetworkError } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
+import { brandInitial, useBranding } from '../branding'
 import { LanguageSwitcher } from '../components/LanguageSwitcher'
+import { PoweredByFooter } from '../shell/PoweredByFooter'
 import { TotpEnroll } from './security/TotpEnroll'
 
 type Step = 'credentials' | 'totp' | 'enroll'
@@ -15,6 +17,7 @@ export function LoginPage() {
   const t = useT()
   const navigate = useNavigate()
   const location = useLocation()
+  const branding = useBranding()
 
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
@@ -77,7 +80,23 @@ export function LoginPage() {
     <div className="flex min-h-screen flex-col items-center justify-center gap-6 p-4">
       <div className="w-full max-w-sm rounded-lg bg-surface-raised p-6 shadow">
         <div className="mb-6 text-center">
-          <div className="text-2xl font-bold text-brand">{t('common.productName')}</div>
+          <div className="mb-2 flex flex-col items-center gap-2">
+            {branding.logo_url ? (
+              <img
+                src={branding.logo_url}
+                alt={branding.name}
+                className="h-12 w-12 rounded-xl object-contain"
+              />
+            ) : (
+              <span
+                aria-hidden="true"
+                className="flex h-12 w-12 items-center justify-center rounded-xl bg-brand text-xl font-bold text-ink-inverse"
+              >
+                {brandInitial(branding.name)}
+              </span>
+            )}
+          </div>
+          <div className="text-2xl font-bold text-brand">{branding.name}</div>
           <h1 className="mt-1 text-sm text-ink-muted">
             {t('login.title')} — {t('login.subtitle')}
           </h1>
@@ -184,6 +203,7 @@ export function LoginPage() {
         )}
       </div>
       <LanguageSwitcher />
+      <PoweredByFooter />
     </div>
   )
 }
