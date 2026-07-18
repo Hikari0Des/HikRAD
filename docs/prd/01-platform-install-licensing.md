@@ -1,6 +1,6 @@
 # HikRAD — Sub-PRD 01: Platform, Install & Licensing
 
-> Derived from [docs/PRD.md](../PRD.md) v1.1 on 2026-07-08 (updated 2026-07-09: FR-57 added — Decision 18; FR-53 gains WhatsApp credentials — Decision 16; updated 2026-07-18 for master Decision 38 — v2 phase 5: FR-81–83, closed-source distribution & licensing hardening; updated 2026-07-18 for master Decision 39 — v2 phase 6: FR-84, per-manager preferences). Owns: FR-49, FR-50, FR-51, FR-52, FR-53, FR-57, FR-81, FR-82, FR-83, FR-84 · NFR-3, NFR-7, NFR-8 · Risks: solo-dev scope creep, license cracking · Open question 3 (price point)
+> Derived from [docs/PRD.md](../PRD.md) v1.1 on 2026-07-08 (updated 2026-07-09: FR-57 added — Decision 18; FR-53 gains WhatsApp credentials — Decision 16; updated 2026-07-18 for master Decision 38 — v2 phase 5: FR-81–83, closed-source distribution & licensing hardening; updated 2026-07-18 for master Decision 39 — v2 phase 6: FR-84, per-manager preferences; updated 2026-07-18 for master Decision 40 — v2 phase 7: FR-86–88, one-click update from the panel). Owns: FR-49, FR-50, FR-51, FR-52, FR-53, FR-57, FR-81, FR-82, FR-83, FR-84, FR-86, FR-87, FR-88 · NFR-3, NFR-7, NFR-8 · Risks: solo-dev scope creep, license cracking · Open question 3 (price point)
 > Depends on: none (this is the foundation every other module builds on) · Depended on by: **all** sub-PRDs (Compose skeleton, `/api/v1` framework, migrations, settings service), especially [02-radius-nas-aaa](02-radius-nas-aaa.md) (service wiring) and [03-lossless-accounting-live-monitoring](03-lossless-accounting-live-monitoring.md) (disk-backed queue volumes, backup of hypertables).
 
 ## 1. Scope & context
@@ -117,6 +117,41 @@ Stack (fixed by master §8): Go backend (`hikrad-api`, `hikrad-acct`, `hikrad-mo
 - **AC-84b** — Given manager A authenticated, when A calls `PUT /api/v1/me/preferences` with manager B's id anywhere in the request, then the write still only ever affects A's own row (the endpoint has no id parameter to substitute); a direct attempt to address B's preferences by any other route returns 403.
 - **AC-84c** — Given any `manager_preferences` field, then no code path reads it to decide a permission check, a `ScopeFilter` result, or a monetary amount/currency — verified by the phase gate's grep/contract leg, not by review alone.
 
+### FR-86 (M) — v2: Host updater agent (`hikrad-updaterd`)
+
+**Master (Decision 40):** a privileged host-side daemon makes the panel's existing guided-update screen (v1.1, `SystemSettings.tsx`) actually trigger an update, because the panel's own container cannot restart the stack that contains it.
+
+*Elaboration:*
+- **FR-86.1** — Installed by `install.sh` (source and bundle delivery modes alike) as a systemd unit running a new `scripts/hikrad-updaterd`; listens **only** on a local Unix domain socket (never a TCP port), bind-mounted read-write into `hikrad-api`'s container — no other container, and nothing off-host, can reach it.
+- **FR-86.2** — Exposes exactly four verbs — `check`, `update`, `status`, `rollback-status` — as newline-delimited JSON over the socket. No verb accepts a shell command, a file path outside an allow-listed bundle-drop directory, or any argument that reaches a shell string; every call is authenticated by a per-install shared token (a new secret alongside the existing DB password/JWT secret/encryption key `gen-env.sh` already generates), and a missing or wrong token is refused before the daemon touches the lock or spawns anything.
+- **FR-86.3** — `update` shells into the existing, already-battle-tested `hikrad update` CLI path (`scripts/hikrad`'s `cmd_update` — pre-backup → apply → health-gate → auto-rollback, FR-51.4) as a child process via an argv slice, never a shell string; the daemon does not reimplement backup, apply, health-check, or rollback logic — it starts that one process and relays its progress.
+- **FR-86.4** — A file-based lock (not in-memory state) shared by the daemon and the CLI's own `cmd_update` means a CLI-triggered and a panel-triggered update can never run concurrently; the second caller is refused immediately, naming the current lock holder, never queued.
+- **FR-86.5** — Because `hikrad update`'s own rollback already runs synchronously inside the one child process regardless of what's watching it, rollback correctness does not depend on the daemon, `hikrad-api`, or the panel surviving — a killed panel container mid-update does not interrupt an in-progress rollback.
+
+### FR-87 (S) — v2: Panel one-click update flow
+
+**Master (Decision 40):** Settings > System's existing guided-update screen gains working "Check for update" and "Update now" actions with live progress, instead of only showing the copy-paste command.
+
+*Elaboration:*
+- **FR-87.1** — `hikrad-api` relays FR-86's socket protocol over four routes under `/api/v1/system/update/*`, gated by a new `system.update` permission (deny-by-default like every other permission string; admin has it via the existing wildcard role, no other builtin role does): a check endpoint, a `POST` that starts an update and returns `202` immediately, an SSE stream re-emitting the daemon's progress events, and a status endpoint the panel calls on reconnect to learn whether an update it lost the stream for succeeded or rolled back.
+- **FR-87.2** — The panel's "Update now" action is double-confirmed (explicit pre-backup notice) before the `POST` fires. Because the panel's own container is expected to be replaced mid-update, the browser's SSE connection drops; the panel reconnects/polls the status endpoint plus `GET /api/v1/system/version` until it can report success or rollback definitively — it never leaves the operator without an answer.
+- **FR-87.3** — Every relay call is audit-logged (`auth.Audit`, the existing append-only mechanism every mutating endpoint already uses) with the requesting manager's identity — the daemon itself only logs to its own file; "who triggered this" is owned by `hikrad-api`'s authenticated request context, not the daemon.
+
+### FR-88 (M) — v2: Update safety guarantees
+
+**Master (Decision 40):** restates, as explicit acceptance requirements, the safety bar FR-86/87 are held to — not new mechanism beyond them, the bar those two must clear.
+
+*Elaboration:*
+- **FR-88.1** — No verb, argument, or field accepted by the daemon ever reaches a shell interpreter (mirrors FR-82.2's boundary-restated-as-requirement pattern); the gate greps for this.
+- **FR-88.2** — A second concurrent update attempt (panel-triggered while a CLI update is running, or vice versa) is refused, never silently queued or dropped.
+- **FR-88.3** — A deliberately broken update rolls back autonomously to a healthy previous version even with the panel's container dead throughout — the daemon's own aliveness is not on the critical path for rollback (FR-86.5).
+
+**Acceptance:**
+- **AC-86a** — Given an admin clicks "Update now," when the update completes, then the panel (after reconnecting) shows the new version and `hikrad backup list` shows the pre-update backup FR-51.1 already produces.
+- **AC-86b** — Given a bundle deliberately swapped for one that fails health-check, when "Update now" runs, then the stack rolls back to the previous version autonomously, and the panel — even if its own container was replaced and came back — reports "rolled back to vX" on reconnect.
+- **AC-87a** — Given a non-admin manager (no `system.update` permission), then neither update button renders in the panel, and a direct API call to any `/system/update/*` route `403`s.
+- **AC-88a** — Given two update attempts start within the same second (one from the CLI, one from the panel), then exactly one proceeds and the other is refused with a "locked" message naming the current holder.
+
 ### NFR-3 (owned) — Hardware footprint
 Runs fully on one modest server: **4 vCPU / 8 GB RAM / 200 GB SSD** for the 5k-subscriber tier. *Elaboration:* the installer enforces minimums with an override flag; Compose sets per-container memory limits so one component cannot OOM the box; image sizes and retention defaults must fit 200 GB with 3 years of rollups (sizing math verified in [03](03-lossless-accounting-live-monitoring.md) FR-33).
 
@@ -139,15 +174,17 @@ Solo-dev-friendly: monorepo, one backend service + workers, automated migrations
 
 ## 4. Data & interfaces
 
-**Owned entities:** `settings` (key, type, value JSONB, updated_by, updated_at), `license` (key_id, payload, signature, fingerprint, state, grace_started_at), `schema_migrations`, **`manager_preferences`** (manager_id PK, doc JSONB, schema_version, updated_at — v2 FR-84, exact column/JSON shape frozen in the phase doc). FR-81/82 add no new table — the registry-pull credential and bundle/signature material are file-based artifacts (installer-verified, not DB rows); exact shape frozen in the phase doc.
+**Owned entities:** `settings` (key, type, value JSONB, updated_by, updated_at), `license` (key_id, payload, signature, fingerprint, state, grace_started_at), `schema_migrations`, **`manager_preferences`** (manager_id PK, doc JSONB, schema_version, updated_at — v2 FR-84, exact column/JSON shape frozen in the phase doc). FR-81/82 add no new table — the registry-pull credential and bundle/signature material are file-based artifacts (installer-verified, not DB rows); exact shape frozen in the phase doc. **FR-86–88 add no new table either** — the update lock is a flock'd file, not a row, and "who triggered an update" rides the existing `audit_log` via `auth.Audit`; exact socket protocol, lock path, and systemd unit name are frozen in `docs/v2/phases/phase-v2-7-one-click-update/00-phase.md`.
 
 **Exposes:**
 - `GET/PUT /api/v1/settings/{group}` (admin-gated)
 - `GET /api/v1/license`, `POST /api/v1/license` (upload), `POST /api/v1/license/request-blob`
 - `GET /api/v1/system/version` (app version, schema version, update channel)
 - `GET/PUT /api/v1/me/preferences` (any authenticated manager, self only — v2 FR-84)
+- `GET /api/v1/system/update/check`, `POST /api/v1/system/update`, `GET /api/v1/system/update/stream` (SSE), `GET /api/v1/system/update/status` — `system.update` permission, relaying `hikrad-updaterd`'s unix-socket protocol (v2 FR-86–88, exact shapes frozen in the phase doc).
 - Compose service names & internal DNS (`postgres`, `redis`, …) — the contract other modules' services rely on.
 - `install.sh --bundle <path> | --registry`, `hikrad update --bundle <path>` (FR-81.4) — installer/CLI surface, not HTTP.
+- `hikrad-updaterd`'s unix socket (host-local, token-authenticated — FR-86.1/86.2) — not HTTP, not reachable off-host.
 
 **Consumes:** health signals from [03](03-lossless-accounting-live-monitoring.md) FR-35 for install-time smoke checks; audit-log write API from [06](06-managers-roles-security.md).
 
@@ -162,7 +199,8 @@ First-run wizard: linear stepper, one decision per screen, mobile-usable but des
 - Panel/portal auth, permissions, audit log → [06](06-managers-roles-security.md).
 - PWA packaging, branding consumption → [07](07-subscriber-portal-pwa.md).
 - **Deferred by master:** cloud/SaaS multi-tenant hosting (non-goal); public API docs & stability guarantees (post-v1); paid-major-update commercial flow beyond version entitlement in the key (Decision 2 — enforcement detail post-v1).
-- **Explicitly out of scope (FR-82.4):** DRM, code obfuscation, anti-debugging, or any runtime tamper-detection beyond the license/fingerprint check itself. The one-click updater's panel-triggered update UX → v2-7 (`docs/v2/07-one-click-updater.md`), which builds on this phase's registry/bundle plumbing rather than the reverse.
+- **Explicitly out of scope (FR-82.4):** DRM, code obfuscation, anti-debugging, or any runtime tamper-detection beyond the license/fingerprint check itself.
+- **Now in scope (was deferred to v2-7):** the one-click updater's panel-triggered update UX is committed as FR-86–88 above, building on this phase's registry/bundle plumbing (FR-81) as anticipated.
 
 ## 7. Risks & open questions (owned)
 
