@@ -4,6 +4,7 @@ import { useT } from '@hikrad/shared'
 
 import { ApiError } from '../api/client'
 import { getMe, updateMe } from '../api/me'
+import { Field, TextInput } from '../components/form'
 import { useAsync } from '../hooks/useAsync'
 
 /** Account self-care (FR-44): phone + password, subscriber-safe fields only —
@@ -61,39 +62,36 @@ export function SettingsPage() {
         onSubmit={onSubmit}
         className="flex flex-col gap-4 rounded-xl bg-surface-raised p-4 shadow-sm"
       >
-        <label className="flex flex-col gap-1 text-sm">
-          {t('portal.settings.nameLabel')}
-          <input
+        <Field label={t('portal.settings.nameLabel')} htmlFor="settings-name">
+          <TextInput
+            id="settings-name"
             type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            className="rounded-md border border-surface-sunken bg-surface px-3 py-2 text-base"
           />
-        </label>
+        </Field>
 
-        <label className="flex flex-col gap-1 text-sm">
-          {t('portal.settings.phoneLabel')}
-          <input
+        <Field label={t('portal.settings.phoneLabel')} htmlFor="settings-phone">
+          <TextInput
+            id="settings-phone"
             type="tel"
             dir="ltr"
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
             placeholder={me.data ? undefined : t('common.loading')}
-            className="rounded-md border border-surface-sunken bg-surface px-3 py-2 text-base"
           />
-        </label>
+        </Field>
 
-        <label className="flex flex-col gap-1 text-sm">
-          {t('portal.settings.emailLabel')}
-          <input
+        <Field label={t('portal.settings.emailLabel')} htmlFor="settings-email">
+          <TextInput
+            id="settings-email"
             type="email"
             dir="ltr"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder={me.data ? undefined : t('common.loading')}
-            className="rounded-md border border-surface-sunken bg-surface px-3 py-2 text-base"
           />
-        </label>
+        </Field>
 
         <hr className="border-surface-sunken" />
 
@@ -101,29 +99,30 @@ export function SettingsPage() {
           {t('portal.settings.passwordWarning')}
         </p>
 
-        <label className="flex flex-col gap-1 text-sm">
-          {t('portal.settings.newPasswordLabel')}
-          <input
+        <Field label={t('portal.settings.newPasswordLabel')} htmlFor="settings-new-password">
+          <TextInput
+            id="settings-new-password"
             type="password"
             dir="ltr"
             autoComplete="new-password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="rounded-md border border-surface-sunken bg-surface px-3 py-2 text-base"
           />
-        </label>
+        </Field>
 
-        <label className="flex flex-col gap-1 text-sm">
-          {t('portal.settings.confirmPasswordLabel')}
-          <input
+        <Field
+          label={t('portal.settings.confirmPasswordLabel')}
+          htmlFor="settings-confirm-password"
+        >
+          <TextInput
+            id="settings-confirm-password"
             type="password"
             dir="ltr"
             autoComplete="new-password"
             value={confirmPassword}
             onChange={(e) => setConfirmPassword(e.target.value)}
-            className="rounded-md border border-surface-sunken bg-surface px-3 py-2 text-base"
           />
-        </label>
+        </Field>
 
         {error ? (
           <p role="alert" className="text-sm text-danger">

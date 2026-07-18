@@ -38,3 +38,16 @@ afterEach(() => {
   cleanup()
   window.localStorage.clear()
 })
+
+// jsdom gaps Radix UI expects to exist (mirrors the panel's setup — portal
+// gained its first Radix dependencies in v2 phase 12, C3).
+class ResizeObserverStub {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+globalThis.ResizeObserver = globalThis.ResizeObserver ?? ResizeObserverStub
+Element.prototype.hasPointerCapture = Element.prototype.hasPointerCapture ?? (() => false)
+Element.prototype.setPointerCapture = Element.prototype.setPointerCapture ?? (() => {})
+Element.prototype.releasePointerCapture = Element.prototype.releasePointerCapture ?? (() => {})
+Element.prototype.scrollIntoView = Element.prototype.scrollIntoView ?? (() => {})
