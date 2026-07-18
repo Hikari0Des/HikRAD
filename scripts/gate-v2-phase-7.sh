@@ -138,10 +138,24 @@ fi
 
 # --- Item 9: panel/build -----------------------------------------------------
 echo "-- Panel --"
-if grep -qE "['\"]system\.update['\"]" frontend/panel/src/pages/settings/SystemSettings.tsx 2>/dev/null; then
+# The permission string lives behind a named constant (auth/permissions.ts'
+# established PERM_* pattern, not a magic string) — check the constant's
+# definition AND that SystemSettings.tsx actually imports/uses it, rather
+# than grepping for the literal 'system.update' in the page file itself.
+if grep -qE "['\"]system\.update['\"]" frontend/panel/src/auth/permissions.ts 2>/dev/null \
+   && grep -q "PERM_SYSTEM_UPDATE" frontend/panel/src/pages/settings/SystemSettings.tsx 2>/dev/null; then
   pass "SystemSettings.tsx references the system.update permission gate"
 else
   fail "SystemSettings.tsx wires the update buttons behind system.update (not yet implemented)"
+fi
+
+if [ -f frontend/panel/src/api/updates.ts ] && command -v npm >/dev/null 2>&1; then
+  check "panel builds" sh -c 'cd frontend && npm run build --workspace=panel'
+  check "panel lints (eslint + prettier)" sh -c 'cd frontend && npm run lint --workspace=panel'
+  check "panel vitest suite passes" sh -c 'cd frontend && npm run test --workspace=panel'
+  check "i18n:check clean (0 hardcoded, 0 missing keys)" sh -c 'cd frontend && npm run i18n:check'
+else
+  fail "panel build/lint/vitest/i18n:check (frontend/panel/src/api/updates.ts not yet implemented, or npm unavailable)"
 fi
 
 # --- Item 10: docs accuracy --------------------------------------------------

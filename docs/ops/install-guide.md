@@ -61,8 +61,12 @@ Both modes do the same things (FR-49.1–49.5), differing only in step 6:
    into `/opt/hikrad/.env` — database password, encryption key, JWT signing
    key, and a **backup passphrase**. `--bundle` additionally verifies and
    stages the release into `/opt/hikrad/release/`.
-4. Installs the `hikrad` CLI to `/usr/local/bin/hikrad` and a nightly backup
-   cron entry.
+4. Installs the `hikrad` CLI to `/usr/local/bin/hikrad`, a nightly backup
+   cron entry, and — best-effort, never blocks the install if it can't —
+   `hikrad-updaterd` (a systemd service) so Settings > System's **Update
+   now** button works from the panel (v2 phase 7, see
+   [update.md](update.md)); the guided `hikrad update` command works either
+   way.
 5. Configures Caddy for Let's Encrypt if you passed `--domain`; otherwise
    leaves the self-signed default in place.
 6. Starts every service: `postgres`, `redis`, `hikrad-api`, `hikrad-acct`,

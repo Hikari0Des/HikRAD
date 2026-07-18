@@ -7,9 +7,54 @@ hikrad update                              # dev-only source checkouts: git pull
 
 The panel mirrors this runbook at **Settings > System** (v1.1): it shows the
 installed version (from `GET /api/v1/system/version`) and walks the operator
-through these exact commands. A one-click panel-triggered update is planned
-as v2 phase 7 (`docs/v2/07-one-click-updater.md`), which will build on this
-phase's bundle/registry plumbing rather than the reverse.
+through these exact commands — always available, regardless of whether the
+one-click path below is provisioned on this install.
+
+## One-click update from the panel (FR-86–88, v2 phase 7)
+
+Settings > System also gains **Check for update** / **Update now** for a
+manager holding the `system.update` permission (admin by default). This
+does not replace the commands above — it's the exact same `hikrad update`
+path, triggered from a browser instead of a terminal, with live progress.
+
+**How it works:** a small host daemon, `hikrad-updaterd`, runs directly on
+the server (never inside a container — it has to be able to update every
+container, including any that would host it) and listens on a local unix
+socket, never a network port. `hikrad-api` relays the panel's requests to
+it over that socket, authenticated by a shared token (`HIKRAD_UPDATER_TOKEN`
+in `.env`). The daemon does not reimplement backup, apply, health-check, or
+rollback — clicking "Update now" runs the identical `hikrad update` CLI
+path described above as a child process and streams its progress back.
+
+**A lock file (`data/updater/update.lock`, held by whichever `hikrad
+update` invocation is actually running) means a CLI-triggered and a
+panel-triggered update can never run at the same time** — whichever gets
+there first wins, the other is refused immediately with a "locked" message
+rather than queued.
+
+**Checking for an update never touches the network** (NFR-7): the daemon
+scans a bundle-drop directory, `$HIKRAD_ROOT/incoming/`, for the highest
+`hikrad-vX.Y.Z.tar` newer than the running version. Get the file onto the
+server however you already move files there without reliable internet
+(`scp`, USB, a download portal) into that directory, *then* click "Check
+for update" in the panel.
+
+**Existing installs upgrading to this version:** `hikrad update` alone
+only swaps container images — it never installs the daemon or its systemd
+unit, and an `.env` from before this version has no
+`HIKRAD_UPDATER_TOKEN`. Run `install.sh` once after updating (source,
+`--bundle`, or the interactive repair option on an existing install) to
+provision `hikrad-updaterd` and backfill the token; `hikrad update` by
+itself leaves the guided-command path above working exactly as before, it
+just doesn't light up the one-click button until that one `install.sh` run
+happens. This is a one-time step per install, not a recurring one.
+
+**If the panel's own container is replaced mid-update** (the expected
+case — that's what an update to `hikrad-api` itself does), the browser's
+progress stream drops; the panel reconnects and, if it lost too much state
+to keep tailing directly, falls back to polling the daemon's status until
+it can report success or rollback definitively. It never leaves the
+operator staring at a dead progress bar.
 
 ## What happens
 

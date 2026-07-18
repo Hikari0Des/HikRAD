@@ -95,6 +95,24 @@ log "Copying installer scripts (install.sh, hikrad, gen-env.sh, verify-bundle.sh
 mkdir -p "$STAGE/scripts"
 cp "$ROOT/scripts/install.sh" "$ROOT/scripts/hikrad" "$ROOT/scripts/gen-env.sh" "$ROOT/scripts/verify-bundle.sh" "$STAGE/scripts/"
 
+# hikrad-updaterd (v2 phase 7, FR-86, C1): a static binary, not a shell
+# script, shipped in the same scripts/ directory as the CLI wrapper —
+# install.sh looks for it at $SCRIPTS_SRC_DIR/hikrad-updaterd and installs
+# it verbatim in bundle mode (never builds from source there, matching the
+# rest of this delivery model). Cross-compiled for the target Ubuntu
+# server's architecture regardless of what OS/arch builds the bundle
+# itself — CGO_ENABLED=0 keeps it a single static binary with no libc
+# dependency on the target, same posture every other HikRAD binary already
+# has inside its container image.
+if [ "${HIKRAD_SKIP_IMAGE_BUILD:-0}" = "1" ]; then
+  log "HIKRAD_SKIP_IMAGE_BUILD=1: skipping hikrad-updaterd build too (rehearsal/gate mode only — install.sh degrades gracefully with no binary present)"
+else
+  command -v go >/dev/null 2>&1 || die "go is required to build hikrad-updaterd (or set HIKRAD_SKIP_IMAGE_BUILD=1 for a rehearsal build without it)"
+  log "Building hikrad-updaterd (linux/amd64)…"
+  ( cd "$ROOT/backend" && GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o "$STAGE/scripts/hikrad-updaterd" ./cmd/hikrad-updaterd )
+  chmod 0755 "$STAGE/scripts/hikrad-updaterd"
+fi
+
 log "Copying migrations…"
 mkdir -p "$STAGE/migrations"
 cp "$ROOT"/backend/migrations/*.up.sql "$STAGE/migrations/"
