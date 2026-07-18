@@ -117,8 +117,9 @@ export function SubscriberFormModal({
       title={editing ? t('subscriber.editTitle') : t('subscriber.createTitle')}
     >
       <div className="grid gap-3 sm:grid-cols-2">
-        <Field label={t('subscriber.username')} error={errors.username}>
+        <Field label={t('subscriber.username')} error={errors.username} htmlFor="sub-username">
           <TextInput
+            id="sub-username"
             value={form.username}
             disabled={editing}
             dir="ltr"
@@ -130,8 +131,10 @@ export function SubscriberFormModal({
           label={editing ? t('subscriber.resetPassword') : t('subscriber.password')}
           error={errors.password}
           hint={editing ? t('subscriber.passwordHint') : undefined}
+          htmlFor="sub-password"
         >
           <TextInput
+            id="sub-password"
             type="text"
             value={form.password}
             dir="ltr"
@@ -148,19 +151,25 @@ export function SubscriberFormModal({
             onChange={(e) => set('noPassword', e.target.checked)}
           />
         </div>
-        <Field label={t('subscriber.name')} error={errors.name}>
-          <TextInput value={form.name} onChange={(e) => set('name', e.target.value)} />
-        </Field>
-        <Field label={t('subscriber.phone')} error={errors.phone}>
+        <Field label={t('subscriber.name')} error={errors.name} htmlFor="sub-name">
           <TextInput
+            id="sub-name"
+            value={form.name}
+            onChange={(e) => set('name', e.target.value)}
+          />
+        </Field>
+        <Field label={t('subscriber.phone')} error={errors.phone} htmlFor="sub-phone">
+          <TextInput
+            id="sub-phone"
             value={form.phone}
             dir="ltr"
             inputMode="tel"
             onChange={(e) => set('phone', e.target.value)}
           />
         </Field>
-        <Field label={t('subscriber.email')} error={errors.email}>
+        <Field label={t('subscriber.email')} error={errors.email} htmlFor="sub-email">
           <TextInput
+            id="sub-email"
             type="email"
             value={form.email}
             dir="ltr"
@@ -180,8 +189,12 @@ export function SubscriberFormModal({
             </p>
           ) : null}
         </div>
-        <Field label={t('subscriber.status')} error={errors.status}>
-          <Select value={form.status} onChange={(e) => set('status', e.target.value)}>
+        <Field label={t('subscriber.status')} error={errors.status} htmlFor="sub-status">
+          <Select
+            id="sub-status"
+            value={form.status}
+            onChange={(e) => set('status', e.target.value)}
+          >
             {STATUSES.map((s) => (
               <option key={s} value={s}>
                 {t(`common.status.${s}`)}
@@ -189,8 +202,12 @@ export function SubscriberFormModal({
             ))}
           </Select>
         </Field>
-        <Field label={t('subscriber.profile')} error={errors.profile_id}>
-          <Select value={form.profileId} onChange={(e) => set('profileId', e.target.value)}>
+        <Field label={t('subscriber.profile')} error={errors.profile_id} htmlFor="sub-profile">
+          <Select
+            id="sub-profile"
+            value={form.profileId}
+            onChange={(e) => set('profileId', e.target.value)}
+          >
             <option value="">{t('ui.none')}</option>
             {profiles
               .filter((p) => !p.archived || p.id === form.profileId)
@@ -201,8 +218,9 @@ export function SubscriberFormModal({
               ))}
           </Select>
         </Field>
-        <Field label={t('subscriber.expiry')} error={errors.expires_at}>
+        <Field label={t('subscriber.expiry')} error={errors.expires_at} htmlFor="sub-expiry">
           <TextInput
+            id="sub-expiry"
             type="datetime-local"
             value={form.expiresAt}
             dir="ltr"
@@ -210,8 +228,12 @@ export function SubscriberFormModal({
           />
         </Field>
         {managers.length > 0 && (
-          <Field label={t('subscriber.owner')} error={errors.owner_manager_id}>
-            <Select value={form.ownerId} onChange={(e) => set('ownerId', e.target.value)}>
+          <Field label={t('subscriber.owner')} error={errors.owner_manager_id} htmlFor="sub-owner">
+            <Select
+              id="sub-owner"
+              value={form.ownerId}
+              onChange={(e) => set('ownerId', e.target.value)}
+            >
               <option value="">{t('ui.none')}</option>
               {managers.map((m) => (
                 <option key={m.id} value={m.id}>
@@ -221,8 +243,12 @@ export function SubscriberFormModal({
             </Select>
           </Field>
         )}
-        <Field label={t('subscriber.macLock')} error={errors.mac_lock_mode}>
-          <Select value={form.macLockMode} onChange={(e) => set('macLockMode', e.target.value)}>
+        <Field label={t('subscriber.macLock')} error={errors.mac_lock_mode} htmlFor="sub-mac-lock">
+          <Select
+            id="sub-mac-lock"
+            value={form.macLockMode}
+            onChange={(e) => set('macLockMode', e.target.value)}
+          >
             {MAC_MODES.map((m) => (
               <option key={m} value={m}>
                 {t(`subscriber.macMode.${m}`)}
@@ -234,8 +260,10 @@ export function SubscriberFormModal({
           label={t('subscriber.staticIp')}
           error={errors.static_ip}
           hint={t('subscriber.staticIpHint')}
+          htmlFor="sub-static-ip"
         >
           <TextInput
+            id="sub-static-ip"
             value={form.staticIp}
             dir="ltr"
             onChange={(e) => set('staticIp', e.target.value)}
@@ -245,15 +273,22 @@ export function SubscriberFormModal({
           label={t('subscriber.rateOverride')}
           error={errors.rate_override}
           hint={t('subscriber.rateOverrideHint')}
+          htmlFor="sub-rate-override"
         >
           <TextInput
+            id="sub-rate-override"
             value={form.rateOverride}
             dir="ltr"
             onChange={(e) => set('rateOverride', e.target.value)}
           />
         </Field>
-        <Field label={t('subscriber.sessionLimitOverride')} error={errors.session_limit_override}>
+        <Field
+          label={t('subscriber.sessionLimitOverride')}
+          error={errors.session_limit_override}
+          htmlFor="sub-session-limit-override"
+        >
           <TextInput
+            id="sub-session-limit-override"
             type="number"
             value={form.sessionLimitOverride}
             dir="ltr"
@@ -264,26 +299,42 @@ export function SubscriberFormModal({
           label={t('subscriber.priceOverride')}
           hint={t('subscriber.priceOverrideHint')}
           error={errors.price_override}
+          htmlFor="sub-price-override"
         >
           <TextInput
+            id="sub-price-override"
             type="number"
             value={form.priceOverride}
             dir="ltr"
             onChange={(e) => set('priceOverride', e.target.value)}
           />
         </Field>
-        <Field label={t('subscriber.address')} error={errors.address}>
-          <TextInput value={form.address} onChange={(e) => set('address', e.target.value)} />
+        <Field label={t('subscriber.address')} error={errors.address} htmlFor="sub-address">
+          <TextInput
+            id="sub-address"
+            value={form.address}
+            onChange={(e) => set('address', e.target.value)}
+          />
         </Field>
         <div className="sm:col-span-2">
-          <Field label={t('subscriber.notes')} error={errors.notes}>
-            <Textarea rows={2} value={form.notes} onChange={(e) => set('notes', e.target.value)} />
+          <Field label={t('subscriber.notes')} error={errors.notes} htmlFor="sub-notes">
+            <Textarea
+              id="sub-notes"
+              rows={2}
+              value={form.notes}
+              onChange={(e) => set('notes', e.target.value)}
+            />
           </Field>
         </div>
         {form.status === 'disabled' && (
           <div className="sm:col-span-2">
-            <Field label={t('subscriber.disabledReason')} error={errors.disabled_reason}>
+            <Field
+              label={t('subscriber.disabledReason')}
+              error={errors.disabled_reason}
+              htmlFor="sub-disabled-reason"
+            >
               <TextInput
+                id="sub-disabled-reason"
                 value={form.disabledReason}
                 onChange={(e) => set('disabledReason', e.target.value)}
               />
