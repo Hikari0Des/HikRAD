@@ -142,8 +142,11 @@ describe('BulkBar (FR-4)', () => {
     )
 
     fireEvent.click(screen.getByText(en.bulk.setServiceType))
-    // The prompt has exactly one select — the service-type picker.
-    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'dual' } })
+    // The prompt has exactly one select — the service-type picker. Radix
+    // Select renders a role="combobox" trigger; opening it and clicking the
+    // target role="option" replaces the old native fireEvent.change (v2-12).
+    fireEvent.click(screen.getByRole('combobox'))
+    fireEvent.click(await screen.findByRole('option', { name: en.serviceType.dual }))
     fireEvent.click(screen.getByText(en.ui.apply))
 
     await waitFor(() => expect(posted).not.toBeNull())
