@@ -1,18 +1,32 @@
 package monitorsvc
 
-// Dashboard API (FR-32, contract C5). One call answers "is my network OK, is my
-// business OK": online-now (≤ 2 s fresh, straight off the live hash), a 24 h
-// online sparkline (downsampled from the per-minute online_samples), subscriber
-// tiles, today's revenue (D's revenue_daily view, read-only), NAS reachability
-// cards (from probe history), the RADIUS request rate and the pipeline invariant.
+// Dashboard API (FR-32, contract C5; v2-10 FR-89/90, contract C3). One call
+// answers "is my network OK, is my business OK": online-now (≤ 2 s fresh,
+// straight off the live hash), a 24 h online sparkline (downsampled from the
+// per-minute online_samples), subscriber tiles, today's revenue (D's
+// revenue_daily view, read-only), NAS reachability cards (from probe
+// history), the RADIUS request rate, the pipeline invariant, and (v2-10) a
+// manager's own balance, pending payment-ticket count, and an alerts feed.
 // Every cross-domain read degrades to a zero/empty value if its source table
 // isn't present yet (parallel agents), never a 500.
+//
+// Two request shapes, frozen by C3:
+//   - No ?widgets= at all: the exact pre-v2-10 behavior — requires
+//     monitoring.view (including its audit-on-denial, via the route's
+//     dashboardAccess middleware), every original field always present,
+//     byte-for-byte unchanged (gate item 8).
+//   - ?widgets=<comma-separated ids>: the new per-widget path — any
+//     authenticated manager may call it, a forbidden or unknown id is
+//     dropped from the response rather than erroring (FR-89.3), and only
+//     the data the surviving ids need is computed at all.
 
 import (
 	"context"
 	"net/http"
+	"strings"
 	"time"
 
+	"github.com/hikrad/hikrad/internal/auth"
 	"github.com/hikrad/hikrad/internal/httpapi"
 	"github.com/hikrad/hikrad/internal/live/livestate"
 )
@@ -42,16 +56,42 @@ type pipelineTile struct {
 }
 
 type dashboardResponse struct {
-	OnlineNow         int64          `json:"online_now"`
-	Online24hSpark    []sparkPoint   `json:"online_24h_sparkline"`
-	Subs              subTiles       `json:"subs"`
-	RevenueTodayIQD   int64          `json:"revenue_today_iqd"`
-	NASCards          []nasCard      `json:"nas_cards"`
-	RadiusRPS         float64        `json:"radius_rps"`
-	Pipeline          pipelineTile   `json:"pipeline"`
+	OnlineNow       int64        `json:"online_now"`
+	Online24hSpark  []sparkPoint `json:"online_24h_sparkline"`
+	Subs            subTiles     `json:"subs"`
+	RevenueTodayIQD int64        `json:"revenue_today_iqd"`
+	NASCards        []nasCard    `json:"nas_cards"`
+	RadiusRPS       float64      `json:"radius_rps"`
+	Pipeline        pipelineTile `json:"pipeline"`
+}
+
+// dashboardAccess is C3's per-request branch. The legacy (no ?widgets=) call
+// keeps the exact old auth.Require(PermView) gate — including its
+// audit-on-denial — so gate item 8's byte-for-byte promise covers observable
+// side effects, not just the response body. The new ?widgets= path only
+// authenticates; per-widget authorization happens inside the handler (C1).
+func dashboardAccess(next http.Handler) http.Handler {
+	legacy := auth.Require(PermView)(next)
+	filtered := auth.Require("")(next)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Has("widgets") {
+			filtered.ServeHTTP(w, r)
+			return
+		}
+		legacy.ServeHTTP(w, r)
+	})
 }
 
 func handleDashboard(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Query().Has("widgets") {
+		handleDashboardFiltered(w, r)
+		return
+	}
+	handleDashboardLegacy(w, r)
+}
+
+// handleDashboardLegacy is the frozen pre-v2-10 response — unchanged.
+func handleDashboardLegacy(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	resp := dashboardResponse{
 		OnlineNow:       onlineNow(ctx),
@@ -77,6 +117,67 @@ func handleDashboard(w http.ResponseWriter, r *http.Request) {
 		resp.NASCards = []nasCard{}
 	}
 	httpapi.JSON(w, http.StatusOK, resp)
+}
+
+// handleDashboardFiltered is FR-89.3/C3's new path: computes and returns
+// only the keys the (permission-filtered) requested widget ids need.
+func handleDashboardFiltered(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	mgr, _ := auth.ManagerFrom(ctx)
+
+	var requested []string
+	if raw := r.URL.Query().Get("widgets"); raw != "" {
+		requested = strings.Split(raw, ",")
+	}
+	ids := filterDashboardWidgets(mgr, requested)
+
+	out := map[string]any{}
+	if containsWidget(ids, "online-now") {
+		out["online_now"] = onlineNow(ctx)
+		spark := onlineSparkline(ctx)
+		if spark == nil {
+			spark = []sparkPoint{}
+		}
+		out["online_24h_sparkline"] = spark
+	}
+	if containsWidget(ids, "revenue-today") {
+		out["revenue_today_iqd"] = revenueToday(ctx)
+	}
+	if containsWidget(ids, "radius-rps") {
+		out["radius_rps"] = freeRADIUSHealth(ctx).ReqRate
+	}
+	if needsSubsQuery(ids) {
+		out["subs"] = subscriberTiles(ctx)
+	}
+	if containsWidget(ids, "pipeline-health") {
+		p := pipelineTile{}
+		if snap := fetchAcctCounters(ctx); snap != nil {
+			if v, ok := snap["invariant_ok"].(bool); ok {
+				p.InvariantOK = v
+			}
+			if v, ok := toInt64(snap["in_queue"]); ok {
+				p.Depth = v
+			}
+		}
+		out["pipeline"] = p
+	}
+	if containsWidget(ids, "nas-health") {
+		cards := nasCards(ctx)
+		if cards == nil {
+			cards = []nasCard{}
+		}
+		out["nas_cards"] = cards
+	}
+	if containsWidget(ids, "my-balance") && mgr != nil {
+		out["my_balance"] = myBalances(ctx, mgr.ID)
+	}
+	if containsWidget(ids, "pending-payment-tickets") && mgr != nil {
+		out["pending_payment_tickets"] = pendingPaymentTickets(ctx)
+	}
+	if containsWidget(ids, "alerts-feed") {
+		out["alerts_feed"] = alertsFeed(ctx)
+	}
+	httpapi.JSON(w, http.StatusOK, out)
 }
 
 // onlineNow is the live-session count straight off the Redis hash (≤ 2 s fresh).
@@ -231,4 +332,93 @@ func openDowntimeSeconds(ctx context.Context, col, id string) int64 {
 		return 0
 	}
 	return int64(time.Since(*last).Seconds())
+}
+
+// --- v2-10 new widgets (C1) --------------------------------------------------
+
+type balanceView struct {
+	Currency string `json:"currency"`
+	Balance  int64  `json:"balance"`
+}
+
+// myBalances reads the caller's own per-currency balances directly (same
+// "cross-domain reads are raw SQL, never a cross-package Go import" pattern
+// revenueToday/nasCards already establish in this file — C1's my-balance row).
+func myBalances(ctx context.Context, managerID string) []balanceView {
+	out := []balanceView{}
+	if pkgDB == nil {
+		return out
+	}
+	rows, err := pkgDB.Query(ctx,
+		`SELECT currency, balance FROM manager_balances WHERE manager_id = $1::uuid ORDER BY currency`, managerID)
+	if err != nil {
+		return out
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var b balanceView
+		if err := rows.Scan(&b.Currency, &b.Balance); err != nil {
+			return out
+		}
+		out = append(out, b)
+	}
+	return out
+}
+
+// pendingPaymentTickets counts payment_tickets in state 'pending' — unscoped
+// (admin/operator) callers see the whole business, a scoped manager sees only
+// tickets on subscribers they own, same ScopeFilter posture as every other
+// scoped list (FR-27.2). ctx must carry the resolved auth.Manager (ScopeFilter
+// reads it from context).
+func pendingPaymentTickets(ctx context.Context) int64 {
+	if pkgDB == nil {
+		return 0
+	}
+	scope := auth.ScopeFilter(ctx)
+	var n int64
+	var err error
+	if scope != nil {
+		err = pkgDB.QueryRow(ctx,
+			`SELECT count(*) FROM payment_tickets pt
+			   JOIN subscribers s ON s.id = pt.subscriber_id
+			  WHERE pt.state = 'pending' AND s.owner_manager_id = $1::uuid`,
+			scope.ManagerID).Scan(&n)
+	} else {
+		err = pkgDB.QueryRow(ctx, `SELECT count(*) FROM payment_tickets WHERE state = 'pending'`).Scan(&n)
+	}
+	if err != nil {
+		return 0
+	}
+	return n
+}
+
+type alertFeedItem struct {
+	ID      string    `json:"id"`
+	At      time.Time `json:"at"`
+	Type    string    `json:"type"`
+	Summary string    `json:"summary"`
+}
+
+// alertsFeed returns the most recent alert events — this module already owns
+// alert_events, so this is an in-package query, not a cross-domain read.
+func alertsFeed(ctx context.Context) []alertFeedItem {
+	out := []alertFeedItem{}
+	if pkgDB == nil {
+		return out
+	}
+	rows, err := pkgDB.Query(ctx,
+		`SELECT id::text, at, type, summary FROM alert_events ORDER BY at DESC LIMIT 10`)
+	if err != nil {
+		return out
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var it alertFeedItem
+		if err := rows.Scan(&it.ID, &it.At, &it.Type, &it.Summary); err != nil {
+			return out
+		}
+		it.At = it.At.UTC()
+		out = append(out, it)
+	}
+	return out
 }

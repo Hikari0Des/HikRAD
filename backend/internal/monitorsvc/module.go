@@ -44,8 +44,8 @@ func (Module) Register(r chi.Router, d httpapi.Deps) {
 	pkgSettings = d.Settings
 	pkgLog = d.Log
 
-	// FR-32 dashboard + FR-35/40 health.
-	r.With(auth.Require(PermView)).Get("/api/v1/dashboard", handleDashboard)
+	// FR-32 dashboard (v2-10: per-widget access via dashboardAccess, C3) + FR-35/40 health.
+	r.With(dashboardAccess).Get("/api/v1/dashboard", handleDashboard)
 	r.With(auth.Require(PermView)).Get("/api/v1/health", handleHealth)
 
 	// FR-60 monitored-device CRUD.
