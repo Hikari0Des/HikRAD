@@ -23,4 +23,5 @@ import (
 	_ "github.com/hikrad/hikrad/internal/radius"
 	_ "github.com/hikrad/hikrad/internal/reports" // Phase 5
 	_ "github.com/hikrad/hikrad/internal/subscribers"
+	_ "github.com/hikrad/hikrad/internal/updates" // v2 phase 7
 )
