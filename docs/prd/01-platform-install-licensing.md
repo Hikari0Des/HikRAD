@@ -1,6 +1,6 @@
 # HikRAD — Sub-PRD 01: Platform, Install & Licensing
 
-> Derived from [docs/PRD.md](../PRD.md) v1.1 on 2026-07-08 (updated 2026-07-09: FR-57 added — Decision 18; FR-53 gains WhatsApp credentials — Decision 16; updated 2026-07-18 for master Decision 38 — v2 phase 5: FR-81–83, closed-source distribution & licensing hardening; updated 2026-07-18 for master Decision 39 — v2 phase 6: FR-84, per-manager preferences; updated 2026-07-18 for master Decision 40 — v2 phase 7: FR-86–88, one-click update from the panel). Owns: FR-49, FR-50, FR-51, FR-52, FR-53, FR-57, FR-81, FR-82, FR-83, FR-84, FR-86, FR-87, FR-88 · NFR-3, NFR-7, NFR-8 · Risks: solo-dev scope creep, license cracking · Open question 3 (price point)
+> Derived from [docs/PRD.md](../PRD.md) v1.1 on 2026-07-08 (updated 2026-07-09: FR-57 added — Decision 18; FR-53 gains WhatsApp credentials — Decision 16; updated 2026-07-18 for master Decision 38 — v2 phase 5: FR-81–83, closed-source distribution & licensing hardening; updated 2026-07-18 for master Decision 39 — v2 phase 6: FR-84, per-manager preferences; updated 2026-07-18 for master Decision 40 — v2 phase 7: FR-86–88, one-click update from the panel; updated 2026-07-18 for master Decision 42 — v2 phase 11: FR-91, instance identity settings & logo upload). Owns: FR-49, FR-50, FR-51, FR-52, FR-53, FR-57, FR-81, FR-82, FR-83, FR-84, FR-86, FR-87, FR-88, FR-91 · NFR-3, NFR-7, NFR-8 · Risks: solo-dev scope creep, license cracking · Open question 3 (price point)
 > Depends on: none (this is the foundation every other module builds on) · Depended on by: **all** sub-PRDs (Compose skeleton, `/api/v1` framework, migrations, settings service), especially [02-radius-nas-aaa](02-radius-nas-aaa.md) (service wiring) and [03-lossless-accounting-live-monitoring](03-lossless-accounting-live-monitoring.md) (disk-backed queue volumes, backup of hypertables).
 
 ## 1. Scope & context
@@ -152,6 +152,21 @@ Stack (fixed by master §8): Go backend (`hikrad-api`, `hikrad-acct`, `hikrad-mo
 - **AC-87a** — Given a non-admin manager (no `system.update` permission), then neither update button renders in the panel, and a direct API call to any `/system/update/*` route `403`s.
 - **AC-88a** — Given two update attempts start within the same second (one from the CLI, one from the panel), then exactly one proceeds and the other is refused with a "locked" message naming the current holder.
 
+### FR-91 (S) — v2: Instance identity settings & logo upload
+
+**Master (Decision 42):** Settings > Branding gains a proper disk-backed logo upload alongside the instance name and accent color, plus a small public read-only endpoint so pre-auth surfaces can show the identity.
+
+*Elaboration:*
+- **FR-91.1** — This is **not a new settings group** — it is FR-53.2's existing `branding` group (`name`, `logo_url`, `primary_color`, `secondary_color`), corrected and completed. `POST /api/v1/settings/branding/logo` accepts a `multipart/form-data` upload (PNG/SVG/JPEG; a size ceiling and dimension sanity check, frozen in the phase doc), validates content-type from the decoded bytes (not the client-supplied `Content-Type` header or filename extension), writes the file under the data directory (never the DB, never fetched from a URL — NFR-7), and stores only the resulting relative path/filename as `branding.logo_url`'s value. This replaces the pre-phase behavior where the panel client-side-encoded the file as a data: URI and `PUT`'d it straight into the settings row unvalidated (no server-side size/type check existed at all).
+- **FR-91.2** — `GET /api/v1/branding` (already existing, contract C5) is fixed to actually read the `branding.*` keys it was always supposed to (see Decision 42's bug writeup) and serves `{name, logo_url, theme_color, background_color}` publicly and unauthenticated — read-only, no field beyond the vetted logo/name/colors, so it cannot become a data-exfiltration surface. `internal/radius/hotspot.go`'s captive-portal page reader gets the identical fix (same underlying bug, different consumer).
+- **FR-91.3** — Removing the logo (clearing the field) falls back cleanly to the generic HikRAD mark everywhere per FR-92; an oversized or wrong-type upload is rejected `422` with a field error, never partially written. Every branding change goes through the existing `settings.update` audit event (FR-53.1).
+- **FR-91.4** — Exact upload size/dimension limits, the on-disk path layout, and the endpoint's exact response shape are frozen in `docs/v2/phases/phase-v2-11-instance-branding/00-phase.md`, not here — same FR-vs-phase-doc split as every prior v2 phase (FR-81.5 precedent).
+
+**Acceptance:**
+- **AC-91a** — Given an admin uploads a valid PNG logo and sets the instance name, when `GET /api/v1/branding` is called with no auth header, then it returns the uploaded name/logo/colors, and the server made no outbound network request to fetch or validate the file.
+- **AC-91b** — Given a 10 MB file or a `.exe` renamed to `.png`, when uploaded, then the server rejects it `422` with a field error and the previously-stored logo (if any) is unchanged.
+- **AC-91c** — Given no branding has ever been configured (fresh install), then `GET /api/v1/branding` returns the generic HikRAD defaults, not an error.
+
 ### NFR-3 (owned) — Hardware footprint
 Runs fully on one modest server: **4 vCPU / 8 GB RAM / 200 GB SSD** for the 5k-subscriber tier. *Elaboration:* the installer enforces minimums with an override flag; Compose sets per-container memory limits so one component cannot OOM the box; image sizes and retention defaults must fit 200 GB with 3 years of rollups (sizing math verified in [03](03-lossless-accounting-live-monitoring.md) FR-33).
 
@@ -174,13 +189,14 @@ Solo-dev-friendly: monorepo, one backend service + workers, automated migrations
 
 ## 4. Data & interfaces
 
-**Owned entities:** `settings` (key, type, value JSONB, updated_by, updated_at), `license` (key_id, payload, signature, fingerprint, state, grace_started_at), `schema_migrations`, **`manager_preferences`** (manager_id PK, doc JSONB, schema_version, updated_at — v2 FR-84, exact column/JSON shape frozen in the phase doc). FR-81/82 add no new table — the registry-pull credential and bundle/signature material are file-based artifacts (installer-verified, not DB rows); exact shape frozen in the phase doc. **FR-86–88 add no new table either** — the update lock is a flock'd file, not a row, and "who triggered an update" rides the existing `audit_log` via `auth.Audit`; exact socket protocol, lock path, and systemd unit name are frozen in `docs/v2/phases/phase-v2-7-one-click-update/00-phase.md`.
+**Owned entities:** `settings` (key, type, value JSONB, updated_by, updated_at), `license` (key_id, payload, signature, fingerprint, state, grace_started_at), `schema_migrations`, **`manager_preferences`** (manager_id PK, doc JSONB, schema_version, updated_at — v2 FR-84, exact column/JSON shape frozen in the phase doc). FR-81/82 add no new table — the registry-pull credential and bundle/signature material are file-based artifacts (installer-verified, not DB rows); exact shape frozen in the phase doc. **FR-86–88 add no new table either** — the update lock is a flock'd file, not a row, and "who triggered an update" rides the existing `audit_log` via `auth.Audit`; exact socket protocol, lock path, and systemd unit name are frozen in `docs/v2/phases/phase-v2-7-one-click-update/00-phase.md`. **FR-91 adds no new table** — the uploaded logo is a file under the data directory (NFR-7), and `settings` gains no new keys, only a corrected reader/writer over the `branding.*` keys FR-53.2 already declared; exact path layout frozen in `docs/v2/phases/phase-v2-11-instance-branding/00-phase.md`.
 
 **Exposes:**
 - `GET/PUT /api/v1/settings/{group}` (admin-gated)
 - `GET /api/v1/license`, `POST /api/v1/license` (upload), `POST /api/v1/license/request-blob`
 - `GET /api/v1/system/version` (app version, schema version, update channel)
 - `GET/PUT /api/v1/me/preferences` (any authenticated manager, self only — v2 FR-84)
+- `GET /api/v1/settings/branding`, `PUT /api/v1/settings/branding`, `POST /api/v1/settings/branding/logo` (multipart upload) — admin-gated write, and `GET /api/v1/branding` (public, unauthenticated, read-only identity for pre-auth surfaces — v2 FR-91, exact shapes frozen in the phase doc)
 - `GET /api/v1/system/update/check`, `POST /api/v1/system/update`, `GET /api/v1/system/update/stream` (SSE), `GET /api/v1/system/update/status` — `system.update` permission, relaying `hikrad-updaterd`'s unix-socket protocol (v2 FR-86–88, exact shapes frozen in the phase doc).
 - Compose service names & internal DNS (`postgres`, `redis`, …) — the contract other modules' services rely on.
 - `install.sh --bundle <path> | --registry`, `hikrad update --bundle <path>` (FR-81.4) — installer/CLI surface, not HTTP.

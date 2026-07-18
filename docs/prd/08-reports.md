@@ -1,6 +1,6 @@
 # HikRAD — Sub-PRD 08: Reports
 
-> Derived from [docs/PRD.md](../PRD.md) v1.0 on 2026-07-08. Owns: FR-45, FR-46, FR-47, FR-48
+> Derived from [docs/PRD.md](../PRD.md) v1.0 on 2026-07-08; updated 2026-07-18 for master Decision 42 — v2 phase 11 (instance branding): FR-46.2's print-header elaboration now names its identity source explicitly; no new FR (this module consumes [01](01-platform-install-licensing.md)'s FR-91 identity endpoint, same "consumer, not owner" pattern it already follows for every other domain's data). Owns: FR-45, FR-46, FR-47, FR-48
 > Depends on: [05-billing-payments-vouchers](05-billing-payments-vouchers.md) (ledger — the source of all financial figures), [04-subscribers-profiles](04-subscribers-profiles.md) (subscriber states/expiry), [03-lossless-accounting-live-monitoring](03-lossless-accounting-live-monitoring.md) (usage rollups, alert engine for scheduled digests), [06-managers-roles-security](06-managers-roles-security.md) (permissions, ownership scoping, `export` right) · Depended on by: none (leaf module).
 
 ## 1. Scope & context
@@ -22,7 +22,7 @@ Read-only analytical views over data other modules own: financial reports for **
 
 *Elaboration:*
 - **FR-46.1** — Views: new subscribers per period; expired per period; expiring-in-N-days (N selectable — same query the FR-36 digest alert uses, one definition); actives by profile (distribution); inactive-N-days (no session in N days per [03](03-lossless-accounting-live-monitoring.md) session data — churn-risk list).
-- **FR-46.2** — Every report (this FR and FR-45/47): filter bar, CSV export (gated by the `export` permission), and a print-clean view (no chrome, ISP header, RTL-correct per NFR-6).
+- **FR-46.2** — Every report (this FR and FR-45/47): filter bar, CSV export (gated by the `export` permission), and a print-clean view (no chrome, ISP header, RTL-correct per NFR-6). *(v2 phase 11, Decision 42):* the ISP header's name/logo come from [01](01-platform-install-licensing.md) FR-91's public `GET /api/v1/branding` endpoint — the same source every other print/login/manifest surface reads, fixed this phase after being found silently non-functional (see `docs/ops/known-issues.md`). This report header was already wired to that endpoint pre-phase (`PrintHeader.tsx`); the fix is entirely on the endpoint side, no report-side code change.
 - **FR-46.3** — Rows link to the user page ([04](04-subscribers-profiles.md) FR-3) — reports are worklists, not just documents.
 
 ### FR-47 (S) — Usage reports

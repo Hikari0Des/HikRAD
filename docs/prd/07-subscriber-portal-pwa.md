@@ -1,6 +1,6 @@
 # HikRAD — Sub-PRD 07: Subscriber Portal, Localization & PWA
 
-> Derived from [docs/PRD.md](../PRD.md) v1.0 on 2026-07-08; updated 2026-07-10 for master v1.2 (Decision 21: portal shows consumed data only, never quota ceiling/remaining; FR-44 promoted C→S); updated 2026-07-17 for master v1.8 (FR-42 amended, Decision 37, v2-2 — e-wallet gateway list replaced by the unified Pay screen; the payment logic itself is owned by [05](05-billing-payments-vouchers.md) FR-77–80, this file owns only the portal UI surface). Owns: FR-41, FR-42, FR-43, FR-44, FR-54 · NFR-6 · Risk: RTL/trilingual UI effort
+> Derived from [docs/PRD.md](../PRD.md) v1.0 on 2026-07-08; updated 2026-07-10 for master v1.2 (Decision 21: portal shows consumed data only, never quota ceiling/remaining; FR-44 promoted C→S); updated 2026-07-17 for master v1.8 (FR-42 amended, Decision 37, v2-2 — e-wallet gateway list replaced by the unified Pay screen; the payment logic itself is owned by [05](05-billing-payments-vouchers.md) FR-77–80, this file owns only the portal UI surface); updated 2026-07-18 for master Decision 42 — v2 phase 11: FR-92, instance identity threaded through the portal + both apps' PWA manifests. Owns: FR-41, FR-42, FR-43, FR-44, FR-54, FR-92 · NFR-6 · Risk: RTL/trilingual UI effort
 > Depends on: [04-subscribers-profiles](04-subscribers-profiles.md) (subscriber state, quota), [03-lossless-accounting-live-monitoring](03-lossless-accounting-live-monitoring.md) (usage graph data), [05-billing-payments-vouchers](05-billing-payments-vouchers.md) (voucher redeem + e-wallet payment APIs, payment history), [06-managers-roles-security](06-managers-roles-security.md) (password storage + rate-limit policy), [01-platform-install-licensing](01-platform-install-licensing.md) (branding settings, Caddy/HTTPS) · Depended on by: none (leaf module), though the **panel PWA packaging** in FR-54 wraps the panel built by modules 02–06/08.
 
 ## 1. Scope & context
@@ -45,6 +45,20 @@ The subscriber-facing surface (**Noor**'s product) and two cross-cutting fronten
 - **FR-54.3** — Update flow: new deploys activate on next launch with a "refresh for update" toast (stale service workers must not pin users to old app shells across server updates, [01](01-platform-install-licensing.md) FR-51.4).
 - **FR-54.4** — Web Push where the platform allows (Android fully; iOS after home-screen install): panel push carries alert-engine notifications ([03](03-lossless-accounting-live-monitoring.md) FR-36.2's in-app channel extended to push); portal push (expiry reminders) only if trivially enabled by the same plumbing — otherwise post-v1. Push requires no third-party service beyond standard Web Push endpoints (degrades gracefully offline, NFR-7).
 - **FR-54.5** — Install prompt: contextual "Add to Home Screen" education for iOS Safari (no native prompt) and the `beforeinstallprompt` flow on Android/Chrome.
+
+### FR-92 (S) — v2: Instance identity threaded everywhere
+
+**Master (Decision 42):** the public identity FR-91 exposes is consumed consistently by the portal and both apps' PWA manifests, instead of the disconnected/broken settings reads these surfaces had before this phase.
+
+*Elaboration:*
+- **FR-92.1** — Portal login screen and shell already call `GET /api/v1/branding` (`frontend/portal/src/branding.tsx`, contract C5) — this FR's actual work is fixing the endpoint itself (FR-91.2, owned by 01) so what was always a silent no-op starts rendering the real configured name/logo/color. No portal client code changes are required for this half; it is validated by re-running the existing branded-login test against a configured instance.
+- **FR-92.2** — Both apps' PWA manifests (`BrandedManifestLink.tsx` in `frontend/panel/src/pwa/` and `frontend/portal/src/pwa/`, FR-54.1) already swap `name`/`short_name`/`icons`/`theme_color` from the same endpoint at runtime — same fix-not-rebuild as FR-92.1. The static fallback manifest (`public/manifest.webmanifest`) stays the generic-branding install target for the brief pre-fetch window and for an unconfigured instance (NFR-7: installability never depends on the endpoint resolving).
+- **FR-92.3** — Icon set: a single uploaded logo (arbitrary aspect ratio, PNG/SVG) is served as-is for `purpose: any` and `purpose: maskable` alike (no server-side safe-zone padding/cropping in this phase — a maskable icon that isn't already roughly square/padded may be clipped by an OS launcher; documented as a known cosmetic limitation, not blocking). A logo change is picked up by an already-open installed PWA on its next service-worker update check (FR-54.3's existing update flow — no new mechanism).
+- **FR-92.4** — Panel-side threading (sidebar/header mark, browser `<title>`, panel's own login screen) is in scope for this phase but has no panel-owning sub-PRD to record it against; it is frozen and gated in `docs/v2/phases/phase-v2-11-instance-branding/00-phase.md` under the same contract this FR defines, cross-referenced here for traceability.
+
+**Acceptance:**
+- **AC-92a** — Given a configured instance name/logo, when the portal login page loads with no session, then it shows that name/logo (not "HikRAD"), and when the panel PWA manifest is fetched, its `name`/`short_name`/icons match.
+- **AC-92b** — Given the server is completely unreachable (airplane mode) on a device that already installed the PWA, then the installed app still launches with its last-known icon/name — no broken icon, no reversion to the generic mark.
 
 ### NFR-6 (owned) — Localization (product-wide)
 **Master:** All UI strings externalized; Arabic and Kurdish Sorani with true RTL layout (mirrored navigation, charts LTR inside RTL pages); English as development baseline; numerals and currency per locale.
