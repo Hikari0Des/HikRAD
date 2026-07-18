@@ -1,0 +1,69 @@
+# HikRAD release pipeline (v2 phase 5, FR-81/C3). Separate from ci.yml
+# deliberately: this job builds+pushes real images and produces a signed,
+# downloadable artifact, so it must never run on an ordinary push/PR — only
+# on a version tag, pushed deliberately by whoever is cutting a release
+# (see docs/ops/release-checklist.md).
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    name: Build, sign and publish a release bundle
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # to attach the bundle as a GitHub Release asset
+      packages: write   # to push images to ghcr.io/hikrad/*
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Derive version from the pushed tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Decode release signing key
+        env:
+          HIKRAD_RELEASE_SIGNING_KEY: ${{ secrets.HIKRAD_RELEASE_SIGNING_KEY }}
+        run: |
+          if [ -z "$HIKRAD_RELEASE_SIGNING_KEY" ]; then
+            echo "::warning::HIKRAD_RELEASE_SIGNING_KEY secret is not set — falling back to the checked-in DEV signing key (scripts/release-signing/dev-release-key.pem). Fine for a rehearsal tag, NOT fine for a real customer shipment (see scripts/release-signing/README.md before the first commercial release)."
+          else
+            echo "$HIKRAD_RELEASE_SIGNING_KEY" | base64 -d > /tmp/release-signing-key.pem
+            echo "RELEASE_SIGNING_KEY_FILE=/tmp/release-signing-key.pem" >> "$GITHUB_ENV"
+          fi
+
+      - name: Build, push images and assemble the signed bundle
+        env:
+          HIKRAD_VERSION: ${{ steps.version.outputs.version }}
+          HIKRAD_REGISTRY: ghcr.io/hikrad
+          HIKRAD_PUSH_IMAGES: "1"
+        run: |
+          bash scripts/build-release-bundle.sh "$HIKRAD_VERSION" "hikrad-${HIKRAD_VERSION}.tar"
+
+      - name: Re-extract and verify the packed tar (proves the packed artifact itself, not just the staging dir build-release-bundle.sh already self-checked)
+        env:
+          HIKRAD_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          d=$(mktemp -d)
+          tar -xf "hikrad-${HIKRAD_VERSION}.tar" -C "$d"
+          bash scripts/verify-bundle.sh "$d"
+
+      - name: Publish the bundle as a GitHub Release asset
+        env:
+          HIKRAD_VERSION: ${{ steps.version.outputs.version }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$HIKRAD_VERSION" \
+            "hikrad-${HIKRAD_VERSION}.tar" \
+            --title "HikRAD $HIKRAD_VERSION" \
+            --generate-notes
