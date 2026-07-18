@@ -1,7 +1,7 @@
 # HikRAD — Sub-PRD 07: Subscriber Portal, Localization & PWA
 
-> Derived from [docs/PRD.md](../PRD.md) v1.0 on 2026-07-08; updated 2026-07-10 for master v1.2 (Decision 21: portal shows consumed data only, never quota ceiling/remaining; FR-44 promoted C→S); updated 2026-07-17 for master v1.8 (FR-42 amended, Decision 37, v2-2 — e-wallet gateway list replaced by the unified Pay screen; the payment logic itself is owned by [05](05-billing-payments-vouchers.md) FR-77–80, this file owns only the portal UI surface); updated 2026-07-18 for master Decision 42 — v2 phase 11: FR-92, instance identity threaded through the portal + both apps' PWA manifests; updated 2026-07-18 for master Decision 43 — v2 phase 11 scope clarified: FR-93, fixed non-editable HikRAD attribution. Owns: FR-41, FR-42, FR-43, FR-44, FR-54, FR-92, FR-93 · NFR-6 · Risk: RTL/trilingual UI effort
-> Depends on: [04-subscribers-profiles](04-subscribers-profiles.md) (subscriber state, quota), [03-lossless-accounting-live-monitoring](03-lossless-accounting-live-monitoring.md) (usage graph data), [05-billing-payments-vouchers](05-billing-payments-vouchers.md) (voucher redeem + e-wallet payment APIs, payment history), [06-managers-roles-security](06-managers-roles-security.md) (password storage + rate-limit policy), [01-platform-install-licensing](01-platform-install-licensing.md) (branding settings, Caddy/HTTPS) · Depended on by: none (leaf module), though the **panel PWA packaging** in FR-54 wraps the panel built by modules 02–06/08.
+> Derived from [docs/PRD.md](../PRD.md) v1.0 on 2026-07-08; updated 2026-07-10 for master v1.2 (Decision 21: portal shows consumed data only, never quota ceiling/remaining; FR-44 promoted C→S); updated 2026-07-17 for master v1.8 (FR-42 amended, Decision 37, v2-2 — e-wallet gateway list replaced by the unified Pay screen; the payment logic itself is owned by [05](05-billing-payments-vouchers.md) FR-77–80, this file owns only the portal UI surface); updated 2026-07-18 for master Decision 42 — v2 phase 11: FR-92, instance identity threaded through the portal + both apps' PWA manifests; updated 2026-07-18 for master Decision 43 — v2 phase 11 scope clarified: FR-93, fixed non-editable HikRAD attribution; updated 2026-07-18 for master Decision 44 — v2 phase 12 kicked off (LAST v2 phase): FR-94–96, frontend modernization (modern control system, responsive/overflow audit, polish sweep), cross-cutting to panel + portal. Owns: FR-41, FR-42, FR-43, FR-44, FR-54, FR-92, FR-93, FR-94, FR-95, FR-96 · NFR-6 · Risk: RTL/trilingual UI effort
+> Depends on: [04-subscribers-profiles](04-subscribers-profiles.md) (subscriber state, quota), [03-lossless-accounting-live-monitoring](03-lossless-accounting-live-monitoring.md) (usage graph data), [05-billing-payments-vouchers](05-billing-payments-vouchers.md) (voucher redeem + e-wallet payment APIs, payment history), [06-managers-roles-security](06-managers-roles-security.md) (password storage + rate-limit policy), [01-platform-install-licensing](01-platform-install-licensing.md) (branding settings, Caddy/HTTPS) · Depended on by: none (leaf module), though the **panel PWA packaging** in FR-54 and the **frontend modernization control set** in FR-94–96 both wrap/underlie the panel built by modules 02–06/08 — those modules consume this file's control library and localization rules without owning any part of them.
 
 ## 1. Scope & context
 
@@ -75,6 +75,43 @@ The subscriber-facing surface (**Noor**'s product) and two cross-cutting fronten
 - **AC-93b** — Given Settings > Branding (or any other settings screen), then no field, toggle, or hidden API parameter exists anywhere that hides or edits the attribution mark — verified by the phase gate's grep/contract leg, not by review alone.
 - **AC-93c** — Given a printed receipt, voucher, or report, then no HikRAD attribution appears on it (scope boundary, FR-93.3).
 
+### FR-94 (M) — v2: Modern control system (cross-cutting, panel + portal)
+
+**Master (Decision 44):** one styled, accessible control set — Select/combobox, TextInput/number/date, Textarea, Checkbox/Radio/Switch, file upload — used everywhere in panel + portal, replacing native browser chrome; a CI gate fails on any bare native control outside the library.
+
+*Elaboration:*
+- **FR-94.1** — `frontend/panel/src/components/form.tsx` (today a single-file wrapper emitting bare `<select>`/`<input type="checkbox">` with only Tailwind classes for styling — no Radix, no custom tick/indicator) is replaced by a control-set module built on the Radix primitives already the component-library decision (`@radix-ui/react-dialog`/`react-dropdown-menu` in `frontend/panel/package.json`; portal has none yet — this FR adds what portal needs). Exact package layout, prop shapes, and which Radix primitives back each control (`@radix-ui/react-select`, `-checkbox`, `-radio-group`, `-switch`, etc.) are frozen in `docs/v2/phases/phase-v2-12-frontend-modernization/00-phase.md`, not here.
+- **FR-94.2** — Shared pieces (styling tokens, any control both apps need identically) live in `@hikrad/shared` (`frontend/shared/src/ui/`, alongside the existing `StatusBadge`/`QuotaBar`/`states.tsx` primitives and `ui.css`'s logical-properties-only rule); app-specific composition (e.g. panel's NAS/profile combobox pickers) stays in each app's own component tree.
+- **FR-94.3** — Zero-native-chrome is enforced, not just styled-toward: a repo grep/lint rule fails CI on a bare `<select`, `<input type="checkbox"`, or `<input type="radio"` appearing outside the component library's own implementation files. This is a new CI gate, frozen in the phase brief alongside the existing `npm run i18n:check` gate.
+- **FR-94.4** — Accessibility and RTL are non-negotiable carry-overs, not new work: Radix primitives already supply correct keyboard nav/ARIA/focus trapping, so this FR's job is wiring styling on top, not reimplementing interaction; RTL correctness follows NFR-6.2's existing logical-properties rule; LTR islands (usernames, MACs, IPs, session byte counters) stay explicitly LTR-isolated exactly as they are today.
+
+### FR-95 (M) — v2: Responsive/overflow audit (cross-cutting, panel + portal)
+
+**Master (Decision 44):** every screen audited at 360px/768px/1280px — the page body never scrolls horizontally; wide content scrolls inside its own container; forms wrap; modals fit small screens.
+
+*Elaboration:*
+- **FR-95.1** — Closes the open `docs/ops/known-issues.md` row dated 2026-07-17 ("Panel+portal / layout... Legacy (OS-chrome) scrollbar appears when the page can't fit the viewport") — that row's partial fix (slim/theme-colored scrollbars, v1.1) is cosmetic only; this FR is the actual audit that row was left open pending. Fixing it closes the row (Status updated to Fixed, not deleted, per the file's append-only discipline).
+- **FR-95.2** — Audit surface is every panel + portal screen that exists as of this phase — i.e., everything built across v1 Phases 1–5 and v2 phases 1–11 (tables, forms, modals, dashboards, wizards, the debug/health pages). A screen that overflows at any of the three breakpoints gets its container fixed to scroll internally (`overflow-x-auto` on the wide element, e.g. a table or a config/snippet block) rather than the body.
+- **FR-95.3** — Verification is automated where cheap (a vitest/jsdom smoke asserting no unexpected `scrollWidth > clientWidth` on `document.body` for representative screens) and otherwise a documented manual matrix (360/768/1280 × light/dark × LTR/RTL) recorded in the phase gate result — exact scriptable vs. manual split is frozen in the phase brief.
+
+### FR-96 (S) — v2: Polish sweep (cross-cutting, panel + portal)
+
+**Master (Decision 44):** consistent spacing scale, empty/loading states, focus rings, and reduced-motion-respecting transitions across both apps; dark/light parity checked per screen.
+
+*Elaboration:*
+- **FR-96.1** — Spacing/empty-state/loading-state consistency builds on what already exists (`@hikrad/shared`'s `LoadingState`/`EmptyState`/`ErrorState` in `states.tsx`, the `.hk-*` classes in `ui.css`) rather than inventing a second system — the sweep is about applying these everywhere they're missing, not replacing them.
+- **FR-96.2** — Motion respects `prefers-reduced-motion` (transitions/animations degrade to instant or near-instant, matching the existing `.hk-quota__fill`/`.hk-spinner` CSS-only animation approach — no new animation library).
+- **FR-96.3** — Behavior-preserving by construction: this FR changes appearance and internal structure only. No endpoint, permission, data shape, or user-facing behavior changes ride along; any net-new user-visible string (e.g., a combobox empty-results message) ships trilingual in the same commit per NFR-6.1.
+
+**Acceptance (FR-94–96):**
+- **AC-94a** — Given the CI grep/lint gate, when a developer adds a bare `<select>`/`<input type="checkbox">`/`<input type="radio">` anywhere outside the component library, then CI fails.
+- **AC-94b** — Given a screen reader or keyboard-only user, when they operate any Select/Checkbox/Radio/Switch in either app, then focus order, ARIA roles, and keyboard activation match Radix's default (unregressed) behavior.
+- **AC-94c** — Given Arabic or Kurdish (RTL), when any control in the new set renders, then it mirrors correctly via logical properties, and any LTR island (username/MAC/IP) inside it stays LTR.
+- **AC-95a** — Given a 360px viewport, when any panel or portal screen loads, then `document.body` never scrolls horizontally — the widest content (a table, chart, or config snippet) scrolls inside its own container instead.
+- **AC-95b** — Given the `docs/ops/known-issues.md` 2026-07-17 layout row, when this phase's gate passes, then that row's Status is updated to reflect the fix (not deleted — append-only discipline).
+- **AC-96a** — Given `prefers-reduced-motion: reduce` is set, when any screen that previously animated a transition renders, then the motion is suppressed or reduced to a near-instant equivalent.
+- **AC-96b** — Given light and dark theme, when any screen in either app is viewed, then spacing, empty/loading states, and focus rings render consistently in both — no theme-specific visual regression.
+
 ### NFR-6 (owned) — Localization (product-wide)
 **Master:** All UI strings externalized; Arabic and Kurdish Sorani with true RTL layout (mirrored navigation, charts LTR inside RTL pages); English as development baseline; numerals and currency per locale.
 
@@ -97,12 +134,13 @@ The subscriber-facing surface (**Noor**'s product) and two cross-cutting fronten
 
 ## 4. Data & interfaces
 
-**Owned entities:** `portal_sessions` (subscriber tokens), subscriber language preference, Web Push subscriptions (endpoint, keys, surface panel/portal), locale string catalogs.
+**Owned entities:** `portal_sessions` (subscriber tokens), subscriber language preference, Web Push subscriptions (endpoint, keys, surface panel/portal), locale string catalogs. No new entities for FR-94–96 (frontend-only, no schema change).
 
 **Exposes:**
 - Portal API surface (all subscriber-scoped): `POST /api/v1/portal/login`, `GET /api/v1/portal/me` (status/expiry/consumed-data/speed — no quota total/remaining fields, Decision 21), `GET /api/v1/portal/usage`, `GET /api/v1/portal/payments`, `POST /api/v1/portal/vouchers/redeem`, `PUT /api/v1/portal/me` (FR-44 detail/password self-update). ~~`POST /api/v1/portal/payments/{gateway}/create`~~ **removed (v2-2, FR-23 retired)** — replaced by [05](05-billing-payments-vouchers.md) FR-78's `GET /api/v1/portal/pay-methods` + `POST /api/v1/portal/payment-tickets` (owned/frozen there; this file consumes them for the portal UI only).
 - `GET /manifest.webmanifest` (per-surface, branded), service workers for both apps, `POST /api/v1/push/subscribe`.
 - Localization framework + locale files consumed by **every** UI module (02–06, 08).
+- The FR-94 control-set component library (`frontend/panel/src/components/form/`, shared pieces in `@hikrad/shared/src/ui/`) consumed by **every** UI module (02–06, 08) exactly as the localization framework already is — no domain module owns any part of it, each just renders its existing screens through it.
 
 **Consumes:** subscriber read model + quota from [04](04-subscribers-profiles.md); usage graphs from [03](03-lossless-accounting-live-monitoring.md); redeem/payment APIs from [05](05-billing-payments-vouchers.md); credential verification + rate limiting from [06](06-managers-roles-security.md); branding + HTTPS from [01](01-platform-install-licensing.md).
 
