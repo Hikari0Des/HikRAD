@@ -26,6 +26,7 @@ type writeInput struct {
 	Password             *string    `json:"password"` // create: required; update: reset if present
 	Name                 *string    `json:"name"`
 	Phone                *string    `json:"phone"`
+	Email                *string    `json:"email"`
 	Address              *string    `json:"address"`
 	Notes                *string    `json:"notes"`
 	Status               *string    `json:"status"`
@@ -200,13 +201,13 @@ func (m *Module) createHandler(w http.ResponseWriter, r *http.Request) {
 
 	s, err := scanSubscriber(tx.QueryRow(r.Context(),
 		`INSERT INTO subscribers
-		   (username, password_enc, name, phone, address, notes, status, profile_id,
+		   (username, password_enc, name, phone, email, address, notes, status, profile_id,
 		    owner_manager_id, expires_at, mac_lock_mode, static_ip, session_limit_override,
 		    rate_override, price_override, disabled_reason, service_type, whatsapp_opt_in,
 		    has_password, quota_cycle_anchor)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8::uuid,$9::uuid,$10,$11,$12::inet,$13,$14,$15,$16,$17,$18,$19, now())
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::uuid,$10::uuid,$11,$12,$13::inet,$14,$15,$16,$17,$18,$19,$20, now())
 		 RETURNING `+columns,
-		in.Username, enc, in.Name, norm.phonePtr, in.Address, in.Notes, status, in.ProfileID,
+		in.Username, enc, in.Name, norm.phonePtr, norm.emailPtr, in.Address, in.Notes, status, in.ProfileID,
 		owner, in.ExpiresAt, macMode, norm.staticIP, in.SessionLimitOverride,
 		in.RateOverride, in.PriceOverride, in.DisabledReason, serviceType,
 		boolOr(in.WhatsappOptIn, false), !noPassword))
@@ -307,26 +308,28 @@ func (m *Module) updateHandler(w http.ResponseWriter, r *http.Request) {
 		    password_enc          = COALESCE($2, password_enc),
 		    name                  = CASE WHEN $3::bool THEN $4 ELSE name END,
 		    phone                 = CASE WHEN $5::bool THEN $6 ELSE phone END,
-		    address               = CASE WHEN $7::bool THEN $8 ELSE address END,
-		    notes                 = CASE WHEN $9::bool THEN $10 ELSE notes END,
-		    status                = COALESCE($11, status),
-		    profile_id            = CASE WHEN $12::bool THEN $13::uuid ELSE profile_id END,
-		    owner_manager_id      = CASE WHEN $14::bool THEN $15::uuid ELSE owner_manager_id END,
-		    expires_at            = CASE WHEN $16::bool THEN $17 ELSE expires_at END,
-		    mac_lock_mode         = COALESCE($18, mac_lock_mode),
-		    static_ip             = CASE WHEN $19::bool THEN $20::inet ELSE static_ip END,
-		    session_limit_override= CASE WHEN $21::bool THEN $22 ELSE session_limit_override END,
-		    rate_override         = CASE WHEN $23::bool THEN $24 ELSE rate_override END,
-		    price_override        = CASE WHEN $25::bool THEN $26 ELSE price_override END,
-		    disabled_reason       = CASE WHEN $27::bool THEN $28 ELSE disabled_reason END,
-		    service_type          = COALESCE($29, service_type),
-		    whatsapp_opt_in       = COALESCE($30, whatsapp_opt_in),
-		    has_password          = COALESCE($31, has_password)
+		    email                 = CASE WHEN $7::bool THEN $8 ELSE email END,
+		    address               = CASE WHEN $9::bool THEN $10 ELSE address END,
+		    notes                 = CASE WHEN $11::bool THEN $12 ELSE notes END,
+		    status                = COALESCE($13, status),
+		    profile_id            = CASE WHEN $14::bool THEN $15::uuid ELSE profile_id END,
+		    owner_manager_id      = CASE WHEN $16::bool THEN $17::uuid ELSE owner_manager_id END,
+		    expires_at            = CASE WHEN $18::bool THEN $19 ELSE expires_at END,
+		    mac_lock_mode         = COALESCE($20, mac_lock_mode),
+		    static_ip             = CASE WHEN $21::bool THEN $22::inet ELSE static_ip END,
+		    session_limit_override= CASE WHEN $23::bool THEN $24 ELSE session_limit_override END,
+		    rate_override         = CASE WHEN $25::bool THEN $26 ELSE rate_override END,
+		    price_override        = CASE WHEN $27::bool THEN $28 ELSE price_override END,
+		    disabled_reason       = CASE WHEN $29::bool THEN $30 ELSE disabled_reason END,
+		    service_type          = COALESCE($31, service_type),
+		    whatsapp_opt_in       = COALESCE($32, whatsapp_opt_in),
+		    has_password          = COALESCE($33, has_password)
 		  WHERE id = $1::uuid
 		 RETURNING `+columns,
 		id, encArg,
 		in.Name != nil, in.Name,
 		in.Phone != nil, norm.phonePtr,
+		in.Email != nil, norm.emailPtr,
 		in.Address != nil, in.Address,
 		in.Notes != nil, in.Notes,
 		nilIfEmpty(in.Status), in.ProfileID != nil, in.ProfileID,
@@ -415,6 +418,7 @@ func (m *Module) deleteHandler(w http.ResponseWriter, r *http.Request) {
 // normalized carries the validated/transformed write fields.
 type normalized struct {
 	phonePtr    *string
+	emailPtr    *string
 	staticIP    *string
 	macLockMode *string
 	owner       *string
@@ -441,6 +445,14 @@ func (m *Module) normalizeWrite(ctx context.Context, in *writeInput, excludeID s
 			add("phone", "not a valid Iraqi mobile number")
 		} else {
 			out.phonePtr = strPtrOrNil(p)
+		}
+	}
+	if in.Email != nil {
+		e := strings.TrimSpace(*in.Email)
+		if !validateEmail(e) {
+			add("email", "not a valid email address")
+		} else {
+			out.emailPtr = strPtrOrNil(e)
 		}
 	}
 	// whatsapp_opt_in requires a valid phone (FR-1.5). Consider both the incoming

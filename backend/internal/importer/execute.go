@@ -65,6 +65,7 @@ type createBody struct {
 	Password    string  `json:"password"`
 	Name        *string `json:"name,omitempty"`
 	Phone       *string `json:"phone,omitempty"`
+	Email       *string `json:"email,omitempty"`
 	Address     *string `json:"address,omitempty"`
 	ProfileID   *string `json:"profile_id,omitempty"`
 	ExpiresAt   *string `json:"expires_at,omitempty"`
@@ -126,6 +127,9 @@ func (m *Module) runExecute(batchID, authHeader string, prog *execProgress) {
 		}
 		if v := r.Fields["phone"]; v != "" {
 			body.Phone = &v
+		}
+		if v := r.Fields["email"]; v != "" {
+			body.Email = &v
 		}
 		if v := r.Fields["address"]; v != "" {
 			body.Address = &v

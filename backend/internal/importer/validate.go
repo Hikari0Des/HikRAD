@@ -165,6 +165,11 @@ func dryRun(ctx context.Context, db *pgxpool.Pool, b batch) ([]importRow, error)
 				res.Errors = append(res.Errors, "phone is not a valid Iraqi mobile number")
 			}
 		}
+		if e := strings.TrimSpace(r["email"]); e != "" {
+			if !validateEmailLocal(e) {
+				res.Errors = append(res.Errors, "email is not a valid email address")
+			}
+		}
 		if prof := strings.TrimSpace(r["profile"]); prof != "" {
 			if id, ok := profileByName[strings.ToLower(prof)]; ok {
 				res.Fields["profile_id"] = id

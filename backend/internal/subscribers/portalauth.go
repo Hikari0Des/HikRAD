@@ -119,6 +119,14 @@ func SetName(ctx context.Context, db *pgxpool.Pool, subscriberID, name string) e
 	return err
 }
 
+// SetEmail lets a subscriber set their own email (FR-85/FR-44 — subscriber-safe
+// field, same pattern as SetPhone).
+func SetEmail(ctx context.Context, db *pgxpool.Pool, subscriberID, email string) error {
+	_, err := db.Exec(ctx, `UPDATE subscribers SET email = NULLIF($2,''), updated_at = now() WHERE id = $1::uuid`,
+		subscriberID, email)
+	return err
+}
+
 // SetLanguage persists the subscriber's portal language preference (FR-43).
 func SetLanguage(ctx context.Context, db *pgxpool.Pool, subscriberID, language string) error {
 	_, err := db.Exec(ctx, `UPDATE subscribers SET language = $2, updated_at = now() WHERE id = $1::uuid`,

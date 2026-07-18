@@ -24,6 +24,9 @@ type Subscriber struct {
 	Username             string     `json:"username"`
 	Name                 *string    `json:"name"`
 	Phone                *string    `json:"phone"`
+	// Email (FR-85.1) is nullable, unvalidated at the DB level (validated in
+	// Go alongside phone), and not a credential — no encryption at rest.
+	Email                *string    `json:"email"`
 	Address              *string    `json:"address"`
 	Notes                *string    `json:"notes"`
 	Status               string     `json:"status"`
@@ -57,7 +60,7 @@ type Subscriber struct {
 
 // columns is the SELECT list backing scanSubscriber. host(static_ip) strips the
 // /32 an inet host address would otherwise render with.
-const columns = `id::text, username::text, name, phone, address, notes, status,
+const columns = `id::text, username::text, name, phone, email, address, notes, status,
 	profile_id::text, owner_manager_id::text, expires_at, mac_lock_mode, learned_mac,
 	host(static_ip), session_limit_override, rate_override, price_override, disabled_reason,
 	service_type, whatsapp_opt_in,
@@ -65,7 +68,7 @@ const columns = `id::text, username::text, name, phone, address, notes, status,
 
 func scanSubscriber(row pgx.Row) (Subscriber, error) {
 	var s Subscriber
-	err := row.Scan(&s.ID, &s.Username, &s.Name, &s.Phone, &s.Address, &s.Notes, &s.Status,
+	err := row.Scan(&s.ID, &s.Username, &s.Name, &s.Phone, &s.Email, &s.Address, &s.Notes, &s.Status,
 		&s.ProfileID, &s.OwnerManagerID, &s.ExpiresAt, &s.MacLockMode, &s.LearnedMac,
 		&s.StaticIP, &s.SessionLimitOverride, &s.RateOverride, &s.PriceOverride, &s.DisabledReason,
 		&s.ServiceType, &s.WhatsappOptIn,

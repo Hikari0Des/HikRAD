@@ -21,6 +21,7 @@ var hikradFields = map[string]bool{
 	// service_type (FR-61): pppoe | hotspot | dual. Accepts a SAS4-style
 	// boolean hotspot column too — see normalizeServiceType. Omitted → pppoe.
 	"service_type": true,
+	"email":        true, // FR-85
 }
 
 // presets maps a preset name to its default column_map. Column names are
@@ -34,6 +35,7 @@ var presets = map[string]map[string]string{
 		"address":    "Address",
 		"profile":    "Package",
 		"expires_at": "ExpireDate",
+		"email":      "Email", // matched case-insensitively, only if present in the uploaded header
 	},
 }
 

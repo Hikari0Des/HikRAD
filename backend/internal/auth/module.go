@@ -114,6 +114,11 @@ func (Module) Register(r chi.Router, d httpapi.Deps) {
 	r.With(enrollOrAccess).Post("/api/v1/auth/totp/verify", verifyTOTPHandler)
 	r.With(Require("")).Post("/api/v1/auth/totp/disable", disableTOTPHandler)
 
+	// Per-manager preferences (v2-6, FR-84.2). Self-only, no permission gate —
+	// every manager edits their own row; the route carries no id parameter.
+	r.With(Require("")).Get("/api/v1/me/preferences", getPreferencesHandler)
+	r.With(Require("")).Put("/api/v1/me/preferences", putPreferencesHandler)
+
 	// Panel session management (own; admins any).
 	r.With(Require("")).Get("/api/v1/panel-sessions", listPanelSessionsHandler)
 	r.With(Require("")).Delete("/api/v1/panel-sessions/{id}", deletePanelSessionHandler)
