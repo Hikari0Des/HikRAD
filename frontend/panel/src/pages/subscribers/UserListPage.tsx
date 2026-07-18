@@ -18,7 +18,16 @@ import { BulkBar } from './BulkBar'
 import { SubscriberFormModal } from './SubscriberFormModal'
 
 const STATUSES: SubscriberStatus[] = ['active', 'expired', 'disabled']
-const ALL_COLUMNS = ['username', 'name', 'phone', 'status', 'profile', 'expiry', 'owner'] as const
+const ALL_COLUMNS = [
+  'username',
+  'name',
+  'phone',
+  'email',
+  'status',
+  'profile',
+  'expiry',
+  'owner',
+] as const
 type Column = (typeof ALL_COLUMNS)[number]
 
 interface Filters {
@@ -292,6 +301,7 @@ export function UserListPage() {
                 {has('username') && <Th>{t('subscriber.username')}</Th>}
                 {has('name') && <Th>{t('subscriber.name')}</Th>}
                 {has('phone') && <Th>{t('subscriber.phone')}</Th>}
+                {has('email') && <Th>{t('subscriber.email')}</Th>}
                 {has('status') && <Th>{t('subscriber.status')}</Th>}
                 {has('profile') && <Th>{t('subscriber.profile')}</Th>}
                 {has('expiry') && <Th>{t('subscriber.expiry')}</Th>}
@@ -320,6 +330,7 @@ export function UserListPage() {
                   )}
                   {has('name') && <Td>{s.name ?? '—'}</Td>}
                   {has('phone') && <Td>{s.phone ? <Ltr>{s.phone}</Ltr> : '—'}</Td>}
+                  {has('email') && <Td>{s.email ? <Ltr>{s.email}</Ltr> : '—'}</Td>}
                   {has('status') && (
                     <Td>
                       <StatusBadge status={s.status} />

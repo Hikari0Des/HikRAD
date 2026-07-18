@@ -1,6 +1,8 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
 
+import { isLocale, setThemePreference, useLocale as useI18nLocale } from '@hikrad/shared'
+
 import {
   login as apiLogin,
   logout as apiLogout,
@@ -8,6 +10,7 @@ import {
   type Manager,
 } from '../api/auth'
 import { UNAUTHORIZED_EVENT } from '../api/client'
+import { getPreferences } from '../api/preferences'
 import { decodeTokenPerms, hasPermission, permsHave } from './permissions'
 import { tokenStore } from './tokenStore'
 
@@ -28,6 +31,7 @@ const AuthContext = createContext<AuthContextValue | null>(null)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [manager, setManager] = useState<Manager | null>(() => tokenStore.getManager())
+  const { setLocale, setNumerals } = useI18nLocale()
 
   // The API client clears tokens and fires this on an unrecoverable 401 (a
   // revoked/expired refresh chain — FR-29 forced logout); dropping the manager
@@ -37,6 +41,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     window.addEventListener(UNAUTHORIZED_EVENT, onUnauthorized)
     return () => window.removeEventListener(UNAUTHORIZED_EVENT, onUnauthorized)
   }, [])
+
+  // Seed the theme/locale/numerals stores from the server preference (v2-6,
+  // FR-84.4) on every login and on session restore — runs once per signed-in
+  // manager. Only non-empty fields override; an unset server preference
+  // leaves whatever localStorage/browser-language already detected alone, so
+  // the server value wins over a *different* device's leftover state without
+  // ever forcing a value nobody chose.
+  useEffect(() => {
+    if (!manager) return
+    let cancelled = false
+    getPreferences()
+      .then((p) => {
+        if (cancelled) return
+        if (p.theme) setThemePreference(p.theme)
+        if (p.language && isLocale(p.language)) setLocale(p.language)
+        if (p.numerals === 'auto' || p.numerals === 'latn' || p.numerals === 'arab') {
+          setNumerals(p.numerals)
+        }
+      })
+      .catch(() => {
+        // Best-effort seeding only — the pre-existing localStorage/browser
+        // detection remains in effect if this fails (e.g. offline).
+      })
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [manager?.id])
 
   const value = useMemo<AuthContextValue>(
     () => ({

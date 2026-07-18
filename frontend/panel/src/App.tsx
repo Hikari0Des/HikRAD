@@ -43,6 +43,7 @@ import { HealthPage } from './pages/monitoring/HealthPage'
 import { NasStatusPage } from './pages/monitoring/NasStatusPage'
 import { NasListPage } from './pages/nas/NasListPage'
 import { PoolsPage } from './pages/pools/PoolsPage'
+import { MyPreferencesPage } from './pages/preferences/MyPreferencesPage'
 import { ProfilesPage } from './pages/profiles/ProfilesPage'
 import { DebugPage } from './pages/radius/DebugPage'
 import { MarginReportPage } from './pages/reports/MarginReportPage'
@@ -132,6 +133,7 @@ export function App() {
           <Route path="settings/*" element={guard(PERM_SETTINGS_VIEW, <SettingsPage />)} />
           <Route path="license" element={<LicensePage />} />
           <Route path="account" element={<AccountSecurityPage />} />
+          <Route path="preferences" element={<MyPreferencesPage />} />
           <Route path="dev/rtl-smoke" element={<RtlSmokePage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Route>

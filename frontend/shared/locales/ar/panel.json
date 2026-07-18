@@ -68,7 +68,8 @@
     "menu": "قائمة الحساب",
     "signedInAs": "مسجّل الدخول باسم",
     "logout": "تسجيل الخروج",
-    "language": "اللغة"
+    "language": "اللغة",
+    "preferences": "تفضيلاتي"
   },
   "languages": {
     "en": "English",
@@ -169,6 +170,7 @@
     "username": "اسم المستخدم",
     "name": "الاسم",
     "phone": "الهاتف",
+    "email": "البريد الإلكتروني",
     "status": "الحالة",
     "profile": "الباقة",
     "owner": "المالك",
@@ -841,6 +843,33 @@
     "unknownDevice": "جهاز غير معروف",
     "thisDevice": "هذا الجهاز",
     "revoke": "إبطال"
+  },
+  "preferences": {
+    "title": "تفضيلاتي",
+    "hint": "هذه الإعدادات ترافق حسابك عبر الأجهزة — إعداد المتصفح المحلي يُستخدم فقط حتى تسجّل الدخول من مكان له قيمة محفوظة هنا.",
+    "language": "اللغة",
+    "theme": "المظهر",
+    "numerals": "الأرقام",
+    "numeralsHint": "الأرقام المعروضة — 'تلقائي' يستخدم الافتراضي للغتك.",
+    "numeralsValue": {
+      "auto": "تلقائي",
+      "latn": "غربية (0123…)",
+      "arab": "عربية شرقية (٠١٢…)"
+    },
+    "tablePageSize": "الصفوف في كل صفحة",
+    "landingPage": "صفحة البداية",
+    "landingPageHint": "الصفحة التي تفتح بعد تسجيل الدخول، مثل /dashboard. اتركها فارغة للافتراضي.",
+    "landingPagePlaceholder": "/dashboard",
+    "unsetOption": "استخدام إعداد هذا الجهاز",
+    "notifications": "الإشعارات",
+    "notificationsHint": "اختر كيفية إشعارك لكل نوع تنبيه.",
+    "ruleType": "المُحفِّز",
+    "channelInApp": "داخل التطبيق",
+    "channelPush": "دفع",
+    "paymentTicketsAll": "كل تذكرة دفع (وليس تذاكري فقط)",
+    "save": "حفظ التفضيلات",
+    "reset": "إعادة الضبط للافتراضي",
+    "saved": "تم حفظ التفضيلات."
   },
   "totp": {
     "error": {

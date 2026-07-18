@@ -68,7 +68,8 @@
     "menu": "Account menu",
     "signedInAs": "Signed in as",
     "logout": "Sign out",
-    "language": "Language"
+    "language": "Language",
+    "preferences": "My preferences"
   },
   "languages": {
     "en": "English",
@@ -169,6 +170,7 @@
     "username": "Username",
     "name": "Name",
     "phone": "Phone",
+    "email": "Email",
     "status": "Status",
     "profile": "Profile",
     "owner": "Owner",
@@ -841,6 +843,33 @@
     "unknownDevice": "Unknown device",
     "thisDevice": "This device",
     "revoke": "Revoke"
+  },
+  "preferences": {
+    "title": "My preferences",
+    "hint": "These follow your account across devices — a browser-local setting is only used until you sign in somewhere with a value set here.",
+    "language": "Language",
+    "theme": "Theme",
+    "numerals": "Numerals",
+    "numeralsHint": "Which digits to display — 'Automatic' uses your language's default.",
+    "numeralsValue": {
+      "auto": "Automatic",
+      "latn": "Western (0123…)",
+      "arab": "Eastern Arabic (٠١٢…)"
+    },
+    "tablePageSize": "Rows per page",
+    "landingPage": "Landing page",
+    "landingPageHint": "The panel page to open after signing in, e.g. /dashboard. Leave blank for the default.",
+    "landingPagePlaceholder": "/dashboard",
+    "unsetOption": "Use this device's own setting",
+    "notifications": "Notifications",
+    "notificationsHint": "Choose how you're notified for each alert type.",
+    "ruleType": "Trigger",
+    "channelInApp": "In-app",
+    "channelPush": "Push",
+    "paymentTicketsAll": "Every payment ticket (not just mine)",
+    "save": "Save preferences",
+    "reset": "Reset to defaults",
+    "saved": "Preferences saved."
   },
   "totp": {
     "error": {

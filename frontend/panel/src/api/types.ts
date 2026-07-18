@@ -37,6 +37,8 @@ export interface Subscriber {
   username: string
   name: string | null
   phone: string | null
+  /** FR-85.1: nullable, unvalidated at the DB level (validated in Go), not a credential. */
+  email: string | null
   address: string | null
   notes: string | null
   status: SubscriberStatus
@@ -68,6 +70,7 @@ export interface SubscriberWrite {
   password?: string
   name?: string | null
   phone?: string | null
+  email?: string | null
   address?: string | null
   notes?: string | null
   status?: SubscriberStatus

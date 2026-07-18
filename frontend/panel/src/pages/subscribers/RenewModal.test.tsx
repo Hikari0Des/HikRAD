@@ -51,6 +51,7 @@ const subscriber: Subscriber = {
   username: 'ali',
   name: 'Ali',
   phone: null,
+  email: null,
   address: null,
   notes: null,
   status: 'expired',

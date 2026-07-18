@@ -151,6 +151,14 @@ export function SubscriberFormModal({
             onChange={(e) => set('phone', e.target.value)}
           />
         </Field>
+        <Field label={t('subscriber.email')} error={errors.email}>
+          <TextInput
+            type="email"
+            value={form.email}
+            dir="ltr"
+            onChange={(e) => set('email', e.target.value)}
+          />
+        </Field>
         <div className="sm:col-span-2">
           <Checkbox
             label={t('subscriber.whatsappOptIn')}
@@ -342,6 +350,7 @@ interface FormState {
   noPassword: boolean
   name: string
   phone: string
+  email: string
   whatsappOptIn: boolean
   address: string
   notes: string
@@ -366,6 +375,7 @@ function initialForm(s?: Subscriber): FormState {
     noPassword: s ? s.has_password === false : false,
     name: s?.name ?? '',
     phone: s?.phone ?? '',
+    email: s?.email ?? '',
     whatsappOptIn: s?.whatsapp_opt_in ?? false,
     address: s?.address ?? '',
     notes: s?.notes ?? '',
@@ -388,6 +398,7 @@ function toWrite(f: FormState, editing: boolean): SubscriberWrite {
   const body: SubscriberWrite = {
     name: f.name || null,
     phone: f.phone || null,
+    email: f.email || null,
     address: f.address || null,
     notes: f.notes || null,
     status: f.status as SubscriberStatus,

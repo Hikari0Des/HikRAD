@@ -1,4 +1,5 @@
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
+import { useNavigate } from 'react-router-dom'
 
 import { Ltr, THEME_PREFERENCES, useLocale, useT, useTheme, type Locale } from '@hikrad/shared'
 
@@ -11,6 +12,7 @@ export function UserMenu() {
   const { locale, dir, setLocale } = useLocale()
   const { theme, setTheme } = useTheme()
   const t = useT()
+  const navigate = useNavigate()
 
   if (!manager) return null
 
@@ -72,6 +74,13 @@ export function UserMenu() {
               </span>
             </DropdownMenu.Item>
           ))}
+          <DropdownMenu.Separator className="my-1 h-px bg-surface-sunken" />
+          <DropdownMenu.Item
+            onSelect={() => navigate('/preferences')}
+            className="cursor-pointer rounded px-3 py-2 text-sm outline-none data-[highlighted]:bg-brand-soft"
+          >
+            {t('user.preferences')}
+          </DropdownMenu.Item>
           <DropdownMenu.Separator className="my-1 h-px bg-surface-sunken" />
           <DropdownMenu.Item
             onSelect={logout}
