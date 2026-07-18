@@ -1,6 +1,6 @@
 # HikRAD — Sub-PRD 01: Platform, Install & Licensing
 
-> Derived from [docs/PRD.md](../PRD.md) v1.1 on 2026-07-08 (updated 2026-07-09: FR-57 added — Decision 18; FR-53 gains WhatsApp credentials — Decision 16). Owns: FR-49, FR-50, FR-51, FR-52, FR-53, FR-57 · NFR-3, NFR-7, NFR-8 · Risks: solo-dev scope creep, license cracking · Open question 3 (price point)
+> Derived from [docs/PRD.md](../PRD.md) v1.1 on 2026-07-08 (updated 2026-07-09: FR-57 added — Decision 18; FR-53 gains WhatsApp credentials — Decision 16; updated 2026-07-18 for master Decision 38 — v2 phase 5: FR-81–83, closed-source distribution & licensing hardening). Owns: FR-49, FR-50, FR-51, FR-52, FR-53, FR-57, FR-81, FR-82, FR-83 · NFR-3, NFR-7, NFR-8 · Risks: solo-dev scope creep, license cracking · Open question 3 (price point)
 > Depends on: none (this is the foundation every other module builds on) · Depended on by: **all** sub-PRDs (Compose skeleton, `/api/v1` framework, migrations, settings service), especially [02-radius-nas-aaa](02-radius-nas-aaa.md) (service wiring) and [03-lossless-accounting-live-monitoring](03-lossless-accounting-live-monitoring.md) (disk-backed queue volumes, backup of hypertables).
 
 ## 1. Scope & context
@@ -70,6 +70,38 @@ Stack (fixed by master §8): Go backend (`hikrad-api`, `hikrad-acct`, `hikrad-mo
 **Acceptance:**
 - **AC-57a** — Given the tunnel disabled and the server offline, then every daily flow works on the LAN unchanged; given it enabled with a valid token, then the panel is reachable via the Cloudflare hostname, health shows "connected", and disabling it stops only the `cloudflared` container.
 
+### FR-81 (M) — v2: Binary release pipeline & signed offline bundles
+**Master (Decision 38):** the delivery model changes from source checkout to compiled, signed image/bundle distribution.
+
+*Elaboration:*
+- **FR-81.1** — A CI release job (triggered on a version tag) builds `hikrad-api`, `hikrad-acct`, `hikrad-monitor` and a prebuilt-frontend Caddy image, tags each `vX.Y.Z` (from the repo-root `VERSION` file, already wired per v1.1), and pushes them to a private registry.
+- **FR-81.2** — The same job produces an offline bundle `hikrad-vX.Y.Z.tar`: every image the compose stack needs (HikRAD's own four plus pinned third-party images — Postgres/TimescaleDB, Redis, FreeRADIUS; `cloudflared` excluded, it is optional and already internet-dependent per FR-57), a `compose.yml` with `image:` tags (`build:` removed from the shipped copy), `scripts/`, `backend/migrations/` (checksummed, though also baked into the `hikrad-api` image per existing practice — the bundle copy lets the installer verify migrations independent of Docker layer trust), and a checksum manifest.
+- **FR-81.3** — The manifest carries a detached signature verified against a public key embedded in `install.sh`/`hikrad` (the installer scripts, which must exist and be trustworthy before any HikRAD binary runs). `install.sh` and `hikrad update` verify the signature **before** extracting or loading anything from the bundle; a missing, invalid, or tampered signature is refused with no partial effect (no images loaded, no files written beyond the rejected download).
+- **FR-81.4** — `install.sh`/`hikrad update` gain a bundle mode (`--bundle <path>`, already partially wired for `hikrad update` in v1) and a registry mode (pull by tag from the private registry using the FR-82.3 credential); both leave the on-server footprint at compose file + scripts + `.env` + `data/` — no source tree, no Go toolchain. The existing source-build path (`git clone` + `docker compose build`, today's only mode) remains available behind an explicit flag/env var for development only; `make up` from a checkout is unaffected (constraint: dev workflow regression-free).
+- **FR-81.5** — Registry naming and bundle layout are frozen at kickoff in `docs/v2/phases/phase-v2-5-closed-source/00-phase.md`, not here — this sub-PRD fixes the requirement, the phase doc fixes the exact contract (same split as every other v2 phase's FR vs. `00-phase.md`).
+
+### FR-82 (M) — v2: Licensing hardening — boot verification in every binary, grace unchanged
+**Master (Decision 38):** `hikrad-acct`/`hikrad-monitor` gain the same license verification `hikrad-api` runs; FR-50.3 grace semantics are explicitly unchanged; no DRM/obfuscation/anti-debug.
+
+*Elaboration:*
+- **FR-82.1** — `hikrad-acct` and `hikrad-monitor` call the existing `platform.RefreshLicenseCache` (boot + the same 10-minute ticker `hikrad-api`/`setupapi.Module` already runs) so all three binaries independently load, evaluate against the live machine fingerprint (FR-50.2, unchanged), and log the license state. This reuses FR-50's existing pure grace-evaluation logic (`internal/platform/license`) and DB-backed cache (`internal/platform/license_store.go`) verbatim — no new schema, no new evaluation rule.
+- **FR-82.2** — **Hard boundary:** this verification is informational/defense-in-depth only. Neither binary may refuse to start, stop processing, or degrade its core function (accounting ingest, ICMP/SNMP probing, the alerts engine) on account of license state, in any state including `expired_grace`. The only enforcement point in the whole system remains `hikrad-api`'s existing `licenseGate` HTTP middleware, unchanged in scope (panel/portal mutating calls only; never `/internal/*`, never a GET). This is not a new requirement so much as a guardrail restated because it is easy to get wrong by analogy to "verify at boot" meaning "gate at boot" elsewhere in the industry.
+- **FR-82.3** — License issuance additionally produces a scoped, read-only registry-pull credential bound to the same server fingerprint as the license payload — one artifact activates the product and authorizes fetching the images it needs (FR-81.4's registry mode consumes it). Exact credential shape (e.g. folded into the license blob vs. a sibling file) is frozen at kickoff, not here.
+- **FR-82.4** — Explicitly out of scope: code obfuscation, anti-debugging, runtime tamper-detection beyond the license check itself, or any other DRM technique. Compiled Go with no shipped source raises the bar; it is not, and is not being made to be, tamper-proof. Enforcement beyond the license/fingerprint check is contractual and practical (no source access, signed updates, support cut-off) — consistent with this sub-PRD's existing license-cracking risk mitigation (§7).
+
+### FR-83 (S) — v2: Repo/business hygiene for closed distribution
+**Master (Decision 38):** the canonical repo stays private; only FR-81's artifacts reach customers.
+
+*Elaboration:*
+- **FR-83.1** — The GitHub repository remains private for the indefinite future; customers and resellers are never granted git access of any kind. Public-facing material (marketing pages, documentation excerpts) is maintained separately from this repository, not by loosening its visibility.
+- **FR-83.2** — `docs/ops/release-checklist.md` gains a signing/tagging/registry-push section: confirm the release tag's images are signed, the bundle's signature verifies, and the registry push succeeded, before the checklist's existing sign-off step.
+
+**Acceptance:**
+- **AC-81a** — Given a clean Ubuntu VM with no Go toolchain and no HikRAD source tree, when `install.sh` runs in bundle mode against a signed `hikrad-vX.Y.Z.tar`, then the stack comes up healthy with no build step.
+- **AC-81b** — Given a bundle with one bit flipped anywhere in its contents, when `install.sh`/`hikrad update` attempt to use it, then they refuse before extracting/loading anything, and no partial state is left behind.
+- **AC-82a** — Given a license in `expired_grace`, when `hikrad-acct`/`hikrad-monitor` boot or hit their re-verify ticker, then they log the state but accounting ingest and monitoring probes are observably unaffected (a real Accounting-Request is still accepted and durably enqueued; a probe still runs).
+- **AC-82b** — Given the dev workflow (`make up` from a checkout, no license installed at all), then nothing in this feature blocks it — the zero-license "valid" default (existing FR-50 behavior) is unchanged.
+
 ### NFR-3 (owned) — Hardware footprint
 Runs fully on one modest server: **4 vCPU / 8 GB RAM / 200 GB SSD** for the 5k-subscriber tier. *Elaboration:* the installer enforces minimums with an override flag; Compose sets per-container memory limits so one component cannot OOM the box; image sizes and retention defaults must fit 200 GB with 3 years of rollups (sizing math verified in [03](03-lossless-accounting-live-monitoring.md) FR-33).
 
@@ -92,13 +124,14 @@ Solo-dev-friendly: monorepo, one backend service + workers, automated migrations
 
 ## 4. Data & interfaces
 
-**Owned entities:** `settings` (key, type, value JSONB, updated_by, updated_at), `license` (key_id, payload, signature, fingerprint, state, grace_started_at), `schema_migrations`.
+**Owned entities:** `settings` (key, type, value JSONB, updated_by, updated_at), `license` (key_id, payload, signature, fingerprint, state, grace_started_at), `schema_migrations`. FR-81/82 add no new table — the registry-pull credential and bundle/signature material are file-based artifacts (installer-verified, not DB rows); exact shape frozen in the phase doc.
 
 **Exposes:**
 - `GET/PUT /api/v1/settings/{group}` (admin-gated)
 - `GET /api/v1/license`, `POST /api/v1/license` (upload), `POST /api/v1/license/request-blob`
 - `GET /api/v1/system/version` (app version, schema version, update channel)
 - Compose service names & internal DNS (`postgres`, `redis`, …) — the contract other modules' services rely on.
+- `install.sh --bundle <path> | --registry`, `hikrad update --bundle <path>` (FR-81.4) — installer/CLI surface, not HTTP.
 
 **Consumes:** health signals from [03](03-lossless-accounting-live-monitoring.md) FR-35 for install-time smoke checks; audit-log write API from [06](06-managers-roles-security.md).
 
@@ -113,11 +146,12 @@ First-run wizard: linear stepper, one decision per screen, mobile-usable but des
 - Panel/portal auth, permissions, audit log → [06](06-managers-roles-security.md).
 - PWA packaging, branding consumption → [07](07-subscriber-portal-pwa.md).
 - **Deferred by master:** cloud/SaaS multi-tenant hosting (non-goal); public API docs & stability guarantees (post-v1); paid-major-update commercial flow beyond version entitlement in the key (Decision 2 — enforcement detail post-v1).
+- **Explicitly out of scope (FR-82.4):** DRM, code obfuscation, anti-debugging, or any runtime tamper-detection beyond the license/fingerprint check itself. The one-click updater's panel-triggered update UX → v2-7 (`docs/v2/07-one-click-updater.md`), which builds on this phase's registry/bundle plumbing rather than the reverse.
 
 ## 7. Risks & open questions (owned)
 
 - **Risk (master): Solo dev + "ASAP" → scope creep from SAS4 parity pressure.** Likelihood High / Impact High. Mitigation: MoSCoW is contract — Musts only until pilot; parity items live in the P7 backlog. This module is the enforcement point: phase gates in the milestone plan, and no non-Must work merged before pilot.
-- **Risk (master): License cracking of on-prem one-time licenses.** Likelihood Medium / Impact Medium. Mitigation: signed keys + fingerprint; accept residual risk — support and updates are the real paid value. *Elaboration:* never let anti-crack measures degrade legitimate operation (grace mode is generous by design).
+- **Risk (master): License cracking of on-prem one-time licenses.** Likelihood Medium / Impact Medium. Mitigation: signed keys + fingerprint; accept residual risk — support and updates are the real paid value. *Elaboration:* never let anti-crack measures degrade legitimate operation (grace mode is generous by design). **v2 phase 5 (FR-81–83) mitigation extension:** compiled-only distribution (no source tree ships) raises the bar further without changing this posture — residual risk is still accepted by design (FR-82.4), not chased with DRM.
 - **Open question 3 (master): Price point** of the one-time license — market decision, not needed before P6. Blocks nothing in this module except final packaging copy.
 - **NEW:** exact fingerprint inputs must tolerate common virtualization (Proxmox/ESXi clones change MACs) — decide fingerprint composition during P1 and document what changes trigger re-issue.
-- **NEW:** offline update bundles need a distribution channel (USB? download portal?) — decide before P6.
+- **NEW:** offline update bundles need a distribution channel (USB? download portal?) — decide before P6. **Resolved direction, v2 phase 5:** the bundle itself (FR-81.2) is the distribution unit; the channel (download portal vs. USB) is an operational/business decision frozen in the phase doc, not this sub-PRD.
