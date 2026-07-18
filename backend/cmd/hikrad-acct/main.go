@@ -17,8 +17,10 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/hikrad/hikrad/internal/accounting"
+	"github.com/hikrad/hikrad/internal/platform"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 )
@@ -57,6 +59,23 @@ func run(cfg config, log *slog.Logger) error {
 	}
 	rdb := redis.NewClient(ropts)
 	defer func() { _ = rdb.Close() }()
+
+	// License boot verification (FR-82.1/82.2, v2 phase 5): every binary
+	// independently loads and evaluates the license against this host's
+	// fingerprint, same as hikrad-api already does (internal/platform/
+	// setupapi.Module). This is informational/defense-in-depth ONLY —
+	// RefreshLicenseCache never returns an error this call site could act
+	// on, and nothing below may ever branch on license state. FR-50.3's
+	// promise (accounting keeps running through and past grace expiry; only
+	// hikrad-api's panel-write HTTP gate enforces anything) is unchanged.
+	platform.RefreshLicenseCache(ctx, db, log)
+	go func() {
+		ticker := time.NewTicker(10 * time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			platform.RefreshLicenseCache(ctx, db, log)
+		}
+	}()
 
 	svc, cleanup, err := accounting.New(ctx, accounting.Config{
 		HTTPAddr:        cfg.Addr,
