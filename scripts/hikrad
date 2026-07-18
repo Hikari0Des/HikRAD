@@ -325,6 +325,20 @@ cmd_update() {
         esac
     done
 
+    # Shared lock (C3, v2 phase 7): hikrad-updaterd's `update` verb spawns this
+    # exact command as a child process and depends on THIS lock — held by this
+    # process's own file descriptor for its own lifetime, not by the daemon —
+    # to make "only one update at a time" survive the daemon dying mid-update
+    # (FR-86.5). A CLI-triggered and a panel-triggered update therefore always
+    # race for the same file, regardless of which surface got there first. The
+    # exact wording of the die message below is matched by the daemon's own
+    # output-scanning (lockedLinePattern in backend/cmd/hikrad-updaterd) — do
+    # not change "already in progress (locked)" without updating that too.
+    local lockdir; lockdir="$(dirname "$HIKRAD_ENV_FILE")/data/updater"
+    mkdir -p "$lockdir"
+    exec 9>"$lockdir/update.lock"
+    flock -n 9 || die "update already in progress (locked) — another update is already running"
+
     log "Pre-update backup…"
     cmd_backup_now pre_update
 

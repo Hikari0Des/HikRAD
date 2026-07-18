@@ -60,7 +60,13 @@ func run(cfg config, log *slog.Logger) error {
 		return err
 	}
 	defer ln.Close()
-	_ = os.Chmod(cfg.SocketPath, 0o770)
+	// The daemon runs as root (systemd, no User=); hikrad-api's container
+	// connects as its own unrelated non-root uid. No secret lives in this
+	// ephemeral socket file — the shared token (checked per-request) is the
+	// real security boundary — so 0777 here matches install.sh's identical
+	// reasoning for its socket directory and the pre-existing radius-control
+	// bind mount's own 0777 precedent.
+	_ = os.Chmod(cfg.SocketPath, 0o777)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

@@ -61,6 +61,11 @@ JWT_SECRET="$(openssl rand -base64 48 | tr -d '\n')"
 # and this file's copy makes existing backups permanently unrecoverable by
 # design (no vendor escrow) — see docs/ops/backup-restore.md.
 BACKUP_PASSPHRASE="$(openssl rand -base64 24 | tr -d '\n')"
+# Shared secret authenticating hikrad-api's socket calls to hikrad-updaterd
+# (FR-86.2, v2 phase 7) — same generation recipe as HIKRAD_JWT_SECRET. Read by
+# both sides from this one file: the daemon via its systemd EnvironmentFile,
+# hikrad-api via its compose environment: block. No separate provisioning step.
+HIKRAD_UPDATER_TOKEN="$(openssl rand -base64 32 | tr -d '\n')"
 
 umask 077
 mkdir -p "$(dirname "$OUT")"
@@ -84,6 +89,11 @@ HIKRAD_ENV=${HIKRAD_ENV_VALUE}
 # nightly cron entry fall back to when unset there.
 HIKRAD_BACKUP_PASSPHRASE=${BACKUP_PASSPHRASE}
 HIKRAD_BACKUP_RETENTION=14
+
+# One-click updater (FR-86, v2 phase 7): shared token between hikrad-updaterd
+# (host daemon) and hikrad-api (relay). Never sent anywhere except the local
+# unix socket between them.
+HIKRAD_UPDATER_TOKEN=${HIKRAD_UPDATER_TOKEN}
 EOF
 
 echo "wrote $OUT (HIKRAD_ENV=${HIKRAD_ENV_VALUE})"

@@ -22,7 +22,8 @@ for f in "$TMP/a.env" "$TMP/b.env"; do
     [ -f "$f" ] || fail "$f was not created"
     for key in POSTGRES_PASSWORD HIKRAD_DB_URL HIKRAD_REDIS_URL \
                HIKRAD_ENCRYPTION_KEY HIKRAD_JWT_SECRET HIKRAD_ENV \
-               HIKRAD_BACKUP_PASSPHRASE HIKRAD_BACKUP_RETENTION; do
+               HIKRAD_BACKUP_PASSPHRASE HIKRAD_BACKUP_RETENTION \
+               HIKRAD_UPDATER_TOKEN; do
         v="$(get "$f" "$key")"
         [ -n "$v" ] || fail "$key empty in $f"
         case "$v" in *CHANGE_ME*) fail "$key still a placeholder in $f" ;; esac
@@ -33,7 +34,7 @@ for f in "$TMP/a.env" "$TMP/b.env"; do
 done
 
 # Secrets must be unique across runs.
-for key in POSTGRES_PASSWORD HIKRAD_ENCRYPTION_KEY HIKRAD_JWT_SECRET HIKRAD_BACKUP_PASSPHRASE; do
+for key in POSTGRES_PASSWORD HIKRAD_ENCRYPTION_KEY HIKRAD_JWT_SECRET HIKRAD_BACKUP_PASSPHRASE HIKRAD_UPDATER_TOKEN; do
     [ "$(get "$TMP/a.env" "$key")" != "$(get "$TMP/b.env" "$key")" ] \
         || fail "$key identical across two runs"
 done

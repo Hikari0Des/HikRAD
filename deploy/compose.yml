@@ -81,6 +81,22 @@ services:
       # (found live in the Phase-5 M4 gate rehearsal against a real MikroTik).
       HIKRAD_RADIUS_CLIENTS_PATH: /etc/hikrad/clients-generated.conf
       HIKRAD_RADIUS_CONTROL_SOCKET: /var/run/freeradius/freeradius.sock
+      # One-click updater relay (FR-86/87, v2 phase 7): hikrad-api talks to
+      # hikrad-updaterd — a HOST process, never a container in this stack —
+      # over the unix socket bind-mounted below. The path here is the
+      # CONTAINER side of that mount; the daemon itself uses a different
+      # (host) path for the same socket file, set in its own systemd unit
+      # (scripts/install.sh) — same env var name, deliberately different
+      # values on each side of the mount.
+      # Deliberately soft (not :?required): an install from before v2 phase 7
+      # upgrades via `hikrad update`, which never re-runs install.sh, so its
+      # .env may not have this key yet. hikrad-api must still boot — the
+      # one-click-update relay routes report "not configured" rather than
+      # taking the whole panel down over a convenience feature (same
+      # never-block-the-core-product posture as FR-82.2). install.sh (source
+      # or --repair) backfills a real token into .env the next time it runs.
+      HIKRAD_UPDATER_TOKEN: ${HIKRAD_UPDATER_TOKEN:-}
+      HIKRAD_UPDATER_SOCKET: /var/run/hikrad-updater/updater.sock
     # gid 101 is freeradius/freeradius-server:3.2.3's own internal "freerad"
     # service account (stable since the image tag is pinned, not :latest) —
     # it creates the control socket 0660 owned by that uid:gid, which
@@ -111,6 +127,14 @@ services:
       # Shared with freeradius so hikrad-api can reach its control socket
       # (deploy/freeradius/sites-enabled/control-socket) to trigger a reload.
       - ${HIKRAD_DATA_DIR:-./data}/radius-control:/var/run/freeradius
+      # Shared with the HOST's hikrad-updaterd daemon (not another container
+      # — it isn't one, by design, C1): the daemon listens on
+      # data/updater/updater.sock from the host side, reachable here at
+      # /var/run/hikrad-updater/updater.sock. Same 0777 reasoning as
+      # radius-control just above (root-owned daemon, unrelated container
+      # uid, no secret in the directory itself — the shared token is the
+      # real boundary; see docs/ops/known-issues.md, 2026-07-18).
+      - ${HIKRAD_DATA_DIR:-./data}/updater:/var/run/hikrad-updater
     # Port 8080 stays internal to the compose network: Caddy proxies /api/*,
     # and FreeRADIUS calls POST /internal/radius/authorize directly (C4 — the
     # /internal/* routes are deliberately NOT reachable through Caddy).

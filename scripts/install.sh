@@ -238,6 +238,20 @@ HIKRAD_DELIVERY_MODE=$HIKRAD_DELIVERY_MODE
 EOF
 fi
 
+# --- 3c2. Backfill HIKRAD_UPDATER_TOKEN into an existing .env (idempotent; --
+# also runs on repair). An install from before v2 phase 7 has no such key —
+# compose.yml treats it as optional so hikrad-api still boots either way
+# (see its own comment), but a real token here is what actually provisions
+# the one-click updater on THIS install the next time this script runs.
+# `hikrad update` alone never re-runs install.sh (it only swaps images), so a
+# pre-existing install must run install.sh (source or --bundle, or --repair
+# on an already-updated one) at least once to pick this feature up at all —
+# documented in docs/ops/update.md.
+if [ -f "$HIKRAD_ROOT/.env" ] && ! grep -q '^HIKRAD_UPDATER_TOKEN=' "$HIKRAD_ROOT/.env" && command -v openssl >/dev/null 2>&1; then
+    echo "HIKRAD_UPDATER_TOKEN=$(openssl rand -base64 32 | tr -d '\n')" >> "$HIKRAD_ROOT/.env"
+    log "Backfilled HIKRAD_UPDATER_TOKEN into an existing .env (one-click updater now provisioned)."
+fi
+
 # --- 3d. acct-spill ownership (idempotent; also runs on repair) -------------
 # hikrad-acct runs as a fixed non-root uid (10002, deploy/docker/acct.Dockerfile)
 # and writes its crash-safe spill WAL into this bind mount. Create + chown it
@@ -270,6 +284,21 @@ chown 10001:10001 "$RELEASE_DIR/freeradius/clients-generated.conf"
 # reasoning as the acct-spill fix just above.
 mkdir -p "$HIKRAD_ROOT/data/radius-control"
 chmod 777 "$HIKRAD_ROOT/data/radius-control"
+
+# --- 3d3. Updater socket/lock dir + bundle-drop dir (idempotent; also runs on repair) ---
+# hikrad-updaterd (FR-86, v2 phase 7) runs as root on the host (systemd, no
+# User= — it must be able to run `hikrad update`, which itself needs root for
+# Docker/compose); hikrad-api's container connects to the bind-mounted socket
+# as ITS OWN unrelated non-root uid. Same reasoning as the existing
+# radius-control dir just above (neither uid is ours to assume, and no secret
+# lives in this ephemeral IPC directory — the shared token is the actual
+# security boundary, not filesystem permissions): 0777 on the directory, and
+# main.go chmods the socket file itself to 0777 after creating it.
+# `incoming/` is where an operator drops a downloaded hikrad-vX.Y.Z.tar before
+# "Check for update" can find it (`check` never touches the network, C2 of
+# the phase brief) — see docs/ops/update.md for the operator-facing explanation.
+mkdir -p "$HIKRAD_ROOT/data/updater" "$HIKRAD_ROOT/incoming"
+chmod 777 "$HIKRAD_ROOT/data/updater"
 
 # --- 3e. Self-signed TLS cert (idempotent; also runs on repair) -------------
 # Covers this server's actual detected IP address(es) plus localhost, not
@@ -308,6 +337,77 @@ if install -m 0755 "$SCRIPTS_SRC_DIR/hikrad" /usr/local/bin/hikrad 2>/dev/null; 
     log "Installed CLI wrapper: /usr/local/bin/hikrad"
 else
     log "WARNING: could not install /usr/local/bin/hikrad — copy scripts/hikrad there manually."
+fi
+
+# --- 4a. hikrad-updaterd daemon (idempotent; also runs on repair) -----------
+# A prebuilt binary in $SCRIPTS_SRC_DIR/hikrad-updaterd means a --bundle
+# install (the release CI job builds it alongside the four container images
+# and ships it next to the hikrad CLI wrapper, same directory, C1) — just
+# install it like the wrapper above. Otherwise (source checkout, dev-only)
+# build it from backend/cmd/hikrad-updaterd if a Go toolchain is present.
+# Best-effort, non-fatal either way: one-click panel updates are a
+# convenience on top of the guided Settings > System command, which keeps
+# working regardless (docs/ops/update.md).
+if [ -f "$SCRIPTS_SRC_DIR/hikrad-updaterd" ]; then
+    if install -m 0755 "$SCRIPTS_SRC_DIR/hikrad-updaterd" /usr/local/bin/hikrad-updaterd 2>/dev/null; then
+        log "Installed hikrad-updaterd (prebuilt): /usr/local/bin/hikrad-updaterd"
+    else
+        log "WARNING: could not install /usr/local/bin/hikrad-updaterd — copy it there manually."
+    fi
+elif command -v go >/dev/null 2>&1 && [ -d "$CHECKOUT_DIR/backend/cmd/hikrad-updaterd" ]; then
+    log "Building hikrad-updaterd from source…"
+    if ( cd "$CHECKOUT_DIR/backend" && go build -o /usr/local/bin/hikrad-updaterd ./cmd/hikrad-updaterd ); then
+        chmod 0755 /usr/local/bin/hikrad-updaterd
+        log "Installed hikrad-updaterd (built from source): /usr/local/bin/hikrad-updaterd"
+    else
+        log "WARNING: failed to build hikrad-updaterd — one-click panel updates will be unavailable until it is built manually (the guided Settings > System command still works)."
+    fi
+else
+    log "NOTE: no prebuilt hikrad-updaterd and no Go toolchain found — one-click panel updates will be unavailable (the guided Settings > System command still works)."
+fi
+
+# --- 4b. hikrad-updaterd systemd unit (idempotent; also runs on repair) -----
+# Only attempted if the binary above actually landed — an install without it
+# simply keeps the v1.1 guided-command screen working, nothing else changes.
+# The heredoc write itself is guarded (not a bare redirect): under `set -e`,
+# an unguarded write to a root-owned path aborts the WHOLE installer on any
+# non-root/sandboxed run (e.g. CI's install.sh idempotency test, which runs
+# with HIKRAD_SKIP_OS_CHECK=1 and no root) — this feature must degrade to a
+# WARNING like every other best-effort step here, never take install.sh down
+# with it.
+if command -v systemctl >/dev/null 2>&1 && [ -x /usr/local/bin/hikrad-updaterd ]; then
+    if cat > /etc/systemd/system/hikrad-updaterd.service <<EOF 2>/dev/null
+[Unit]
+Description=HikRAD host update daemon
+After=network.target docker.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/hikrad-updaterd
+EnvironmentFile=$HIKRAD_ROOT/.env
+Environment=HIKRAD_ROOT=$HIKRAD_ROOT
+Environment=HIKRAD_UPDATER_SOCKET=$HIKRAD_ROOT/data/updater/updater.sock
+Environment=HIKRAD_VERSION_FILE=$CHECKOUT_DIR/VERSION
+Environment=HIKRAD_DELIVERY_MODE=$HIKRAD_DELIVERY_MODE
+Environment=HIKRAD_UPDATE_CMD=/usr/local/bin/hikrad
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
+EOF
+    then
+        systemctl daemon-reload 2>/dev/null || true
+        if systemctl enable --now hikrad-updaterd >/dev/null 2>&1; then
+            log "hikrad-updaterd enabled and started (systemd)."
+        else
+            log "WARNING: could not enable/start hikrad-updaterd via systemd — one-click panel updates will be unavailable."
+        fi
+    else
+        log "WARNING: could not write /etc/systemd/system/hikrad-updaterd.service (not root?) — one-click panel updates will be unavailable."
+    fi
+else
+    log "NOTE: systemd not found, or hikrad-updaterd binary missing — one-click panel updates will be unavailable (the guided Settings > System command still works)."
 fi
 
 if command -v crontab >/dev/null 2>&1; then
