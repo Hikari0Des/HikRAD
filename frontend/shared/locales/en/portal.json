@@ -135,6 +135,7 @@
       "title": "Account settings",
       "nameLabel": "Your name",
       "phoneLabel": "Phone number",
+      "emailLabel": "Email address",
       "passwordWarning": "Changing your password also changes your internet (PPPoE) login password.",
       "newPasswordLabel": "New password",
       "confirmPasswordLabel": "Confirm new password",

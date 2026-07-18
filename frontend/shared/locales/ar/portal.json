@@ -135,6 +135,7 @@
       "title": "إعدادات الحساب",
       "nameLabel": "اسمك",
       "phoneLabel": "رقم الهاتف",
+      "emailLabel": "البريد الإلكتروني",
       "passwordWarning": "تغيير كلمة المرور يغيّر أيضًا كلمة مرور دخولك للإنترنت (PPPoE).",
       "newPasswordLabel": "كلمة المرور الجديدة",
       "confirmPasswordLabel": "تأكيد كلمة المرور الجديدة",

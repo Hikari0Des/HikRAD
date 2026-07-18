@@ -15,6 +15,7 @@ export function SettingsPage() {
   const me = useAsync(getMe, [])
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
+  const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -34,6 +35,7 @@ export function SettingsPage() {
       await updateMe({
         name: name || undefined,
         phone: phone || undefined,
+        email: email || undefined,
         password: password || undefined,
       })
       setSaved(true)
@@ -76,6 +78,18 @@ export function SettingsPage() {
             dir="ltr"
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
+            placeholder={me.data ? undefined : t('common.loading')}
+            className="rounded-md border border-surface-sunken bg-surface px-3 py-2 text-base"
+          />
+        </label>
+
+        <label className="flex flex-col gap-1 text-sm">
+          {t('portal.settings.emailLabel')}
+          <input
+            type="email"
+            dir="ltr"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
             placeholder={me.data ? undefined : t('common.loading')}
             className="rounded-md border border-surface-sunken bg-surface px-3 py-2 text-base"
           />

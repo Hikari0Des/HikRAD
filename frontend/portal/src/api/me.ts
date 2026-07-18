@@ -35,6 +35,7 @@ export function getMe(): Promise<PortalMe> {
 export interface UpdateMeBody {
   name?: string
   phone?: string
+  email?: string
   password?: string
 }
 
