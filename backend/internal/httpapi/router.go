@@ -110,16 +110,25 @@ func recoverer(log *slog.Logger) func(http.Handler) http.Handler {
 	}
 }
 
-// enforceJSON rejects mutating requests whose body is not declared as JSON.
+// enforceJSON rejects mutating requests whose body is declared as neither
+// JSON nor a multipart form. File-upload endpoints (payment ticket
+// attachments, FR-78.2; the instance logo, v2 phase 11 FR-91) POST
+// multipart/form-data — found while wiring the logo upload endpoint, whose
+// contract requires multipart, and discovering this middleware had never
+// actually let ANY multipart request through the real router: every
+// existing multipart-accepting handler in the codebase (submitTicketHandler,
+// storeAttachments' caller) was until now only ever exercised by tests that
+// call the Go function directly, bypassing this middleware entirely — see
+// docs/ops/known-issues.md.
 func enforceJSON(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodPost, http.MethodPut, http.MethodPatch:
 			if r.ContentLength != 0 {
 				ct := r.Header.Get("Content-Type")
-				if !strings.HasPrefix(ct, "application/json") {
+				if !strings.HasPrefix(ct, "application/json") && !strings.HasPrefix(ct, "multipart/form-data") {
 					Error(w, http.StatusUnsupportedMediaType, "unsupported_media_type",
-						"Content-Type must be application/json")
+						"Content-Type must be application/json or multipart/form-data")
 					return
 				}
 			}

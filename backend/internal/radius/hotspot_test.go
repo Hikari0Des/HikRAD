@@ -28,7 +28,7 @@ func unzip(t *testing.T, data []byte) map[string]string {
 }
 
 func TestBuildHotspotPackage_Themed(t *testing.T) {
-	b := brandingSettings{Name: "Tigris Net", ColorPrimary: "#e11d48"}.withDefaults()
+	b := hotspotBranding{Name: "Tigris Net", ColorPrimary: "#e11d48"}.withDefaults()
 	pkg, err := buildHotspotPackage(b, []string{"portal.tigris.iq", "pay.tigris.iq"})
 	if err != nil {
 		t.Fatal(err)
@@ -65,7 +65,7 @@ func TestBuildHotspotPackage_Themed(t *testing.T) {
 }
 
 func TestBuildHotspotPackage_Defaults(t *testing.T) {
-	pkg, err := buildHotspotPackage(brandingSettings{}.withDefaults(), nil)
+	pkg, err := buildHotspotPackage(hotspotBranding{}.withDefaults(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,11 +80,11 @@ func TestBuildHotspotPackage_Defaults(t *testing.T) {
 
 func TestCSSColor_RejectsInjection(t *testing.T) {
 	cases := map[string]string{
-		"#e11d48":            "#e11d48",
-		"rgb(10, 20, 30)":    "rgb(10, 20, 30)",
-		"red":                "red",
-		"":                   "#2563eb",
-		"}body{display:none": "#2563eb", // injection attempt rejected
+		"#e11d48":                "#e11d48",
+		"rgb(10, 20, 30)":        "rgb(10, 20, 30)",
+		"red":                    "red",
+		"":                       "#2563eb",
+		"}body{display:none":     "#2563eb", // injection attempt rejected
 		"#fff;background:url(x)": "#2563eb",
 	}
 	for in, want := range cases {
@@ -96,10 +96,10 @@ func TestCSSColor_RejectsInjection(t *testing.T) {
 
 func TestSafeFilename(t *testing.T) {
 	cases := map[string]string{
-		"Main Router":  "Main-Router",
-		"nas/../etc":   "nas----etc",
-		"":             "nas",
-		"ap_01":        "ap_01",
+		"Main Router": "Main-Router",
+		"nas/../etc":  "nas----etc",
+		"":            "nas",
+		"ap_01":       "ap_01",
 	}
 	for in, want := range cases {
 		if got := safeFilename(in); got != want {

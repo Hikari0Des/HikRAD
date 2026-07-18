@@ -2,11 +2,11 @@ package portalapi
 
 // GET /api/v1/branding (contract C5, public/unauthenticated): ISP
 // name/colors/logo for manifests and the login page — no rebuild per ISP
-// (FR-43). Reads the same "branding" settings group internal/radius/hotspot.go
-// already uses for the Hotspot login page, so admins configure branding once
-// (Phase 5's settings screen) and every surface (Hotspot, portal, panel PWA
-// manifests) renders it consistently. Response field names match F's
-// already-written client (frontend/portal/src/api/branding.ts) exactly.
+// (FR-43/FR-91). GET /api/v1/branding/logo (v2 phase 11, FR-91, contract C3)
+// serves the raw logo bytes. Both read through platform.LoadIdentity /
+// platform.ReadLogoBytes — the single corrected branding source (see
+// docs/ops/known-issues.md for the pre-phase bug this replaces: this handler
+// used to read a settings key, "branding", that has never existed).
 
 import (
 	"net/http"
@@ -14,12 +14,6 @@ import (
 	"github.com/hikrad/hikrad/internal/httpapi"
 	"github.com/hikrad/hikrad/internal/platform"
 )
-
-type brandingSettings struct {
-	Name         string `json:"name"`
-	ColorPrimary string `json:"color_primary"`
-	LogoDataURI  string `json:"logo_data_uri"`
-}
 
 type brandingResponse struct {
 	Name            string  `json:"name"`
@@ -29,19 +23,31 @@ type brandingResponse struct {
 }
 
 func (m *Module) brandingHandler(w http.ResponseWriter, r *http.Request) {
-	resp := brandingResponse{Name: "HikRAD Wi-Fi"}
+	resp := brandingResponse{Name: "HikRAD"}
 	if m.settings != nil {
-		if b, err := platform.Get[brandingSettings](r.Context(), m.settings, "branding"); err == nil {
-			if b.Name != "" {
-				resp.Name = b.Name
-			}
-			if b.ColorPrimary != "" {
-				resp.ThemeColor = &b.ColorPrimary
-			}
-			if b.LogoDataURI != "" {
-				resp.LogoURL = &b.LogoDataURI
-			}
+		id := platform.LoadIdentity(r.Context(), m.settings)
+		if id.Name != "" {
+			resp.Name = id.Name
 		}
+		resp.LogoURL = id.LogoURL
+		resp.ThemeColor = id.ThemeColor
+		resp.BackgroundColor = id.BackgroundColor
 	}
 	httpapi.JSON(w, http.StatusOK, resp)
+}
+
+// brandingLogoHandler serves the raw logo bytes with a long-lived,
+// content-addressed Cache-Control (safe: the URL's ?v= query changes
+// whenever the content does, so a stale cached copy is never served under a
+// URL that still resolves).
+func (m *Module) brandingLogoHandler(w http.ResponseWriter, r *http.Request) {
+	data, contentType, ok := platform.ReadLogoBytes()
+	if !ok {
+		httpapi.Error(w, http.StatusNotFound, "not_found", "no logo is currently set")
+		return
+	}
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(data)
 }

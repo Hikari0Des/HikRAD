@@ -14,6 +14,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"encoding/base64"
 	"errors"
 	"net/http"
 	"strings"
@@ -24,16 +25,21 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// brandingSettings is the slice of the Branding settings group (FR-53.2) the
-// login page renders. Read from the "branding" settings key; every field
-// defaults so a fresh install (no branding set yet) still yields a usable page.
-type brandingSettings struct {
-	Name         string `json:"name"`
-	ColorPrimary string `json:"color_primary"`
-	LogoDataURI  string `json:"logo_data_uri"` // optional inline data: URI so no host is needed
+// hotspotBranding is the slice of the instance identity (v2 phase 11, FR-91)
+// the login page renders. Read through platform.LoadIdentity/ReadLogoBytes —
+// the single corrected branding source (see docs/ops/known-issues.md: this
+// used to read a settings key, "branding", that has never existed, so this
+// page always rendered the hardcoded default on every install). The logo is
+// inlined as a base64 data: URI from the raw on-disk bytes, never a fetchable
+// URL — the generated page must stay self-contained on the router with zero
+// runtime dependency on hikrad-api being reachable (NFR-7).
+type hotspotBranding struct {
+	Name         string
+	ColorPrimary string
+	LogoDataURI  string
 }
 
-func (b brandingSettings) withDefaults() brandingSettings {
+func (b hotspotBranding) withDefaults() hotspotBranding {
 	if strings.TrimSpace(b.Name) == "" {
 		b.Name = "HikRAD Wi-Fi"
 	}
@@ -43,14 +49,19 @@ func (b brandingSettings) withDefaults() brandingSettings {
 	return b
 }
 
-// loadBranding reads the branding group, tolerating an unset key.
-func (m *module) loadBranding(ctx context.Context) brandingSettings {
+// loadHotspotBranding reads the current instance identity, tolerating an
+// unset settings service or no configured logo.
+func (m *module) loadHotspotBranding(ctx context.Context) hotspotBranding {
 	if m.settings == nil {
-		return brandingSettings{}.withDefaults()
+		return hotspotBranding{}.withDefaults()
 	}
-	b, err := platform.Get[brandingSettings](ctx, m.settings, "branding")
-	if err != nil {
-		return brandingSettings{}.withDefaults()
+	id := platform.LoadIdentity(ctx, m.settings)
+	b := hotspotBranding{Name: id.Name}
+	if id.ThemeColor != nil {
+		b.ColorPrimary = *id.ThemeColor
+	}
+	if data, contentType, ok := platform.ReadLogoBytes(); ok {
+		b.LogoDataURI = "data:" + contentType + ";base64," + base64.StdEncoding.EncodeToString(data)
 	}
 	return b.withDefaults()
 }
@@ -88,7 +99,7 @@ func (m *module) hotspotPackageHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	branding := m.loadBranding(ctx)
+	branding := m.loadHotspotBranding(ctx)
 	pkg, err := buildHotspotPackage(branding, defaultWalledGarden())
 	if err != nil {
 		m.internal(w, "build hotspot package", err)
@@ -103,7 +114,7 @@ func (m *module) hotspotPackageHandler(w http.ResponseWriter, r *http.Request) {
 
 // buildHotspotPackage renders the themed assets and zips them. The zip contains
 // login.html, style.css, md5.js and README.txt.
-func buildHotspotPackage(b brandingSettings, walledGarden []string) ([]byte, error) {
+func buildHotspotPackage(b hotspotBranding, walledGarden []string) ([]byte, error) {
 	logo := `<div style="font-weight:700;font-size:28px;color:var(--primary,#2563eb)">` + htmlEscape(b.Name) + `</div>`
 	if b.LogoDataURI != "" {
 		logo = `<img src="` + htmlEscape(b.LogoDataURI) + `" alt="` + htmlEscape(b.Name) + `">`
@@ -139,7 +150,7 @@ func buildHotspotPackage(b brandingSettings, walledGarden []string) ([]byte, err
 	return buf.Bytes(), nil
 }
 
-func hotspotReadme(b brandingSettings, walledGarden []string) string {
+func hotspotReadme(b hotspotBranding, walledGarden []string) string {
 	var sb strings.Builder
 	sb.WriteString(b.Name + " — MikroTik Hotspot login package\n")
 	sb.WriteString("=================================================\n\n")

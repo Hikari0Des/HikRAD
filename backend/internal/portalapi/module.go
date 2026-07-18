@@ -66,8 +66,10 @@ func (m *Module) Register(r chi.Router, d httpapi.Deps) {
 	r.With(m.requireSubscriber).Post("/api/v1/portal/payment-tickets", m.submitTicketHandler)
 	r.With(m.requireSubscriber).Get("/api/v1/portal/payment-tickets/latest", m.latestTicketHandler)
 
-	// Public branding read (C5: manifests, login page).
+	// Public branding read (C5: manifests, login page; v2 phase 11 FR-91
+	// adds the logo byte-serving route alongside it).
 	r.Get("/api/v1/branding", m.brandingHandler)
+	r.Get("/api/v1/branding/logo", m.brandingLogoHandler)
 }
 
 func init() { httpapi.Add(&Module{}) }

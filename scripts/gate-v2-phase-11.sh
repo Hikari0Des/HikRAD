@@ -107,7 +107,7 @@ check "receipt renderer makes no outbound HTTP call" \
 # --- Item 11: portal + PWA regression ---------------------------------------
 echo "-- Portal + PWA regression --"
 check "portal branded-login test green" \
-  sh -c 'cd frontend/portal && npx vitest run src/pages/LoginPage.test.tsx 2>/dev/null || npx vitest run src/test/portal.test.tsx'
+  sh -c 'cd frontend/portal && npx vitest run src/test/portal.test.tsx'
 check "panel BrandedManifestLink test green" \
   sh -c 'cd frontend/panel && npx vitest run src/pwa/BrandedManifestLink.test.tsx'
 check "portal BrandedManifestLink test green" \
@@ -137,11 +137,15 @@ check "portal PoweredByFooter test present and green" \
   sh -c 'cd frontend/portal && npx vitest run src/shell/PoweredByFooter.test.tsx'
 
 # --- Item 15: fixed attribution structurally non-configurable (FR-93.2) -----
+# Checks real code references, not prose: the components' own doc comments
+# legitimately say "branding"/"useBranding" in explaining what they DON'T do
+# (see PoweredByFooter.tsx) — matching the bare word would false-positive on
+# that explanation. What must never appear is an actual import/call/fetch.
 echo "-- Fixed attribution is not settings-driven (grep) --"
 check "panel PoweredByFooter reads no branding/settings source" \
-  sh -c '! grep -Ei "useBranding|fetch\(|branding" frontend/panel/src/shell/PoweredByFooter.tsx 2>/dev/null | grep -q .'
+  sh -c '! grep -E "useBranding\(|fetch\(|from .[./]*branding." frontend/panel/src/shell/PoweredByFooter.tsx 2>/dev/null | grep -q .'
 check "portal PoweredByFooter reads no branding/settings source" \
-  sh -c '! grep -Ei "useBranding|fetch\(|branding" frontend/portal/src/shell/PoweredByFooter.tsx 2>/dev/null | grep -q .'
+  sh -c '! grep -E "useBranding\(|fetch\(|from .[./]*branding." frontend/portal/src/shell/PoweredByFooter.tsx 2>/dev/null | grep -q .'
 check "no settings group field named like an attribution toggle exists" \
   sh -c '! grep -Ei "attribution|powered_by|poweredby" backend/internal/platform/setupapi/settings_api.go 2>/dev/null | grep -q .'
 

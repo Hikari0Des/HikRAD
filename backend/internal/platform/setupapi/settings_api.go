@@ -109,6 +109,10 @@ func putSettingsGroupHandler(w http.ResponseWriter, r *http.Request) {
 		httpapi.Error(w, http.StatusUnprocessableEntity, "validation_failed", "value is below the required retention floor", *fe)
 		return
 	}
+	if fe := validateServerManagedFields(group, body); fe != nil {
+		httpapi.Error(w, http.StatusUnprocessableEntity, "validation_failed", "field is server-managed, not settable via this endpoint", *fe)
+		return
+	}
 
 	ctx := r.Context()
 	for f, raw := range body {
@@ -135,6 +139,29 @@ func putSettingsGroupHandler(w http.ResponseWriter, r *http.Request) {
 // the panel must never accept a value that would let the accounting pipeline
 // itself violate the retention contract other modules assume holds.
 var dataRetentionFloors = map[string]int{"raw_months": 12, "rollup_years": 3}
+
+// serverManagedFields lists, per group, fields that must never be written
+// through the generic settings-group PUT — they are managed exclusively by
+// a dedicated endpoint with its own validation. branding.logo_url (v2 phase
+// 11, FR-91) is the first: it must go through POST/DELETE
+// /api/v1/settings/branding/logo (branding_logo.go), which validates size,
+// content-type (sniffed, not client-declared), and dimensions before ever
+// writing to disk — a plain PUT here would let an arbitrary unvalidated
+// string land in the settings row (same class of gap the pre-phase code had,
+// just moved one layer up; see docs/ops/known-issues.md).
+var serverManagedFields = map[string]map[string]bool{
+	"branding": {"logo_url": true},
+}
+
+func validateServerManagedFields(group string, body map[string]json.RawMessage) *httpapi.FieldError {
+	fields := serverManagedFields[group]
+	for f := range body {
+		if fields[f] {
+			return &httpapi.FieldError{Field: f, Message: "managed via POST/DELETE /api/v1/settings/" + group + "/logo, not this endpoint"}
+		}
+	}
+	return nil
+}
 
 func validateDataRetentionFloors(group string, body map[string]json.RawMessage) *httpapi.FieldError {
 	if group != "data_retention" {

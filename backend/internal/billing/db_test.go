@@ -33,6 +33,7 @@ import (
 	_ "github.com/hikrad/hikrad/internal/auth"
 	_ "github.com/hikrad/hikrad/internal/billing"
 	_ "github.com/hikrad/hikrad/internal/live"
+	_ "github.com/hikrad/hikrad/internal/platform/setupapi" // v2 phase 11: PUT /api/v1/settings/{branding,billing} for receipt_branding_db_test.go
 	_ "github.com/hikrad/hikrad/internal/profiles"
 	_ "github.com/hikrad/hikrad/internal/radius"
 	_ "github.com/hikrad/hikrad/internal/subscribers"

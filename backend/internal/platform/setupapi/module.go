@@ -71,6 +71,12 @@ func (Module) Register(r chi.Router, d httpapi.Deps) {
 	r.With(auth.Require("settings.edit")).Put("/api/v1/settings/{group}", putSettingsGroupHandler)
 	r.With(auth.Require("settings.edit")).Post("/api/v1/settings/notifications/test", testNotificationHandler)
 
+	// Instance branding logo (v2 phase 11, FR-91, contract C3): disk-backed
+	// upload/delete, distinct from the generic settings-group PUT above
+	// (which rejects logo_url — validateServerManagedFields).
+	r.With(auth.Require("settings.edit")).Post("/api/v1/settings/branding/logo", uploadBrandingLogoHandler)
+	r.With(auth.Require("settings.edit")).Delete("/api/v1/settings/branding/logo", deleteBrandingLogoHandler)
+
 	// Backups (FR-51): read-only status the panel's Settings > System screen
 	// polls. `hikrad backup`/`hikrad restore` (scripts/hikrad) do the actual
 	// work outside the API process (they need host filesystem access for

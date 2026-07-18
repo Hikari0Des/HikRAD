@@ -17,6 +17,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/hikrad/hikrad/internal/httpapi"
+	"github.com/hikrad/hikrad/internal/platform"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -86,9 +87,12 @@ func (m *Module) writeReceipt(w http.ResponseWriter, r *http.Request, d receiptD
 		lang = "en"
 	}
 	numeral := m.getString(r.Context(), keyReceiptNumeral, "auto")
-	brand := m.branding(r.Context())
+	brandName := ""
+	if m.showReceiptBranding(r.Context()) && m.settings != nil {
+		brandName = platform.LoadIdentity(r.Context(), m.settings).Name
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_, _ = w.Write([]byte(renderReceipt(d, lang, numeral, brand)))
+	_, _ = w.Write([]byte(renderReceipt(d, lang, numeral, brandName)))
 }
 
 // receiptStrings holds the localized labels for a receipt template.
@@ -111,7 +115,10 @@ func receiptLabels(lang string) receiptStrings {
 // renderReceipt produces a self-contained print-ready HTML receipt. Print CSS is
 // sized for both A5 and 80mm thermal rolls; numbers/usernames stay LTR inside an
 // RTL page. Eastern-Arabic numerals are used for ar/ku unless overridden.
-func renderReceipt(d receiptData, lang, numeral string, brand brandingConfig) string {
+// brandName is the resolved instance name (v2 phase 11, FR-91) — already
+// empty when showReceiptBranding is false, so this function need not know
+// about that toggle, only about the fallback for an unconfigured instance.
+func renderReceipt(d receiptData, lang, numeral, brandName string) string {
 	l := receiptLabels(lang)
 	useArabicNum := numeral == "arabic" || (numeral == "auto" && l.RTL)
 
@@ -128,7 +135,6 @@ func renderReceipt(d receiptData, lang, numeral string, brand brandingConfig) st
 	if l.RTL {
 		dir, align = "rtl", "right"
 	}
-	brandName := brand.Name
 	if brandName == "" {
 		brandName = "HikRAD"
 	}
@@ -153,11 +159,7 @@ td.v{text-align:` + align + `;font-weight:600}
 .thanks{text-align:center;color:#666;font-size:12px;margin-top:14px}
 @media print{body{background:#fff;padding:0}.receipt{border:none;max-width:80mm}}
 </style></head><body>`)
-	fmt.Fprintf(&b, `<div class="receipt"><h1>%s</h1><div class="sub">%s`, esc(brandName), esc(l.Title))
-	if brand.Phone != "" {
-		fmt.Fprintf(&b, ` · <span class="mono">%s</span>`, esc(brand.Phone))
-	}
-	b.WriteString(`</div><table>`)
+	fmt.Fprintf(&b, `<div class="receipt"><h1>%s</h1><div class="sub">%s</div><table>`, esc(brandName), esc(l.Title))
 	row := func(k, v string, mono, total bool) {
 		cls := "v"
 		if mono {

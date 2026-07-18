@@ -16,7 +16,7 @@ const (
 	permRefund               = "refund"
 	permVouchersView         = "vouchers.view"
 	permVouchersCreate       = "vouchers.create"
-	permPaymentTicketsVerify = "payment_tickets.verify" // v2-2, FR-79.2 (generalizes Phase 4's card_payments.verify)
+	permPaymentTicketsVerify = "payment_tickets.verify"   // v2-2, FR-79.2 (generalizes Phase 4's card_payments.verify)
 	permProvidersManage      = "payment_providers.manage" // v2-2, FR-77.1
 )
 
@@ -25,7 +25,7 @@ const (
 	keyRenewalAnchor  = "billing.renewal_anchor"       // "from_expiry" (default) | "from_now"
 	keyAdminBypass    = "billing.admin_balance_bypass" // bool, default true
 	keyReceiptPrefix  = "billing.receipt_prefix"       // string, default "HR-"
-	keyReceiptBrand   = "billing.receipt_branding"     // object, see brandingConfig
+	keyReceiptBrand   = "billing.receipt_branding"     // bool, default true — show the instance identity on receipts (v2 phase 11, FR-91/FR-93; was misread as an object pre-phase, see docs/ops/known-issues.md)
 	keyVoucherPrefix  = "billing.voucher_prefix"       // string, default ""
 	keyCurrency       = "locale.currency"              // string, default "IQD"
 	keyReceiptNumeral = "billing.receipt_numerals"     // "auto" (default) | "latin" | "arabic"
@@ -69,20 +69,13 @@ func (m *Module) anchor(ctx context.Context) string {
 	return a
 }
 
-// brandingConfig is the receipt header (FR-21). All fields optional.
-type brandingConfig struct {
-	Name    string `json:"name"`
-	Address string `json:"address"`
-	Phone   string `json:"phone"`
-}
-
-func (m *Module) branding(ctx context.Context) brandingConfig {
-	var b brandingConfig
-	if m.settings == nil {
-		return b
-	}
-	if v, err := platform.Get[brandingConfig](ctx, m.settings, keyReceiptBrand); err == nil {
-		b = v
-	}
-	return b
+// showReceiptBranding reports whether the receipt header (FR-21) should show
+// the instance identity (v2 phase 11, FR-91) — default true. Pre-phase this
+// key was misread as a {name,address,phone} object (a shape no UI ever
+// wrote), which silently failed to unmarshal every time and left receipts
+// always showing the hardcoded fallback; see docs/ops/known-issues.md. The
+// name/logo themselves come from platform.LoadIdentity, the single corrected
+// branding source — this key controls only whether receipt.go applies it.
+func (m *Module) showReceiptBranding(ctx context.Context) bool {
+	return m.getBool(ctx, keyReceiptBrand, true)
 }
