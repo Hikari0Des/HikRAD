@@ -21,18 +21,44 @@ export interface DashboardNasCard {
   downtime_s?: number
 }
 
-export interface Dashboard {
-  online_now: number
-  online_24h_sparkline: SparkPoint[]
-  subs: { active: number; expired: number; expiring_7d: number }
-  revenue_today_iqd: number
-  nas_cards: DashboardNasCard[]
-  radius_rps: number
-  pipeline: { invariant_ok: boolean; depth: number }
+export interface DashboardBalance {
+  currency: string
+  balance: number
 }
 
-export function getDashboard(): Promise<Dashboard> {
-  return request<Dashboard>('/dashboard')
+export interface DashboardAlertItem {
+  id: string
+  at: string
+  type: string
+  summary: string
+}
+
+/**
+ * v2-10 contract C3: every field is optional because a `?widgets=` call only
+ * ever returns the keys the (permission-filtered) requested widget ids need
+ * — a field's absence means "not requested/not permitted," never "zero."
+ */
+export interface Dashboard {
+  online_now?: number
+  online_24h_sparkline?: SparkPoint[]
+  subs?: { active: number; expired: number; expiring_7d: number }
+  revenue_today_iqd?: number
+  nas_cards?: DashboardNasCard[]
+  radius_rps?: number
+  pipeline?: { invariant_ok: boolean; depth: number }
+  my_balance?: DashboardBalance[]
+  pending_payment_tickets?: number
+  alerts_feed?: DashboardAlertItem[]
+}
+
+/**
+ * `widgets` omitted → the frozen pre-v2-10 full aggregate (requires
+ * `monitoring.view`, contract C3's legacy path). `widgets` given (even `[]`)
+ * → the new per-widget path: only the permitted, requested keys come back.
+ */
+export function getDashboard(widgets?: string[]): Promise<Dashboard> {
+  if (!widgets) return request<Dashboard>('/dashboard')
+  return request<Dashboard>('/dashboard', { query: { widgets: widgets.join(',') } })
 }
 
 // --- health (FR-35) ---------------------------------------------------------

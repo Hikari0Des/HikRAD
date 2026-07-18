@@ -7,6 +7,16 @@ export interface NotifChannels {
   push: boolean
 }
 
+/** v2-10 contract C2: one more optional key, no schema version bump. */
+export interface DashboardWidgetRef {
+  id: string
+  size: '1x' | '2x'
+}
+
+export interface DashboardLayout {
+  widgets: DashboardWidgetRef[]
+}
+
 export interface Preferences {
   language?: '' | 'en' | 'ar' | 'ku'
   theme?: '' | 'light' | 'dark' | 'system'
@@ -14,6 +24,9 @@ export interface Preferences {
   landing_page?: string
   table_page_size?: number
   notification_prefs?: Record<string, NotifChannels>
+  /** Absent/undefined = default layout; present (even empty) = an explicit
+   * choice. Full-document PUT semantics apply — see putPreferences. */
+  dashboard_layout?: DashboardLayout
 }
 
 export function getPreferences(): Promise<Preferences> {
