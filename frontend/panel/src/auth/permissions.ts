@@ -37,6 +37,8 @@ export const PERM_PAYMENT_TICKETS_VERIFY = 'payment_tickets.verify'
 export const PERM_PAYMENT_PROVIDERS_MANAGE = 'payment_providers.manage'
 export const PERM_SUBSCRIBERS_CREATE = 'subscribers.create'
 export const PERM_NAS_EDIT = 'nas.edit'
+/** v2 phase 7 (FR-87.1): one-click panel update, admin-only by default. */
+export const PERM_SYSTEM_UPDATE = 'system.update'
 
 // Bare action permissions granted independently of module verbs (C2/C7).
 export const PERM_DISCONNECT = 'disconnect'

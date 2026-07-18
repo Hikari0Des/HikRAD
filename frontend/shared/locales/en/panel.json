@@ -1137,7 +1137,32 @@
       "updateStep2": "Run the update command:",
       "updateStep3": "Wait for “Update complete and healthy.” — then reload this page and check the version above.",
       "updateSafety": "Safe by design: a pre-update backup is taken automatically, and a failed update rolls back to the previous version on its own.",
-      "updateOffline": "No internet on the server? Copy the release bundle over and run:"
+      "updateOffline": "No internet on the server? Copy the release bundle over and run:",
+      "oneClick": {
+        "title": "One-click update",
+        "intro": "Update the server directly from here — takes a backup automatically and rolls back on its own if the new version doesn't come up healthy.",
+        "checkButton": "Check for update",
+        "checking": "Checking…",
+        "upToDate": "You're already on the latest version ({version}).",
+        "updateAvailable": "Update available: {version}",
+        "updateNowButton": "Update now",
+        "confirmTitle": "Update HikRAD now?",
+        "confirmBody": "This takes a backup automatically, then applies the update and restarts the stack. The panel may be briefly unreachable while it restarts — reload this page afterwards to see the result.",
+        "confirmConfirm": "Yes, update now",
+        "reconnecting": "Reconnected — checking whether the update finished…",
+        "genericError": "Could not start the update.",
+        "resultDone": "Update complete — now running {version}.",
+        "resultRolledBack": "The update failed and was rolled back automatically. Still running {version}.",
+        "stage": {
+          "idle": "Idle",
+          "backup": "Taking a backup…",
+          "apply": "Applying the update…",
+          "health_check": "Waiting for the new version to come up healthy…",
+          "rolling_back": "Something went wrong — rolling back to the previous version…",
+          "done": "Update complete.",
+          "rolled_back": "Rolled back to the previous version."
+        }
+      }
     },
     "locale": {
       "timezone": "Timezone",
