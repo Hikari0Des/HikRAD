@@ -1,6 +1,6 @@
 # HikRAD — Sub-PRD 01: Platform, Install & Licensing
 
-> Derived from [docs/PRD.md](../PRD.md) v1.1 on 2026-07-08 (updated 2026-07-09: FR-57 added — Decision 18; FR-53 gains WhatsApp credentials — Decision 16; updated 2026-07-18 for master Decision 38 — v2 phase 5: FR-81–83, closed-source distribution & licensing hardening). Owns: FR-49, FR-50, FR-51, FR-52, FR-53, FR-57, FR-81, FR-82, FR-83 · NFR-3, NFR-7, NFR-8 · Risks: solo-dev scope creep, license cracking · Open question 3 (price point)
+> Derived from [docs/PRD.md](../PRD.md) v1.1 on 2026-07-08 (updated 2026-07-09: FR-57 added — Decision 18; FR-53 gains WhatsApp credentials — Decision 16; updated 2026-07-18 for master Decision 38 — v2 phase 5: FR-81–83, closed-source distribution & licensing hardening; updated 2026-07-18 for master Decision 39 — v2 phase 6: FR-84, per-manager preferences). Owns: FR-49, FR-50, FR-51, FR-52, FR-53, FR-57, FR-81, FR-82, FR-83, FR-84 · NFR-3, NFR-7, NFR-8 · Risks: solo-dev scope creep, license cracking · Open question 3 (price point)
 > Depends on: none (this is the foundation every other module builds on) · Depended on by: **all** sub-PRDs (Compose skeleton, `/api/v1` framework, migrations, settings service), especially [02-radius-nas-aaa](02-radius-nas-aaa.md) (service wiring) and [03-lossless-accounting-live-monitoring](03-lossless-accounting-live-monitoring.md) (disk-backed queue volumes, backup of hypertables).
 
 ## 1. Scope & context
@@ -102,6 +102,21 @@ Stack (fixed by master §8): Go backend (`hikrad-api`, `hikrad-acct`, `hikrad-mo
 - **AC-82a** — Given a license in `expired_grace`, when `hikrad-acct`/`hikrad-monitor` boot or hit their re-verify ticker, then they log the state but accounting ingest and monitoring probes are observably unaffected (a real Accounting-Request is still accepted and durably enqueued; a probe still runs).
 - **AC-82b** — Given the dev workflow (`make up` from a checkout, no license installed at all), then nothing in this feature blocks it — the zero-license "valid" default (existing FR-50 behavior) is unchanged.
 
+### FR-84 (S) — v2: Per-manager preferences
+
+**Master (Decision 39):** managers get their **own** settings, distinct from FR-53's tenant-wide global settings — language, theme, numerals, landing page, table density, and notification routing follow the manager's account across devices instead of living only in one browser's localStorage.
+
+*Elaboration:*
+- **FR-84.1** — A new `manager_preferences` table (one row per manager, JSONB doc, typed and versioned — exact shape frozen in `docs/v2/phases/phase-v2-6-preferences/00-phase.md`) holds presentation-level fields only: `language`, `theme` (`light|dark|system`, FR-84.2), `numerals`, `landing_page`, `table_page_size`, and `notification_prefs` (which FR-36 alert classes reach this manager in-app/push). This is an **additive layer over** FR-53's global settings, never a replacement: a tenant with no manager preferences set behaves exactly as it does in v1 today, reading only the global defaults.
+- **FR-84.2** — `GET/PUT /api/v1/me/preferences` — any authenticated manager, self only. A `PUT` targeting another manager's preferences is impossible by construction (the endpoint has no id parameter; it always resolves the caller from the access token, same pattern as the portal's `PUT /portal/language`), so the 403 case in the acceptance criteria below is a defense-in-depth assertion, not the only guard.
+- **FR-84.3 — The presentation boundary is absolute.** A manager preference **never** carries a permission, a data-scoping rule, or anything that affects money (currency, pricing, balances). This module's existing `settings` table remains the sole source of tenant-wide behavior-affecting configuration (billing defaults, currency, timezone); `manager_preferences` cannot shadow, override, or bypass any of it. This boundary exists because the two tables sit next to each other in the same module and an implementer reaching for "just add a field to preferences" for something that affects behavior, not just display, would quietly reopen the exact per-manager privilege-escalation surface FR-27's scoping model exists to close.
+- **FR-84.4** — Client seeding: on login, the panel (and, if a future phase gives subscribers analogous preferences, the portal) fetches `GET /api/v1/me/preferences` and applies it to the existing localStorage-backed stores (`@hikrad/shared`'s theme store, `I18nProvider`'s locale/numerals) — server value wins over whatever localStorage held from a previous device/session. localStorage remains the **offline/pre-login fallback** exactly as today (before login, and if the preferences fetch fails); every change made in the UI after login writes through to the server (`PUT`) the same way it already writes to localStorage, so the two never drift while a session is active.
+
+**Acceptance:**
+- **AC-84a** — Given a manager who sets dark theme and Kurdish on a desktop browser, when they sign in on a phone that has never visited HikRAD before, then the panel renders dark/Kurdish immediately after login, with no localStorage involved on that device.
+- **AC-84b** — Given manager A authenticated, when A calls `PUT /api/v1/me/preferences` with manager B's id anywhere in the request, then the write still only ever affects A's own row (the endpoint has no id parameter to substitute); a direct attempt to address B's preferences by any other route returns 403.
+- **AC-84c** — Given any `manager_preferences` field, then no code path reads it to decide a permission check, a `ScopeFilter` result, or a monetary amount/currency — verified by the phase gate's grep/contract leg, not by review alone.
+
 ### NFR-3 (owned) — Hardware footprint
 Runs fully on one modest server: **4 vCPU / 8 GB RAM / 200 GB SSD** for the 5k-subscriber tier. *Elaboration:* the installer enforces minimums with an override flag; Compose sets per-container memory limits so one component cannot OOM the box; image sizes and retention defaults must fit 200 GB with 3 years of rollups (sizing math verified in [03](03-lossless-accounting-live-monitoring.md) FR-33).
 
@@ -124,12 +139,13 @@ Solo-dev-friendly: monorepo, one backend service + workers, automated migrations
 
 ## 4. Data & interfaces
 
-**Owned entities:** `settings` (key, type, value JSONB, updated_by, updated_at), `license` (key_id, payload, signature, fingerprint, state, grace_started_at), `schema_migrations`. FR-81/82 add no new table — the registry-pull credential and bundle/signature material are file-based artifacts (installer-verified, not DB rows); exact shape frozen in the phase doc.
+**Owned entities:** `settings` (key, type, value JSONB, updated_by, updated_at), `license` (key_id, payload, signature, fingerprint, state, grace_started_at), `schema_migrations`, **`manager_preferences`** (manager_id PK, doc JSONB, schema_version, updated_at — v2 FR-84, exact column/JSON shape frozen in the phase doc). FR-81/82 add no new table — the registry-pull credential and bundle/signature material are file-based artifacts (installer-verified, not DB rows); exact shape frozen in the phase doc.
 
 **Exposes:**
 - `GET/PUT /api/v1/settings/{group}` (admin-gated)
 - `GET /api/v1/license`, `POST /api/v1/license` (upload), `POST /api/v1/license/request-blob`
 - `GET /api/v1/system/version` (app version, schema version, update channel)
+- `GET/PUT /api/v1/me/preferences` (any authenticated manager, self only — v2 FR-84)
 - Compose service names & internal DNS (`postgres`, `redis`, …) — the contract other modules' services rely on.
 - `install.sh --bundle <path> | --registry`, `hikrad update --bundle <path>` (FR-81.4) — installer/CLI surface, not HTTP.
 

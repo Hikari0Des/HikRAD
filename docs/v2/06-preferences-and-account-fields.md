@@ -7,14 +7,14 @@
 1. All settings in v1 are global (`platform.Settings` key-value). A manager's language and theme persist only in that browser's localStorage — nothing follows the account across devices, and nothing per-manager is configurable at all (landing page, table densities, notification preferences).
 2. Subscribers have no email column anywhere — the portal can't collect it, receipts can't be mailed, and future notification channels have nothing to send to.
 
-## 2. Requirements (draft — renumber as FR-6x at kickoff)
+## 2. Requirements (kicked off 2026-07-18, PRD Decision 39 — renumbered FR-84–85)
 
-### FR-A — Per-manager preferences
+### FR-84 — Per-manager preferences
 - New `manager_preferences` table (manager_id PK, JSONB doc) with a typed, versioned schema: `language`, `theme (light|dark|system)`, `numerals`, `landing_page`, `table_page_size`, `notification_prefs` (which alert classes reach in-app/push for this manager).
 - `GET/PUT /api/v1/me/preferences` (any authenticated manager, self only). Server value seeds the client on login; localStorage remains the offline/pre-login fallback and syncs up on change (same pattern as the portal's language persistence).
 - Global settings stay the tenant defaults; a manager preference overrides only presentation-level values — never permissions, scoping, or money rules.
 
-### FR-B — Subscriber email
+### FR-85 — Subscriber email
 - `subscribers.email` nullable text + basic format validation; end to end: panel form + list column (optional), portal Settings self-edit, CSV import mapping (SAS4 export carries email), audit-logged like phone.
 - Email is contact data only in this phase — no mailing pipeline yet (that stays a candidate feature: receipt/alert email channel).
 
