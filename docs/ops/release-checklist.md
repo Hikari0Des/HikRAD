@@ -51,6 +51,36 @@ commit is a descendant of all three:
       (panel-added NAS previously required a manual FreeRADIUS restart) and
       the `acct-spill` root-owned bind-mount chown fix in `install.sh`.
 
+## Signing & registry (v2 phase 5, FR-81)
+
+- [ ] `VERSION` file at the repo root matches the tag being cut (e.g. `v1.2.0`).
+- [ ] Release images built and pushed to `ghcr.io/hikrad/{hikrad-api,hikrad-
+      acct,hikrad-monitor,hikrad-caddy}` at the exact tag, no `:latest` ever
+      pushed (`.github/workflows/release.yml`, triggered by pushing the tag).
+- [ ] `HIKRAD_RELEASE_SIGNING_KEY` repo secret is set to the **real** offline
+      release keypair, not `scripts/release-signing/dev-release-key.pem`
+      (dev key is fine for a rehearsal tag only — see
+      `scripts/release-signing/README.md` for the one-time rotation ritual
+      before the first commercial shipment).
+- [ ] The built bundle's `SHA256SUMS.sig` verifies against the public key
+      embedded in `scripts/verify-bundle.sh`, checked on a machine **other**
+      than the one that built it (catches "verifies because it's the same
+      disk" false confidence): `bash scripts/verify-bundle.sh <extracted-dir>`.
+- [ ] A copy of the bundle with a single byte flipped anywhere in it is
+      refused by both `install.sh --bundle` and `hikrad update --bundle`
+      before anything is extracted into place — re-run the tamper-refusal
+      leg of `scripts/gate-v2-phase-5.sh` against the real artifact, not
+      just its scripted fake-bundle version.
+- [ ] The bundle is fully offline-installable: every image the compose stack
+      needs is inside it (HikRAD's own 4 plus the pinned Postgres/
+      TimescaleDB, Redis, and FreeRADIUS images) — confirm with `tar -tf
+      hikrad-vX.Y.Z.tar | grep images/` before publishing, not after a
+      customer reports a failed offline install.
+- [ ] Repo visibility is confirmed **Private** (account-level setting, not
+      enforceable by a commit — FR-83.1). The bundle is published as a
+      GitHub Release asset on this private repo, never uploaded anywhere
+      public.
+
 ## Evidence attached to the release
 
 - [ ] `docs/evidence/reports/<latest>.md` generated against the exact tagged

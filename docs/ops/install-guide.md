@@ -23,36 +23,64 @@ You need:
   start (sub-PRD 01 §2, FR-50; see step 2 below and
   [admin-guide.md](admin-guide.md#license) for the re-issue flow).
 
-## 1. Get the code and run the installer
+## 1. Get the release and run the installer
+
+**Production (v2 phase 5, FR-81): install from a signed bundle — no source
+tree, no Go/Node toolchain, works fully offline.** Vendor-delivered
+`hikrad-vX.Y.Z.tar` (see [release-checklist.md](release-checklist.md) for how
+it's cut). Extract it somewhere on the server (it carries its own `install.sh`
+under `scripts/`), then run that copy pointed back at the tar itself — the
+installer re-verifies the whole bundle's checksums and Ed25519 signature
+against a public key embedded in the script **before touching anything**,
+so a corrupted download or a tampered file anywhere in it is refused with no
+partial effect:
+
+```sh
+tar -xf hikrad-vX.Y.Z.tar -C hikrad-vX.Y.Z && cd hikrad-vX.Y.Z
+sudo ./scripts/install.sh --bundle ../hikrad-vX.Y.Z.tar
+# or, for a real TLS certificate (needs the domain's DNS pointed here first):
+sudo ./scripts/install.sh --bundle ../hikrad-vX.Y.Z.tar --domain panel.your-isp.example
+```
+
+A bit-flipped or otherwise tampered bundle produces a clear refusal (`bundle
+verification failed`) and changes nothing — try the download again rather
+than proceeding.
+
+**Development only (unchanged, needs a full checkout + Go/Node/Docker
+toolchain):**
 
 ```sh
 git clone <repo-url> hikrad && cd hikrad
 sudo ./scripts/install.sh
-# or, for a real TLS certificate (needs the domain's DNS pointed here first):
-sudo ./scripts/install.sh --domain panel.your-isp.example
 ```
 
-What this does (FR-49.1–49.5):
+Both modes do the same things (FR-49.1–49.5), differing only in step 6:
 1. Checks the OS and hardware tier (warns, never blocks, on a small box).
 2. Installs Docker Engine + the Compose plugin if not already present.
 3. Creates `/opt/hikrad/{data,backups,licenses}` and generates fresh secrets
    into `/opt/hikrad/.env` — database password, encryption key, JWT signing
-   key, and a **backup passphrase**.
+   key, and a **backup passphrase**. `--bundle` additionally verifies and
+   stages the release into `/opt/hikrad/release/`.
 4. Installs the `hikrad` CLI to `/usr/local/bin/hikrad` and a nightly backup
    cron entry.
 5. Configures Caddy for Let's Encrypt if you passed `--domain`; otherwise
    leaves the self-signed default in place.
-6. Builds and starts every service: `postgres`, `redis`, `hikrad-api`,
-   `hikrad-acct`, `hikrad-monitor`, `freeradius`, `caddy`.
+6. Starts every service: `postgres`, `redis`, `hikrad-api`, `hikrad-acct`,
+   `hikrad-monitor`, `freeradius`, `caddy` — **loaded from the bundle's
+   images** with `--bundle` (no build step, no internet needed once you have
+   the tar), or **built from source** in dev mode.
 
-Takes 3-8 minutes depending on connection speed (image builds). When it
-finishes, it prints an **install summary with your backup passphrase — copy
-it somewhere safe now.** It is not shown again, and losing both this copy and
-`/opt/hikrad/.env` makes existing backups permanently unrecoverable by design
-(see [backup-restore.md](backup-restore.md)).
+Bundle mode takes well under a minute once Docker has the images loaded
+(nothing to build); source mode takes 3-8 minutes depending on connection
+speed. Either way, when it finishes it prints an **install summary with your
+backup passphrase — copy it somewhere safe now.** It is not shown again, and
+losing both this copy and `/opt/hikrad/.env` makes existing backups
+permanently unrecoverable by design (see [backup-restore.md](backup-restore.md)).
 
 Re-running `install.sh` against an existing install never touches `data/` —
-it offers an update/repair menu instead (FR-49.4).
+it offers an update/repair menu instead (FR-49.4). Which mode an install
+started in is recorded in `/opt/hikrad/install.meta` as `HIKRAD_DELIVERY_MODE`
+(`bundle` or `source`); `hikrad update` reads it too.
 
 **Verify:**
 ```sh
