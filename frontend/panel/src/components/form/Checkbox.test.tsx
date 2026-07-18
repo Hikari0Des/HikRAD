@@ -5,9 +5,7 @@ import { Checkbox } from './Checkbox'
 
 describe('Checkbox (FR-94, C1)', () => {
   it('renders no native <input type="checkbox"> element', () => {
-    const { container } = render(
-      <Checkbox label="Opt in" checked={false} onChange={() => {}} />,
-    )
+    const { container } = render(<Checkbox label="Opt in" checked={false} onChange={() => {}} />)
     expect(container.querySelector('input[type="checkbox"]')).toBeNull()
     expect(screen.getByRole('checkbox')).toBeInTheDocument()
   })

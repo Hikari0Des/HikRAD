@@ -11,7 +11,7 @@ import type { BulkFilter, Profile, Subscriber, SubscriberStatus } from '../../ap
 import { useAuth } from '../../auth/AuthContext'
 import { Button } from '../../components/Button'
 import { PageHeader } from '../../components/PageHeader'
-import { Select } from '../../components/form'
+import { Checkbox, Select } from '../../components/form'
 import { useAsync } from '../../hooks/useAsync'
 import { usePaginated } from '../../hooks/usePaginated'
 import { BulkBar } from './BulkBar'
@@ -290,8 +290,7 @@ export function UserListPage() {
               <tr>
                 {showBulk && (
                   <Th>
-                    <input
-                      type="checkbox"
+                    <Checkbox
                       checked={allShownSelected}
                       onChange={toggleAllShown}
                       aria-label={t('users.selectAllShown')}
@@ -313,8 +312,7 @@ export function UserListPage() {
                 <tr key={s.id} className="border-t border-surface-sunken hover:bg-surface-raised">
                   {showBulk && (
                     <Td>
-                      <input
-                        type="checkbox"
+                      <Checkbox
                         checked={selected.has(s.id)}
                         onChange={() => toggleSelected(s.id)}
                         aria-label={t('users.selectRow', { username: s.username })}
@@ -401,10 +399,12 @@ function ColumnChooser({
       {open && (
         <div className="absolute end-0 top-full z-20 mt-1 w-44 rounded-md border border-surface-sunken bg-surface-raised p-2 shadow-lg">
           {ALL_COLUMNS.map((c) => (
-            <label key={c} className="flex items-center gap-2 px-1 py-1 text-sm">
-              <input type="checkbox" checked={columns.has(c)} onChange={() => onToggle(c)} />
-              {t(`subscriber.${c === 'expiry' ? 'expiry' : c}`)}
-            </label>
+            <Checkbox
+              key={c}
+              label={t(`subscriber.${c === 'expiry' ? 'expiry' : c}`)}
+              checked={columns.has(c)}
+              onChange={() => onToggle(c)}
+            />
           ))}
         </div>
       )}

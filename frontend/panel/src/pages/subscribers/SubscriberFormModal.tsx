@@ -18,7 +18,15 @@ import { ApiError, type FieldError } from '../../api/client'
 import { Button } from '../../components/Button'
 import { Modal } from '../../components/Modal'
 import { NasScopePicker } from '../../components/NasScopePicker'
-import { Checkbox, Field, Select, TextInput, Textarea } from '../../components/form'
+import {
+  Checkbox,
+  Field,
+  RadioGroup,
+  RadioOption,
+  Select,
+  TextInput,
+  Textarea,
+} from '../../components/form'
 import { useToast } from '../../components/Toast'
 
 const STATUSES: SubscriberStatus[] = ['active', 'expired', 'disabled']
@@ -325,21 +333,15 @@ function ServiceTypeRadio({
   const t = useT()
   return (
     <Field label={t('subscriber.serviceType')} hint={t('subscriber.serviceTypeHint')} error={error}>
-      <div className="flex flex-wrap gap-4">
+      <RadioGroup
+        value={value}
+        onValueChange={(v) => onChange(v as ServiceType)}
+        name="service_type"
+      >
         {SERVICE_TYPES.map((v) => (
-          <label key={v} className="flex items-center gap-2 text-sm">
-            <input
-              type="radio"
-              name="service_type"
-              value={v}
-              checked={value === v}
-              onChange={() => onChange(v)}
-              className="h-4 w-4"
-            />
-            <span>{t(`serviceType.${v}`)}</span>
-          </label>
+          <RadioOption key={v} value={v} label={t(`serviceType.${v}`)} />
         ))}
-      </div>
+      </RadioGroup>
     </Field>
   )
 }

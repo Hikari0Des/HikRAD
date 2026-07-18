@@ -39,9 +39,7 @@ export function Switch({
       onCheckedChange={(v) => onChange({ target: { checked: v } })}
       className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full bg-surface-sunken p-0.5 data-[state=checked]:bg-brand disabled:opacity-60 ${FOCUS_RING} ${className ?? ''}`}
     >
-      <RadixSwitch.Thumb
-        className="ms-0 block h-4 w-4 rounded-full bg-surface-raised shadow transition-[margin-inline-start] duration-150 motion-reduce:transition-none data-[state=checked]:ms-[16px]"
-      />
+      <RadixSwitch.Thumb className="ms-0 block h-4 w-4 rounded-full bg-surface-raised shadow transition-[margin-inline-start] duration-150 motion-reduce:transition-none data-[state=checked]:ms-[16px]" />
     </RadixSwitch.Root>
   )
 

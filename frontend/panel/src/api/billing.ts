@@ -73,7 +73,7 @@ export function topupManager(
   return touchingBalance(request(`/managers/${id}/topup`, { method: 'POST', body }))
 }
 
-/** Currency catalog for building currency <select>s (C7). */
+/** Currency catalog for building currency pickers (C7). */
 export interface Currency {
   code: string
   minor_unit_digits: number

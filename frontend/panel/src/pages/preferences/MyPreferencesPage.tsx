@@ -10,7 +10,7 @@ import {
 } from '../../api/preferences'
 import { ApiError } from '../../api/client'
 import { Button } from '../../components/Button'
-import { Field, Select, TextInput } from '../../components/form'
+import { Checkbox, Field, Select, TextInput } from '../../components/form'
 import { PageHeader } from '../../components/PageHeader'
 import { useToast } from '../../components/Toast'
 import { useAsync } from '../../hooks/useAsync'
@@ -214,16 +214,14 @@ export function MyPreferencesPage() {
                         : t(`alerts.type.${key}`)}
                     </td>
                     <td className="px-2 py-2 text-center">
-                      <input
-                        type="checkbox"
+                      <Checkbox
                         aria-label={t('preferences.channelInApp')}
                         checked={ch.in_app}
                         onChange={(e) => setChannel(key, 'in_app', e.target.checked)}
                       />
                     </td>
                     <td className="px-2 py-2 text-center">
-                      <input
-                        type="checkbox"
+                      <Checkbox
                         aria-label={t('preferences.channelPush')}
                         checked={ch.push}
                         onChange={(e) => setChannel(key, 'push', e.target.checked)}

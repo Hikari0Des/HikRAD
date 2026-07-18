@@ -6,9 +6,9 @@
  * UI mirrors when <html dir> flips to rtl. Physical left/right properties and
  * values are forbidden. Built-in stylelint rules only — no plugin dependency.
  *
- * Portal reuses this config (frontend/portal/stylelint.config.mjs re-exports
- * it); the panel is invited to adopt it at merge (Agent 4's tree already
- * follows the convention).
+ * Portal and panel both reuse this config verbatim (their own
+ * stylelint.config.mjs each re-export it) — the panel adopted it in v2
+ * phase 12 (C9), closing the gap this comment used to note as outstanding.
  */
 export default {
   rules: {

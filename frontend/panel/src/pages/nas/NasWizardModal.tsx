@@ -151,14 +151,11 @@ export function NasWizardModal({
           >
             <TextInput value={form.snmp} dir="ltr" onChange={(e) => set('snmp', e.target.value)} />
           </Field>
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={form.enabled}
-              onChange={(e) => set('enabled', e.target.checked)}
-            />
-            {t('nas.enabled')}
-          </label>
+          <Checkbox
+            label={t('nas.enabled')}
+            checked={form.enabled}
+            onChange={(e) => set('enabled', e.target.checked)}
+          />
 
           <div className="border-t border-surface-sunken pt-3">
             <p className="mb-2 text-xs font-medium text-ink-muted">

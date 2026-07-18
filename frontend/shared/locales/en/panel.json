@@ -1513,6 +1513,7 @@
     "remove": "Remove {name}",
     "unknown": "Unknown NAS",
     "noNas": "No NAS has been added yet.",
-    "loadFailed": "Could not load the NAS list."
+    "loadFailed": "Could not load the NAS list.",
+    "search": "Search…"
   }
 }

@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 import { useT } from '@hikrad/shared'
 
 import { listNas } from '../api/nas'
 import type { Nas, NasScope } from '../api/types'
-import { Field } from './form'
+import { Combobox, Field, type ComboboxOption } from './form'
 
 /**
  * FR-64 NAS-scope picker, shared by the subscriber and profile forms.
@@ -31,8 +31,6 @@ export function NasScopePicker({
   const t = useT()
   const [nas, setNas] = useState<Nas[]>([])
   const [failed, setFailed] = useState(false)
-  const [open, setOpen] = useState(false)
-  const menuRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     let alive = true
@@ -44,95 +42,62 @@ export function NasScopePicker({
     }
   }, [])
 
-  // Close on an outside click or Escape — a menu that traps the operator inside
-  // a form is worse than no menu.
-  useEffect(() => {
-    if (!open) return
-    const onDown = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setOpen(false)
-    }
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false)
-    document.addEventListener('mousedown', onDown)
-    document.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('mousedown', onDown)
-      document.removeEventListener('keydown', onKey)
-    }
-  }, [open])
-
   const options = useMemo(() => buildOptions(nas, t), [nas, t])
   const scopeError = firstScopeError(errors)
+  const selectedKeys = useMemo(() => scopes.map(scopeKey), [scopes])
+  const comboboxOptions: ComboboxOption[] = useMemo(
+    () => options.map((o) => ({ value: scopeKey(o.scope), label: o.label, indent: o.isService })),
+    [options],
+  )
 
-  const toggle = (opt: NasScope) => {
-    onChange(toggleScope(scopes, opt))
+  // Combobox reports the whole next selection, but toggleScope's narrowing
+  // rules (a service selection narrows an already-whole-NAS scope, etc.,
+  // see its own doc comment) need to know exactly WHICH entry changed — it
+  // toggles exactly one per interaction, so the symmetric difference always
+  // has exactly one member.
+  const handleComboboxChange = (nextKeys: string[]) => {
+    const changedKey =
+      nextKeys.find((k) => !selectedKeys.includes(k)) ??
+      selectedKeys.find((k) => !nextKeys.includes(k))
+    const opt = options.find((o) => scopeKey(o.scope) === changedKey)
+    if (opt) onChange(toggleScope(scopes, opt.scope))
   }
 
   return (
     <div className="sm:col-span-2">
       <Field label={t('nasScope.label')} hint={t('nasScope.hint')} error={scopeError}>
-        <div className="relative" ref={menuRef}>
-          <div className="mb-2 flex flex-wrap items-center gap-1.5">
-            {scopes.length === 0 ? (
-              <span className="text-sm text-ink-muted">{t('nasScope.anyNas')}</span>
-            ) : (
-              scopes.map((s) => (
-                <span
-                  key={scopeKey(s)}
-                  className="flex items-center gap-1 rounded bg-surface-sunken px-2 py-0.5 text-xs"
+        <div className="mb-2 flex flex-wrap items-center gap-1.5">
+          {scopes.length === 0 ? (
+            <span className="text-sm text-ink-muted">{t('nasScope.anyNas')}</span>
+          ) : (
+            scopes.map((s) => (
+              <span
+                key={scopeKey(s)}
+                className="flex items-center gap-1 rounded bg-surface-sunken px-2 py-0.5 text-xs"
+              >
+                {labelForScope(s, options, t)}
+                <button
+                  type="button"
+                  className="text-ink-muted hover:text-danger"
+                  aria-label={t('nasScope.remove', { name: labelForScope(s, options, t) })}
+                  onClick={() => onChange(scopes.filter((x) => scopeKey(x) !== scopeKey(s)))}
                 >
-                  {labelForScope(s, options, t)}
-                  <button
-                    type="button"
-                    className="text-ink-muted hover:text-danger"
-                    aria-label={t('nasScope.remove', { name: labelForScope(s, options, t) })}
-                    onClick={() => onChange(scopes.filter((x) => scopeKey(x) !== scopeKey(s)))}
-                  >
-                    ×
-                  </button>
-                </span>
-              ))
-            )}
-          </div>
-
-          <button
-            type="button"
-            className="w-full rounded-md border border-surface-sunken px-3 py-2 text-start text-sm"
-            aria-expanded={open}
-            aria-haspopup="listbox"
-            onClick={() => setOpen((o) => !o)}
-          >
-            {t('nasScope.add')}
-          </button>
-
-          {open && (
-            <div
-              role="listbox"
-              aria-multiselectable
-              className="absolute z-20 mt-1 max-h-64 w-full overflow-y-auto rounded-md border border-surface-sunken bg-surface shadow-lg"
-            >
-              {options.length === 0 ? (
-                <p className="p-3 text-sm text-ink-muted">{t('nasScope.noNas')}</p>
-              ) : (
-                options.map((opt) => {
-                  const checked = scopes.some((s) => scopeKey(s) === scopeKey(opt.scope))
-                  return (
-                    <label
-                      key={scopeKey(opt.scope)}
-                      role="option"
-                      aria-selected={checked}
-                      className={`flex cursor-pointer items-center gap-2 px-3 py-1.5 text-sm hover:bg-surface-sunken/50 ${
-                        opt.isService ? 'ps-8' : 'font-medium'
-                      }`}
-                    >
-                      <input type="checkbox" checked={checked} onChange={() => toggle(opt.scope)} />
-                      {opt.label}
-                    </label>
-                  )
-                })
-              )}
-            </div>
+                  ×
+                </button>
+              </span>
+            ))
           )}
         </div>
+
+        <Combobox
+          options={comboboxOptions}
+          selected={selectedKeys}
+          onChange={handleComboboxChange}
+          triggerLabel={t('nasScope.add')}
+          searchPlaceholder={t('nasScope.search')}
+          noOptionsLabel={t('nasScope.noNas')}
+          noMatchLabel={t('search.noResults')}
+        />
         {failed && <p className="mt-1 text-sm text-[--color-danger]">{t('nasScope.loadFailed')}</p>}
       </Field>
     </div>

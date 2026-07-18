@@ -3,6 +3,7 @@ import { useMemo } from 'react'
 import { useT } from '@hikrad/shared'
 
 import type { PermissionGroup } from '../../api/security'
+import { Checkbox } from '../../components/form'
 
 /**
  * Roles matrix editor (FR-27.1): a modules × verbs grid comprehensible to Omar.
@@ -58,16 +59,14 @@ export function RoleMatrix({
                   {row.perms.map(({ perm, verb }) => {
                     const checked = value.has(perm)
                     return (
-                      <label key={perm} className="flex items-center gap-1.5">
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          disabled={disabled}
-                          aria-label={`${row.module}.${verb}`}
-                          onChange={(e) => toggle(perm, e.target.checked)}
-                        />
-                        <span>{t(`roles.verb.${verb}`)}</span>
-                      </label>
+                      <Checkbox
+                        key={perm}
+                        label={t(`roles.verb.${verb}`)}
+                        checked={checked}
+                        disabled={disabled}
+                        aria-label={`${row.module}.${verb}`}
+                        onChange={(e) => toggle(perm, e.target.checked)}
+                      />
                     )
                   })}
                 </div>

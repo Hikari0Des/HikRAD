@@ -15,6 +15,7 @@ import type {
 import { rosMatrixValidated } from '../../lib/rosMatrix'
 import { Button } from '../../components/Button'
 import { Modal } from '../../components/Modal'
+import { RadioGroup, RadioOption } from '../../components/form'
 import { useToast } from '../../components/Toast'
 
 /**
@@ -169,25 +170,26 @@ export function NasAutoSetupModal({
                             {c.update_command}
                           </pre>
                         ) : null}
-                        <div className="mt-2 flex flex-wrap gap-3 text-xs">
-                          <ResolutionChoice
-                            label={t('nas.autoSetup.resolution.abort')}
-                            checked={!resolutions[c.key]}
-                            onSelect={() => setResolution(c.key, undefined)}
-                          />
-                          <ResolutionChoice
-                            label={t('nas.autoSetup.resolution.keep')}
-                            checked={resolutions[c.key] === 'keep'}
-                            onSelect={() => setResolution(c.key, 'keep')}
-                          />
+                        <RadioGroup
+                          className="mt-2 text-xs"
+                          name={`resolution-${c.key}`}
+                          value={resolutions[c.key] ?? 'abort'}
+                          onValueChange={(v) =>
+                            setResolution(
+                              c.key,
+                              v === 'abort' ? undefined : (v as AutoSetupResolution),
+                            )
+                          }
+                        >
+                          <RadioOption value="abort" label={t('nas.autoSetup.resolution.abort')} />
+                          <RadioOption value="keep" label={t('nas.autoSetup.resolution.keep')} />
                           {c.resolvable ? (
-                            <ResolutionChoice
+                            <RadioOption
+                              value="update"
                               label={t('nas.autoSetup.resolution.update')}
-                              checked={resolutions[c.key] === 'update'}
-                              onSelect={() => setResolution(c.key, 'update')}
                             />
                           ) : null}
-                        </div>
+                        </RadioGroup>
                       </li>
                     ))}
                   </ul>
@@ -418,23 +420,6 @@ function ValuesForm({
         />
       </label>
     </div>
-  )
-}
-
-function ResolutionChoice({
-  label,
-  checked,
-  onSelect,
-}: {
-  label: string
-  checked: boolean
-  onSelect: () => void
-}) {
-  return (
-    <label className="flex items-center gap-1">
-      <input type="radio" checked={checked} onChange={onSelect} />
-      {label}
-    </label>
   )
 }
 
