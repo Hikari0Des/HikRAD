@@ -18,6 +18,7 @@ import { VirtualList } from '../../components/VirtualList'
 import { useToast } from '../../components/Toast'
 import { useAsync } from '../../hooks/useAsync'
 import { useDebouncedValue } from '../../hooks/useDebouncedValue'
+import { usePersistentState } from '../../hooks/usePersistentState'
 import { applyLiveEvent, type LiveMap } from '../../lib/liveReducer'
 import { formatBps, formatBytes } from '../../lib/units'
 
@@ -44,10 +45,19 @@ export function LiveSessionsPage() {
   const profiles: Profile[] = profilesQ.data?.items ?? []
   const managers: ManagerView[] = managersQ.data?.items ?? []
 
-  const [nasId, setNasId] = useState('')
-  const [profileId, setProfileId] = useState('')
-  const [managerId, setManagerId] = useState('')
-  const [service, setService] = useState('')
+  // Select filters are remembered per manager until cleared (item 7); the
+  // free-text search deliberately is not.
+  const [persisted, setPersisted] = usePersistentState('live.filters', {
+    nasId: '',
+    profileId: '',
+    managerId: '',
+    service: '',
+  })
+  const { nasId, profileId, managerId, service } = persisted
+  const setNasId = (v: string) => setPersisted((p) => ({ ...p, nasId: v }))
+  const setProfileId = (v: string) => setPersisted((p) => ({ ...p, profileId: v }))
+  const setManagerId = (v: string) => setPersisted((p) => ({ ...p, managerId: v }))
+  const setService = (v: string) => setPersisted((p) => ({ ...p, service: v }))
   const [q, setQ] = useState('')
   const debouncedQ = useDebouncedValue(q.trim(), 300)
 

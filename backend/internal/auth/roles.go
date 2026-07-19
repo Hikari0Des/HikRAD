@@ -33,16 +33,18 @@ var permissionCatalog = []struct {
 	{"profiles", []string{"profiles.view", "profiles.create", "profiles.edit", "profiles.delete"}},
 	{"nas", []string{"nas.view", "nas.create", "nas.edit", "nas.delete"}},
 	{"pools", []string{"pools.view", "pools.create", "pools.edit", "pools.delete"}},
-	{"billing", []string{"billing.view", "billing.create", "billing.edit"}},
+	{"billing", []string{"billing.view", "billing.create", "billing.edit",
+		"currency_rates.manage", "overheads.manage", "reseller_prices.manage",
+		"payment_providers.manage", "payment_tickets.verify"}},
 	{"vouchers", []string{"vouchers.view", "vouchers.create", "vouchers.edit"}},
 	{"monitoring", []string{"monitoring.view", "monitoring.create", "monitoring.edit", "monitoring.delete"}},
 	{"reports", []string{"reports.view"}},
 	{"settings", []string{"settings.view", "settings.edit"}},
-	{"system", []string{"license.manage", "backups.view", "backups.manage", "tunnel.manage"}},
+	{"system", []string{"license.manage", "backups.view", "backups.manage", "tunnel.manage", "system.update"}},
 	{"managers", []string{"managers.view", "managers.create", "managers.edit", "managers.delete"}},
 	{"live", []string{"live.view", "sessions.view"}},
 	{"audit", []string{"audit.view"}},
-	{"actions", []string{PermRenew, PermDisconnect, PermTopup, PermExport}},
+	{"actions", []string{PermRenew, PermDisconnect, PermTopup, PermExport, "refund"}},
 }
 
 // catalogSet is every catalog permission as a lookup set, for validation.

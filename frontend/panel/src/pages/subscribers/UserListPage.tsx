@@ -14,6 +14,7 @@ import { PageHeader } from '../../components/PageHeader'
 import { Checkbox, Select } from '../../components/form'
 import { useAsync } from '../../hooks/useAsync'
 import { usePaginated } from '../../hooks/usePaginated'
+import { usePersistentState } from '../../hooks/usePersistentState'
 import { BulkBar } from './BulkBar'
 import { SubscriberFormModal } from './SubscriberFormModal'
 
@@ -59,7 +60,8 @@ export function UserListPage() {
   const { formatDate } = useFormatters()
   const { can } = useAuth()
 
-  const [filters, setFilters] = useState<Filters>(EMPTY)
+  // Remembered per manager until cleared (item 7).
+  const [filters, setFilters] = usePersistentState<Filters>('subscribers.filters', EMPTY)
   const [columns, setColumns] = useState<Set<Column>>(
     () => new Set<Column>(['username', 'name', 'phone', 'status', 'profile', 'expiry']),
   )

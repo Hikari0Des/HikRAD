@@ -87,6 +87,13 @@
     "noNas": "No NAS devices registered.",
     "noBalance": "No balance yet.",
     "noAlerts": "No recent alerts.",
+    "noUsage": "No usage recorded in the last 7 days.",
+    "noOpenSessions": "No open sessions.",
+    "sessionCount": "{n} session(s)",
+    "service": {
+      "pppoe": "PPPoE",
+      "hotspot": "Hotspot"
+    },
     "edit": "Customize",
     "resetDefault": "Reset to default",
     "addWidget": "Add widget:",
@@ -105,7 +112,9 @@
       "nas-health": "NAS health",
       "my-balance": "My balance",
       "pending-payment-tickets": "Pending payment tickets",
-      "alerts-feed": "Recent alerts"
+      "alerts-feed": "Recent alerts",
+      "top-usage-subscribers": "Top usage (7 days)",
+      "top-session-subscribers": "Most open sessions"
     },
     "empty": {
       "title": "Nothing here yet",
@@ -744,6 +753,11 @@
     "passwordEditHint": "Leave blank to keep the current password.",
     "scopedLabel": "Data-scoped",
     "scopedHint": "Only sees subscribers they own.",
+    "fullName": "Full name",
+    "phone": "Phone",
+    "email": "Email",
+    "address": "Address",
+    "notes": "Notes",
     "scoped": "Scoped",
     "global": "Global",
     "unlocked": "Manager unlocked.",
@@ -820,19 +834,43 @@
       "settings": "Settings",
       "managers": "Managers",
       "live": "Live",
+      "sessions": "Sessions",
       "audit": "Audit",
-      "actions": "Actions"
+      "actions": "Actions",
+      "license": "License",
+      "backups": "Backups",
+      "tunnel": "Tunnel",
+      "system": "System",
+      "currency_rates": "Currency rates",
+      "overheads": "Overheads",
+      "reseller_prices": "Reseller prices",
+      "payment_providers": "Payment providers",
+      "payment_tickets": "Payment tickets"
     },
     "verb": {
       "view": "View",
       "create": "Create",
       "edit": "Edit",
       "delete": "Delete",
+      "manage": "Manage",
+      "verify": "Verify",
+      "update": "Update",
       "renew": "Renew",
       "disconnect": "Disconnect",
       "topup": "Top up",
-      "export": "Export"
+      "export": "Export",
+      "refund": "Refund"
     }
+  },
+  "rate": {
+    "hint": "e.g. 10M, 1G, or 512 (kbit). Empty or 0 = unlimited.",
+    "placeholder": "10M",
+    "pairPlaceholder": "up/down — e.g. 2M/10M",
+    "invalid": "Not a valid rate — use 10M, 1G, or a kbit number.",
+    "unlimited": "Unlimited",
+    "inherit": "Not set — inherits the default.",
+    "mbit": "= {n} Mbit/s",
+    "kbit": "= {n} kbit/s"
   },
   "auditlog": {
     "title": "Audit log",
@@ -840,12 +878,190 @@
     "empty": "No audit entries match.",
     "before": "Before",
     "after": "After",
+    "by": "by {actor}",
+    "field": "Field",
+    "noChanges": "No field changes recorded.",
+    "showRaw": "Show raw JSON",
+    "showChanges": "Show changes",
     "filter": {
       "action": "Action",
       "entity": "Entity type"
     },
-    "summary": {
-      "generic": "{action} on {entity}"
+    "entity": {
+      "subscriber": "Subscriber",
+      "profile": "Profile",
+      "nas": "NAS",
+      "device": "Device",
+      "manager": "Manager",
+      "role": "Role",
+      "license": "License",
+      "settings": "Settings",
+      "session": "Session",
+      "voucher_batch": "Voucher batch",
+      "voucher": "Voucher",
+      "payment_ticket": "Payment ticket",
+      "payment_provider": "Payment provider",
+      "currency_rate": "Exchange rate",
+      "overhead": "Overhead",
+      "reseller_price": "Reseller price",
+      "pool": "IP pool",
+      "alert_rule": "Alert rule",
+      "system": "System",
+      "auth": "Authentication"
+    },
+    "action": {
+      "auth": {
+        "login": "Signed in",
+        "login_disabled": "Sign-in rejected (account disabled)",
+        "logout": "Signed out",
+        "denied": "Permission denied",
+        "ip_denied": "Sign-in rejected (IP not allowed)",
+        "refresh_reuse": "Refresh-token reuse detected",
+        "totp_enabled": "Two-factor enabled",
+        "totp_disabled": "Two-factor disabled",
+        "totp_enroll_started": "Two-factor enrolment started",
+        "totp_enroll_required": "Two-factor enrolment required",
+        "totp_required": "Two-factor code required",
+        "totp_failed": "Two-factor code incorrect"
+      },
+      "alert_rule": {
+        "create": "Alert rule created",
+        "update": "Alert rule updated"
+      },
+      "audit": {
+        "export": "Audit log exported"
+      },
+      "currency_rate": {
+        "create": "Exchange rate added"
+      },
+      "device": {
+        "create": "Device added",
+        "update": "Device updated",
+        "delete": "Device deleted"
+      },
+      "enforce": {
+        "expired": "Expiry enforced",
+        "quota_exceeded": "Quota enforcement applied"
+      },
+      "license": {
+        "upload": "License installed",
+        "request_blob": "License request generated"
+      },
+      "manager": {
+        "topup": "Manager balance topped up",
+        "exchange": "Currency exchanged"
+      },
+      "manager_method_setting": {
+        "put": "Payment method setting changed"
+      },
+      "manager_provider_account": {
+        "put": "Receiving account saved"
+      },
+      "instance_method_setting": {
+        "put": "Instance default payment method changed"
+      },
+      "instance_provider_account": {
+        "put": "Instance default receiving account saved"
+      },
+      "managers": {
+        "create": "Manager created",
+        "update": "Manager updated",
+        "delete": "Manager deleted",
+        "allowlist_update": "Manager IP allowlist updated",
+        "permissions_update": "Manager permissions updated",
+        "totp_reset": "Manager two-factor reset",
+        "unlock": "Manager account unlocked"
+      },
+      "nas": {
+        "create": "NAS added",
+        "update": "NAS updated",
+        "delete": "NAS deleted",
+        "autosetup_preview": "Auto-setup previewed",
+        "autosetup_apply": "Auto-setup applied",
+        "config_inspect": "Router config inspected",
+        "discover_services": "Services discovered",
+        "health_fix": "Health fix applied",
+        "probe": "Router probed",
+        "service_adopt": "Service adopted",
+        "service_apply": "Service change applied"
+      },
+      "overhead": {
+        "create": "Overhead added"
+      },
+      "panel_sessions": {
+        "revoke": "Panel session revoked"
+      },
+      "payment_provider": {
+        "create": "Payment provider added",
+        "update": "Payment provider updated"
+      },
+      "payment_ticket": {
+        "approve": "Payment ticket approved",
+        "reject": "Payment ticket rejected",
+        "reveal": "Card code revealed"
+      },
+      "pools": {
+        "create": "IP pool created",
+        "update": "IP pool updated",
+        "delete": "IP pool deleted"
+      },
+      "portal": {
+        "self_update": "Subscriber updated their own info"
+      },
+      "profile": {
+        "create": "Profile created",
+        "update": "Profile updated",
+        "delete": "Profile deleted",
+        "archive": "Profile archived",
+        "cost": {
+          "create": "Plan cost recorded"
+        },
+        "tod": {
+          "create": "Time-of-day rule added",
+          "delete": "Time-of-day rule removed"
+        }
+      },
+      "reseller_price": {
+        "create": "Reseller price set"
+      },
+      "roles": {
+        "create": "Role created",
+        "update": "Role updated",
+        "delete": "Role deleted"
+      },
+      "settings": {
+        "update": "Settings updated",
+        "notification_test": "Test notification sent"
+      },
+      "setup": {
+        "admin_create": "First admin created"
+      },
+      "subscriber": {
+        "create": "Subscriber created",
+        "update": "Subscriber updated",
+        "delete": "Subscriber deleted",
+        "renew": "Subscriber renewed",
+        "refund": "Payment refunded",
+        "reset_mac": "MAC lock reset",
+        "bulk_enable": "Bulk: subscribers enabled",
+        "bulk_disable": "Bulk: subscribers disabled",
+        "bulk_change_profile": "Bulk: profile changed",
+        "bulk_extend_expiry": "Bulk: expiry extended",
+        "bulk_move_owner": "Bulk: owner changed",
+        "bulk_set_service_type": "Bulk: service type changed",
+        "bulk_delete": "Bulk: subscribers deleted",
+        "bulk_export": "Subscribers exported"
+      },
+      "update": {
+        "start": "System update started"
+      },
+      "voucher": {
+        "redeem": "Voucher redeemed",
+        "batch": {
+          "create": "Voucher batch created",
+          "void": "Voucher batch voided"
+        }
+      }
     }
   },
   "account": {
@@ -1371,7 +1587,9 @@
     "accountMissing": "Enabled but no account set — subscribers won't see this yet",
     "accountDetails": "Account details (shown to subscribers)",
     "accountDetailsHint": "e.g. phone number, IBAN, or wallet ID.",
-    "instructionsOverride": "Instructions (optional override)"
+    "instructionsOverride": "Instructions (optional override)",
+    "instanceTitle": "Instance defaults (subscribers with no owner)",
+    "instanceHint": "Subscribers not owned by any manager see these methods on their Pay screen. Owned subscribers always use their own manager's settings above."
   },
   "import": {
     "title": "Import subscribers",

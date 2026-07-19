@@ -87,6 +87,13 @@
     "noNas": "لا توجد أجهزة NAS مسجّلة.",
     "noBalance": "لا يوجد رصيد بعد.",
     "noAlerts": "لا توجد تنبيهات حديثة.",
+    "noUsage": "لا استهلاك مسجّل خلال آخر 7 أيام.",
+    "noOpenSessions": "لا جلسات مفتوحة.",
+    "sessionCount": "{n} جلسة",
+    "service": {
+      "pppoe": "PPPoE",
+      "hotspot": "هوت سبوت"
+    },
     "edit": "تخصيص",
     "resetDefault": "إعادة الضبط للافتراضي",
     "addWidget": "إضافة عنصر:",
@@ -105,7 +112,9 @@
       "nas-health": "صحة أجهزة NAS",
       "my-balance": "رصيدي",
       "pending-payment-tickets": "تذاكر دفع معلّقة",
-      "alerts-feed": "التنبيهات الأخيرة"
+      "alerts-feed": "التنبيهات الأخيرة",
+      "top-usage-subscribers": "الأعلى استهلاكاً (7 أيام)",
+      "top-session-subscribers": "الأكثر جلسات مفتوحة"
     },
     "empty": {
       "title": "لا يوجد شيء هنا بعد",
@@ -744,6 +753,11 @@
     "passwordEditHint": "اتركها فارغة للإبقاء على الحالية.",
     "scopedLabel": "مقيّد بالبيانات",
     "scopedHint": "يرى فقط المشتركين الذين يملكهم.",
+    "fullName": "الاسم الكامل",
+    "phone": "الهاتف",
+    "email": "البريد الإلكتروني",
+    "address": "العنوان",
+    "notes": "ملاحظات",
     "scoped": "مقيّد",
     "global": "عام",
     "unlocked": "تم فتح قفل المدير.",
@@ -820,19 +834,43 @@
       "settings": "الإعدادات",
       "managers": "المدراء",
       "live": "المباشر",
+      "sessions": "الجلسات",
       "audit": "التدقيق",
-      "actions": "الإجراءات"
+      "actions": "الإجراءات",
+      "license": "الترخيص",
+      "backups": "النسخ الاحتياطية",
+      "tunnel": "النفق",
+      "system": "النظام",
+      "currency_rates": "أسعار الصرف",
+      "overheads": "المصاريف التشغيلية",
+      "reseller_prices": "أسعار الموزعين",
+      "payment_providers": "مزوّدو الدفع",
+      "payment_tickets": "تذاكر الدفع"
     },
     "verb": {
       "view": "عرض",
       "create": "إنشاء",
       "edit": "تعديل",
       "delete": "حذف",
+      "manage": "إدارة",
+      "verify": "تحقق",
+      "update": "تحديث",
       "renew": "تجديد",
       "disconnect": "قطع",
       "topup": "شحن",
-      "export": "تصدير"
+      "export": "تصدير",
+      "refund": "استرجاع"
     }
+  },
+  "rate": {
+    "hint": "مثال: 10M أو 1G أو 512 (كيلوبت). فارغ أو 0 = بلا حد.",
+    "placeholder": "10M",
+    "pairPlaceholder": "رفع/تنزيل — مثال 2M/10M",
+    "invalid": "قيمة غير صالحة — استخدم 10M أو 1G أو رقم كيلوبت.",
+    "unlimited": "بلا حد",
+    "inherit": "غير محدد — يرث الافتراضي.",
+    "mbit": "= {n} ميغابت/ث",
+    "kbit": "= {n} كيلوبت/ث"
   },
   "auditlog": {
     "title": "سجل التدقيق",
@@ -840,12 +878,190 @@
     "empty": "لا مدخلات تدقيق مطابقة.",
     "before": "قبل",
     "after": "بعد",
+    "by": "بواسطة {actor}",
+    "field": "الحقل",
+    "noChanges": "لا تغييرات حقول مسجّلة.",
+    "showRaw": "عرض JSON الخام",
+    "showChanges": "عرض التغييرات",
     "filter": {
       "action": "الإجراء",
       "entity": "نوع الكيان"
     },
-    "summary": {
-      "generic": "{action} على {entity}"
+    "entity": {
+      "subscriber": "مشترك",
+      "profile": "باقة",
+      "nas": "NAS",
+      "device": "جهاز",
+      "manager": "مدير",
+      "role": "دور",
+      "license": "ترخيص",
+      "settings": "الإعدادات",
+      "session": "جلسة",
+      "voucher_batch": "دفعة قسائم",
+      "voucher": "قسيمة",
+      "payment_ticket": "تذكرة دفع",
+      "payment_provider": "مزوّد دفع",
+      "currency_rate": "سعر صرف",
+      "overhead": "مصروف تشغيلي",
+      "reseller_price": "سعر موزع",
+      "pool": "مجمّع IP",
+      "alert_rule": "قاعدة تنبيه",
+      "system": "النظام",
+      "auth": "مصادقة"
+    },
+    "action": {
+      "auth": {
+        "login": "تسجيل دخول",
+        "login_disabled": "رفض تسجيل الدخول (الحساب معطّل)",
+        "logout": "تسجيل خروج",
+        "denied": "رفض صلاحية",
+        "ip_denied": "رفض تسجيل الدخول (عنوان IP غير مسموح)",
+        "refresh_reuse": "اكتشاف إعادة استخدام رمز التحديث",
+        "totp_enabled": "تفعيل التحقق بخطوتين",
+        "totp_disabled": "تعطيل التحقق بخطوتين",
+        "totp_enroll_started": "بدء تسجيل التحقق بخطوتين",
+        "totp_enroll_required": "مطلوب تسجيل التحقق بخطوتين",
+        "totp_required": "مطلوب رمز التحقق بخطوتين",
+        "totp_failed": "رمز تحقق غير صحيح"
+      },
+      "alert_rule": {
+        "create": "إنشاء قاعدة تنبيه",
+        "update": "تحديث قاعدة تنبيه"
+      },
+      "audit": {
+        "export": "تصدير سجل التدقيق"
+      },
+      "currency_rate": {
+        "create": "إضافة سعر صرف"
+      },
+      "device": {
+        "create": "إضافة جهاز",
+        "update": "تحديث جهاز",
+        "delete": "حذف جهاز"
+      },
+      "enforce": {
+        "expired": "تطبيق الانتهاء",
+        "quota_exceeded": "تطبيق تجاوز الحصة"
+      },
+      "license": {
+        "upload": "تثبيت الترخيص",
+        "request_blob": "توليد طلب ترخيص"
+      },
+      "manager": {
+        "topup": "شحن رصيد مدير",
+        "exchange": "تحويل بين العملات"
+      },
+      "manager_method_setting": {
+        "put": "تغيير إعداد طريقة دفع"
+      },
+      "manager_provider_account": {
+        "put": "حفظ حساب استلام"
+      },
+      "instance_method_setting": {
+        "put": "تغيير طريقة الدفع الافتراضية للنظام"
+      },
+      "instance_provider_account": {
+        "put": "حفظ حساب الاستلام الافتراضي للنظام"
+      },
+      "managers": {
+        "create": "إنشاء مدير",
+        "update": "تحديث مدير",
+        "delete": "حذف مدير",
+        "allowlist_update": "تحديث قائمة IP المسموحة للمدير",
+        "permissions_update": "تحديث صلاحيات مدير",
+        "totp_reset": "إعادة تعيين التحقق بخطوتين لمدير",
+        "unlock": "فتح قفل حساب مدير"
+      },
+      "nas": {
+        "create": "إضافة NAS",
+        "update": "تحديث NAS",
+        "delete": "حذف NAS",
+        "autosetup_preview": "معاينة الإعداد التلقائي",
+        "autosetup_apply": "تطبيق الإعداد التلقائي",
+        "config_inspect": "فحص إعدادات الراوتر",
+        "discover_services": "اكتشاف الخدمات",
+        "health_fix": "تطبيق إصلاح الصحة",
+        "probe": "فحص الراوتر",
+        "service_adopt": "تبنّي خدمة",
+        "service_apply": "تطبيق تغيير خدمة"
+      },
+      "overhead": {
+        "create": "إضافة مصروف تشغيلي"
+      },
+      "panel_sessions": {
+        "revoke": "إبطال جلسة لوحة"
+      },
+      "payment_provider": {
+        "create": "إضافة مزوّد دفع",
+        "update": "تحديث مزوّد دفع"
+      },
+      "payment_ticket": {
+        "approve": "قبول تذكرة دفع",
+        "reject": "رفض تذكرة دفع",
+        "reveal": "كشف رمز الكرت"
+      },
+      "pools": {
+        "create": "إنشاء مجمّع IP",
+        "update": "تحديث مجمّع IP",
+        "delete": "حذف مجمّع IP"
+      },
+      "portal": {
+        "self_update": "تحديث المشترك لبياناته"
+      },
+      "profile": {
+        "create": "إنشاء باقة",
+        "update": "تحديث باقة",
+        "delete": "حذف باقة",
+        "archive": "أرشفة باقة",
+        "cost": {
+          "create": "تسجيل كلفة باقة"
+        },
+        "tod": {
+          "create": "إضافة قاعدة وقتية",
+          "delete": "حذف قاعدة وقتية"
+        }
+      },
+      "reseller_price": {
+        "create": "تحديد سعر موزع"
+      },
+      "roles": {
+        "create": "إنشاء دور",
+        "update": "تحديث دور",
+        "delete": "حذف دور"
+      },
+      "settings": {
+        "update": "تحديث الإعدادات",
+        "notification_test": "إرسال إشعار تجريبي"
+      },
+      "setup": {
+        "admin_create": "إنشاء المدير الأول"
+      },
+      "subscriber": {
+        "create": "إنشاء مشترك",
+        "update": "تحديث مشترك",
+        "delete": "حذف مشترك",
+        "renew": "تجديد مشترك",
+        "refund": "استرجاع دفعة",
+        "reset_mac": "إعادة تعيين قفل MAC",
+        "bulk_enable": "جماعي: تفعيل مشتركين",
+        "bulk_disable": "جماعي: تعطيل مشتركين",
+        "bulk_change_profile": "جماعي: تغيير الباقة",
+        "bulk_extend_expiry": "جماعي: تمديد الانتهاء",
+        "bulk_move_owner": "جماعي: نقل الملكية",
+        "bulk_set_service_type": "جماعي: تغيير نوع الخدمة",
+        "bulk_delete": "جماعي: حذف مشتركين",
+        "bulk_export": "تصدير مشتركين"
+      },
+      "update": {
+        "start": "بدء تحديث النظام"
+      },
+      "voucher": {
+        "redeem": "استخدام قسيمة",
+        "batch": {
+          "create": "إنشاء دفعة قسائم",
+          "void": "إبطال دفعة قسائم"
+        }
+      }
     }
   },
   "account": {
@@ -1371,7 +1587,9 @@
     "accountMissing": "مفعّل لكن لا يوجد حساب مُهيّأ — لن يراه المشتركون بعد",
     "accountDetails": "تفاصيل الحساب (تظهر للمشتركين)",
     "accountDetailsHint": "مثال: رقم هاتف، أو IBAN، أو معرّف محفظة.",
-    "instructionsOverride": "التعليمات (تجاوز اختياري)"
+    "instructionsOverride": "التعليمات (تجاوز اختياري)",
+    "instanceTitle": "الإعدادات الافتراضية للنظام (مشتركون بلا مالك)",
+    "instanceHint": "المشتركون غير المملوكين لأي مدير يرون هذه الطرق في شاشة الدفع. المشتركون المملوكون يستخدمون دائماً إعدادات مديرهم أعلاه."
   },
   "import": {
     "title": "استيراد المشتركين",

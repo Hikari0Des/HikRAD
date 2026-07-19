@@ -12,6 +12,7 @@ import {
   PERM_NAS_VIEW,
   PERM_PAYMENT_TICKETS_VERIFY,
   PERM_REPORTS_VIEW,
+  PERM_SESSIONS_VIEW,
   PERM_SUBSCRIBERS_VIEW,
 } from '../auth/permissions'
 
@@ -36,6 +37,8 @@ export const DASHBOARD_WIDGET_CATALOG: readonly DashboardWidgetDef[] = [
   { id: 'my-balance', permission: '', defaultSize: '1x' },
   { id: 'pending-payment-tickets', permission: PERM_PAYMENT_TICKETS_VERIFY, defaultSize: '1x' },
   { id: 'alerts-feed', permission: PERM_MONITORING_VIEW, defaultSize: '2x' },
+  { id: 'top-usage-subscribers', permission: PERM_SUBSCRIBERS_VIEW, defaultSize: '2x' },
+  { id: 'top-session-subscribers', permission: PERM_SESSIONS_VIEW, defaultSize: '2x' },
 ] as const
 
 export type DashboardWidgetId = (typeof DASHBOARD_WIDGET_CATALOG)[number]['id']

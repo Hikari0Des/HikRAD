@@ -49,6 +49,21 @@ export interface Dashboard {
   my_balance?: DashboardBalance[]
   pending_payment_tickets?: number
   alerts_feed?: DashboardAlertItem[]
+  top_usage_subscribers?: DashboardTopUsageItem[]
+  top_session_subscribers?: DashboardTopSessionItem[]
+}
+
+export interface DashboardTopUsageItem {
+  subscriber_id: string
+  username: string
+  service: string
+  bytes: number
+}
+
+export interface DashboardTopSessionItem {
+  subscriber_id: string
+  username: string
+  open_sessions: number
 }
 
 /**

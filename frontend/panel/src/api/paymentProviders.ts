@@ -79,3 +79,37 @@ export function putMethodSetting(
     body: { method_key: methodKey, enabled },
   })
 }
+
+// --- Instance defaults (subscribers with no owning manager; admin-only) -----
+
+export function listInstanceMethodSettings(): Promise<{ items: MethodSetting[] }> {
+  return request('/instance/method-settings')
+}
+
+export function putInstanceMethodSetting(
+  methodKey: string,
+  enabled: boolean,
+): Promise<MethodSetting> {
+  return request('/instance/method-settings', {
+    method: 'PUT',
+    body: { method_key: methodKey, enabled },
+  })
+}
+
+export function listInstanceProviderAccounts(): Promise<{ items: ProviderAccount[] }> {
+  return request('/instance/provider-accounts')
+}
+
+export function putInstanceProviderAccount(
+  providerId: string,
+  accountDetails: string,
+  instructionsOverride?: string,
+): Promise<ProviderAccount> {
+  return request(`/instance/provider-accounts/${providerId}`, {
+    method: 'PUT',
+    body: {
+      account_details: accountDetails,
+      instructions_override: instructionsOverride || undefined,
+    },
+  })
+}

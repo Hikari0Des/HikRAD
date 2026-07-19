@@ -1,6 +1,15 @@
 import { useEffect, useState } from 'react'
 
-import { IQDAmount, ErrorState, LoadingState, useFormatters, useT } from '@hikrad/shared'
+import {
+  IQDAmount,
+  ErrorState,
+  LoadingState,
+  formatRateKbps,
+  normalizeRatePair,
+  parseRateKbps,
+  useFormatters,
+  useT,
+} from '@hikrad/shared'
 
 import {
   listCurrencies,
@@ -29,7 +38,7 @@ import { Button } from '../../components/Button'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
 import { Modal } from '../../components/Modal'
 import { NasScopePicker } from '../../components/NasScopePicker'
-import { Field, Select, TextInput } from '../../components/form'
+import { Field, RateInput, Select, TextInput } from '../../components/form'
 import { useToast } from '../../components/Toast'
 import { useAsync } from '../../hooks/useAsync'
 import { formatKbps } from '../../lib/units'
@@ -288,6 +297,20 @@ function ProfileFormModal({
     setF((prev) => ({ ...prev, [k]: v }))
 
   async function save() {
+    // Rate syntax is validated before anything is sent (item 5).
+    const rateErrors: Record<string, string> = {}
+    if (parseRateKbps(f.rateDown) === null) rateErrors.rate_down_kbps = t('rate.invalid')
+    if (parseRateKbps(f.rateUp) === null) rateErrors.rate_up_kbps = t('rate.invalid')
+    if (f.hotspotDown.trim() !== '' && parseRateKbps(f.hotspotDown) === null)
+      rateErrors.hotspot_rate_down_kbps = t('rate.invalid')
+    if (f.hotspotUp.trim() !== '' && parseRateKbps(f.hotspotUp) === null)
+      rateErrors.hotspot_rate_up_kbps = t('rate.invalid')
+    if (f.quotaBehavior === 'throttle' && normalizeRatePair(f.throttleRate) === null)
+      rateErrors.throttle_rate = t('rate.invalid')
+    if (Object.keys(rateErrors).length > 0) {
+      setErrors(rateErrors)
+      return
+    }
     setBusy(true)
     setErrors({})
     try {
@@ -353,42 +376,18 @@ function ProfileFormModal({
             onChange={(e) => set('sessionLimit', e.target.value)}
           />
         </Field>
-        <Field
-          label={t('profiles.rateDown')}
-          error={errors.rate_down_kbps}
-          hint={t('profiles.kbpsHint')}
-        >
-          <TextInput
-            type="number"
-            dir="ltr"
-            value={f.rateDown}
-            onChange={(e) => set('rateDown', e.target.value)}
-          />
+        <Field label={t('profiles.rateDown')} error={errors.rate_down_kbps} hint={t('rate.hint')}>
+          <RateInput value={f.rateDown} onChange={(v) => set('rateDown', v)} />
         </Field>
         <Field label={t('profiles.rateUp')} error={errors.rate_up_kbps}>
-          <TextInput
-            type="number"
-            dir="ltr"
-            value={f.rateUp}
-            onChange={(e) => set('rateUp', e.target.value)}
-          />
+          <RateInput value={f.rateUp} onChange={(v) => set('rateUp', v)} />
         </Field>
 
         <Field label={t('profiles.hotspotRateDown')} hint={t('profiles.hotspotHint')}>
-          <TextInput
-            type="number"
-            dir="ltr"
-            value={f.hotspotDown}
-            onChange={(e) => set('hotspotDown', e.target.value)}
-          />
+          <RateInput value={f.hotspotDown} onChange={(v) => set('hotspotDown', v)} />
         </Field>
         <Field label={t('profiles.hotspotRateUp')}>
-          <TextInput
-            type="number"
-            dir="ltr"
-            value={f.hotspotUp}
-            onChange={(e) => set('hotspotUp', e.target.value)}
-          />
+          <RateInput value={f.hotspotUp} onChange={(v) => set('hotspotUp', v)} />
         </Field>
 
         {/* FR-64: every subscriber on this profile inherits this scope, unless
@@ -480,11 +479,7 @@ function ProfileFormModal({
             error={errors.throttle_rate}
             hint={t('profiles.throttleHint')}
           >
-            <TextInput
-              dir="ltr"
-              value={f.throttleRate}
-              onChange={(e) => set('throttleRate', e.target.value)}
-            />
+            <RateInput pair value={f.throttleRate} onChange={(v) => set('throttleRate', v)} />
           </Field>
         )}
       </div>
@@ -528,10 +523,10 @@ function initial(p?: Profile): ProfileForm {
     currency: p?.currency ?? 'IQD',
     duration: p != null ? String(p.duration_days) : '30',
     sessionLimit: p != null ? String(p.session_limit_default) : '1',
-    rateDown: p != null ? String(p.rate_down_kbps) : '0',
-    rateUp: p != null ? String(p.rate_up_kbps) : '0',
-    hotspotDown: p?.hotspot_rate_down_kbps != null ? String(p.hotspot_rate_down_kbps) : '',
-    hotspotUp: p?.hotspot_rate_up_kbps != null ? String(p.hotspot_rate_up_kbps) : '',
+    rateDown: p != null ? formatRateKbps(p.rate_down_kbps) : '',
+    rateUp: p != null ? formatRateKbps(p.rate_up_kbps) : '',
+    hotspotDown: p?.hotspot_rate_down_kbps != null ? formatRateKbps(p.hotspot_rate_down_kbps) : '',
+    hotspotUp: p?.hotspot_rate_up_kbps != null ? formatRateKbps(p.hotspot_rate_up_kbps) : '',
     quotaMode: p?.quota_mode ?? 'unlimited',
     quotaTotal: p?.quota_total_bytes != null ? String(p.quota_total_bytes) : '',
     quotaDown: p?.quota_down_bytes != null ? String(p.quota_down_bytes) : '',
@@ -553,19 +548,21 @@ function toWrite(f: ProfileForm): ProfileWrite {
     price: Number(f.price) || 0,
     currency: f.currency,
     duration_days: Number(f.duration) || 1,
-    rate_down_kbps: Number(f.rateDown) || 0,
-    rate_up_kbps: Number(f.rateUp) || 0,
+    // Prefix entry (item 5): "10M"/"1G"/bare kbit; empty or 0 = unlimited.
+    rate_down_kbps: parseRateKbps(f.rateDown) ?? 0,
+    rate_up_kbps: parseRateKbps(f.rateUp) ?? 0,
     session_limit_default: Number(f.sessionLimit) || 1,
     quota_mode: f.quotaMode,
     quota_total_bytes: f.quotaMode === 'total' ? numOrNull(f.quotaTotal) : null,
     quota_down_bytes: f.quotaMode === 'split' ? numOrNull(f.quotaDown) : null,
     quota_up_bytes: f.quotaMode === 'split' ? numOrNull(f.quotaUp) : null,
     // null (blank) = Hotspot falls back to the main rate (FR-58.1).
-    hotspot_rate_down_kbps: numOrNull(f.hotspotDown),
-    hotspot_rate_up_kbps: numOrNull(f.hotspotUp),
+    hotspot_rate_down_kbps: f.hotspotDown.trim() === '' ? null : parseRateKbps(f.hotspotDown),
+    hotspot_rate_up_kbps: f.hotspotUp.trim() === '' ? null : parseRateKbps(f.hotspotUp),
     expiry_behavior: f.expiryBehavior,
     quota_behavior: f.quotaBehavior,
-    throttle_rate: f.quotaBehavior === 'throttle' ? f.throttleRate || null : null,
+    throttle_rate:
+      f.quotaBehavior === 'throttle' ? normalizeRatePair(f.throttleRate) || null : null,
     // An empty set = any NAS (FR-64), which is what the picker yields when the
     // operator selects nothing.
     nas_scopes: f.nasScopes,

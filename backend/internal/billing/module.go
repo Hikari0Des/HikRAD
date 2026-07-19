@@ -102,6 +102,14 @@ func (m *Module) Register(r chi.Router, d httpapi.Deps) {
 	r.With(auth.Require("")).Get("/api/v1/managers/{id}/method-settings", m.listMethodSettingsHandler)
 	r.With(auth.Require("")).Put("/api/v1/managers/{id}/method-settings", m.putMethodSettingHandler)
 
+	// Instance-level defaults for subscribers with no owning manager (owner
+	// decision 2026-07-19, migration 0592). Admin-only: the same permission
+	// that governs the provider catalog itself.
+	r.With(auth.Require(permProvidersManage)).Get("/api/v1/instance/method-settings", m.listInstanceMethodSettingsHandler)
+	r.With(auth.Require(permProvidersManage)).Put("/api/v1/instance/method-settings", m.putInstanceMethodSettingHandler)
+	r.With(auth.Require(permProvidersManage)).Get("/api/v1/instance/provider-accounts", m.listInstanceProviderAccountsHandler)
+	r.With(auth.Require(permProvidersManage)).Put("/api/v1/instance/provider-accounts/{providerId}", m.putInstanceProviderAccountHandler)
+
 	r.With(auth.Require(permPaymentTicketsVerify)).Get("/api/v1/payment-tickets", m.listTicketsHandler)
 	r.With(auth.Require(permPaymentTicketsVerify)).Get("/api/v1/payment-tickets/{id}", m.ticketDetailHandler)
 	r.With(auth.Require(permPaymentTicketsVerify)).Post("/api/v1/payment-tickets/{id}/reveal", m.revealTicketCardHandler)

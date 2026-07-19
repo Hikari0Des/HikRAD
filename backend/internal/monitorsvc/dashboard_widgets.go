@@ -35,6 +35,9 @@ var dashboardWidgetCatalog = []dashboardWidgetDef{
 	{ID: "my-balance", Permission: "", Size: widgetSize1x},
 	{ID: "pending-payment-tickets", Permission: "payment_tickets.verify", Size: widgetSize1x},
 	{ID: "alerts-feed", Permission: PermView, Size: widgetSize2x},
+	// Owner request 2026-07-19 (item 2): usage/session leaderboards.
+	{ID: "top-usage-subscribers", Permission: "subscribers.view", Size: widgetSize2x},
+	{ID: "top-session-subscribers", Permission: "sessions.view", Size: widgetSize2x},
 }
 
 // widgetPermitted reports whether m (nil-safe: an unauthenticated caller

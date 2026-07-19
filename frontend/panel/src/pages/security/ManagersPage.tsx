@@ -80,8 +80,18 @@ export function ManagersPage() {
             <tbody>
               {managers.data.items.map((m) => (
                 <tr key={m.id} className="border-t border-surface-sunken/60">
-                  <td className="px-3 py-2 font-medium">
-                    <bdi dir="ltr">{m.username}</bdi>
+                  <td className="px-3 py-2">
+                    <span className="font-medium">
+                      <bdi dir="ltr">{m.username}</bdi>
+                    </span>
+                    {m.full_name ? (
+                      <span className="block text-xs text-ink-muted">{m.full_name}</span>
+                    ) : null}
+                    {m.phone ? (
+                      <span className="block text-xs text-ink-muted" dir="ltr">
+                        {m.phone}
+                      </span>
+                    ) : null}
                   </td>
                   <td className="px-3 py-2">{m.role}</td>
                   <td className="px-3 py-2 text-ink-muted">
@@ -351,17 +361,35 @@ function ManagerFormModal({
   const [role, setRole] = useState(existing?.role ?? roles[0]?.name ?? 'operator')
   const [scoped, setScoped] = useState(existing?.scoped ?? false)
   const [password, setPassword] = useState('')
+  const [fullName, setFullName] = useState(existing?.full_name ?? '')
+  const [phone, setPhone] = useState(existing?.phone ?? '')
+  const [email, setEmail] = useState(existing?.email ?? '')
+  const [address, setAddress] = useState(existing?.address ?? '')
+  const [notes, setNotes] = useState(existing?.notes ?? '')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   async function submit() {
     setBusy(true)
     setError(null)
+    // Profile fields are always sent: "" clears server-side (NULLIF).
+    const profile = {
+      full_name: fullName.trim(),
+      phone: phone.trim(),
+      email: email.trim(),
+      address: address.trim(),
+      notes: notes.trim(),
+    }
     try {
       if (existing) {
-        await updateManager(existing.id, { role, scoped, password: password || undefined })
+        await updateManager(existing.id, {
+          role,
+          scoped,
+          password: password || undefined,
+          ...profile,
+        })
       } else {
-        await createManager({ username: username.trim(), password, role, scoped })
+        await createManager({ username: username.trim(), password, role, scoped, ...profile })
       }
       toast(t('managers.saved'), 'ok')
       onSaved()
@@ -417,6 +445,44 @@ function ManagerFormModal({
             autoComplete="new-password"
             required={!existing}
           />
+        </Field>
+        <Field label={t('managers.fullName')} htmlFor="mgr-fullname">
+          <TextInput
+            id="mgr-fullname"
+            value={fullName}
+            onChange={(e) => setFullName(e.target.value)}
+            autoComplete="off"
+          />
+        </Field>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label={t('managers.phone')} htmlFor="mgr-phone">
+            <TextInput
+              id="mgr-phone"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              dir="ltr"
+              inputMode="tel"
+            />
+          </Field>
+          <Field label={t('managers.email')} htmlFor="mgr-email">
+            <TextInput
+              id="mgr-email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              dir="ltr"
+              inputMode="email"
+            />
+          </Field>
+        </div>
+        <Field label={t('managers.address')} htmlFor="mgr-address">
+          <TextInput
+            id="mgr-address"
+            value={address}
+            onChange={(e) => setAddress(e.target.value)}
+          />
+        </Field>
+        <Field label={t('managers.notes')} htmlFor="mgr-notes">
+          <TextInput id="mgr-notes" value={notes} onChange={(e) => setNotes(e.target.value)} />
         </Field>
         <Checkbox
           label={t('managers.scopedLabel')}

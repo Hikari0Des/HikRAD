@@ -31,6 +31,13 @@ export function RoleMatrix({
   // fall under the "actions" pseudo-module.
   const rows = useMemo(() => normalise(catalog), [catalog])
 
+  // A permission the locale files don't know yet must degrade to a readable
+  // label ("currency_rates" → "Currency rates"), never a raw i18n key.
+  function label(key: string, raw: string) {
+    const msg = t(key)
+    return msg === key ? humanise(raw) : msg
+  }
+
   function toggle(perm: string, on: boolean) {
     const next = new Set(value)
     if (on) next.add(perm)
@@ -52,7 +59,7 @@ export function RoleMatrix({
           {rows.map((row) => (
             <tr key={row.module} className="border-b border-surface-sunken/60 align-top">
               <th scope="row" className="py-2 pe-4 text-start font-medium">
-                {t(`roles.module.${row.module}`)}
+                {label(`roles.module.${row.module}`, row.module)}
               </th>
               <td className="py-2">
                 <div className="flex flex-wrap gap-x-4 gap-y-1.5">
@@ -61,7 +68,7 @@ export function RoleMatrix({
                     return (
                       <Checkbox
                         key={perm}
-                        label={t(`roles.verb.${verb}`)}
+                        label={label(`roles.verb.${verb}`, verb)}
                         checked={checked}
                         disabled={disabled}
                         aria-label={`${row.module}.${verb}`}
@@ -77,6 +84,12 @@ export function RoleMatrix({
       </table>
     </div>
   )
+}
+
+/** "currency_rates" → "Currency rates" (locale-file miss fallback only). */
+export function humanise(raw: string): string {
+  const words = raw.replace(/[_.]/g, ' ').trim()
+  return words.charAt(0).toUpperCase() + words.slice(1)
 }
 
 interface MatrixRow {

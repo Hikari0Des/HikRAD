@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 
-import { useT } from '@hikrad/shared'
+import { normalizeRatePair, useT } from '@hikrad/shared'
 
 import { createSubscriber, updateSubscriber } from '../../api/subscribers'
 import type { ManagerView } from '../../api/managers'
@@ -23,6 +23,7 @@ import {
   Field,
   RadioGroup,
   RadioOption,
+  RateInput,
   Select,
   TextInput,
   Textarea,
@@ -83,6 +84,10 @@ export function SubscriberFormModal({
     setForm((f) => ({ ...f, [key]: value }))
 
   async function submit() {
+    if (normalizeRatePair(form.rateOverride) === null) {
+      setErrors({ rate_override: t('rate.invalid') })
+      return
+    }
     setBusy(true)
     setErrors({})
     try {
@@ -275,11 +280,11 @@ export function SubscriberFormModal({
           hint={t('subscriber.rateOverrideHint')}
           htmlFor="sub-rate-override"
         >
-          <TextInput
+          <RateInput
+            pair
             id="sub-rate-override"
             value={form.rateOverride}
-            dir="ltr"
-            onChange={(e) => set('rateOverride', e.target.value)}
+            onChange={(v) => set('rateOverride', v)}
           />
         </Field>
         <Field
@@ -459,7 +464,9 @@ function toWrite(f: FormState, editing: boolean): SubscriberWrite {
     expires_at: f.expiresAt ? new Date(f.expiresAt).toISOString() : null,
     mac_lock_mode: f.macLockMode as MacLockMode,
     static_ip: f.staticIp || null,
-    rate_override: f.rateOverride || null,
+    // Prefix entry (item 5): normalized to explicit-suffix "rx/tx" so a bare
+    // kbit number can never be misread by the router.
+    rate_override: normalizeRatePair(f.rateOverride) || null,
     session_limit_override: f.sessionLimitOverride ? Number(f.sessionLimitOverride) : null,
     price_override: f.priceOverride ? Number(f.priceOverride) : null,
     disabled_reason: f.status === 'disabled' ? f.disabledReason || null : null,

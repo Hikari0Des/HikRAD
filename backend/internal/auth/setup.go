@@ -42,5 +42,5 @@ func CreateFirstAdmin(ctx context.Context, db *pgxpool.Pool, username, password 
 	if err != nil {
 		return managerView{}, err
 	}
-	return insertManager(ctx, db, username, hash, RoleAdmin, false)
+	return insertManager(ctx, db, username, hash, RoleAdmin, false, managerProfile{})
 }

@@ -107,10 +107,10 @@ type PayMethod struct {
 }
 
 // resolvePayMethods returns exactly what subscriberID's owning manager has
-// BOTH enabled AND (for a provider) configured an account for. No fallback
-// to a global/admin account exists — Decision 37's resolution of the
-// kickoff blocker. A subscriber with no owner_manager_id resolves to an
-// empty list, never a fallback to any other manager's methods.
+// BOTH enabled AND (for a provider) configured an account for. An OWNED
+// subscriber never falls back to any other manager's methods (Decision 37);
+// a subscriber with NO owner resolves from the instance-level defaults
+// (owner decision 2026-07-19, migration 0592) instead of an empty list.
 func resolvePayMethods(ctx context.Context, db *pgxpool.Pool, subscriberID string) ([]PayMethod, error) {
 	var ownerID *string
 	if err := db.QueryRow(ctx, `SELECT owner_manager_id::text FROM subscribers WHERE id = $1::uuid`, subscriberID).
@@ -118,7 +118,7 @@ func resolvePayMethods(ctx context.Context, db *pgxpool.Pool, subscriberID strin
 		return nil, err
 	}
 	if ownerID == nil || *ownerID == "" {
-		return []PayMethod{}, nil
+		return resolveInstancePayMethods(ctx, db)
 	}
 
 	out := []PayMethod{}

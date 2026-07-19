@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
-import { useT } from '@hikrad/shared'
+import { parseRateKbps, useT } from '@hikrad/shared'
 
 import { createProfile } from '../api/profiles'
 import type { ProfileWrite } from '../api/types'
@@ -264,8 +264,8 @@ function ProfileStep({ onNext, onSkip }: { onNext: () => void; onSkip: () => voi
   const [name, setName] = useState('')
   const [price, setPrice] = useState('10000')
   const [duration, setDuration] = useState('30')
-  const [down, setDown] = useState('10240')
-  const [up, setUp] = useState('10240')
+  const [down, setDown] = useState('10M')
+  const [up, setUp] = useState('10M')
   const [busy, setBusy] = useState(false)
 
   async function submit() {
@@ -275,8 +275,8 @@ function ProfileStep({ onNext, onSkip }: { onNext: () => void; onSkip: () => voi
         name,
         price: Number(price),
         duration_days: Number(duration),
-        rate_down_kbps: Number(down),
-        rate_up_kbps: Number(up),
+        rate_down_kbps: parseRateKbps(down) ?? 0,
+        rate_up_kbps: parseRateKbps(up) ?? 0,
         session_limit_default: 1,
         quota_mode: 'unlimited',
         expiry_behavior: 'expired_pool',
@@ -315,9 +315,8 @@ function ProfileStep({ onNext, onSkip }: { onNext: () => void; onSkip: () => voi
             onChange={(e) => setDuration(e.target.value)}
           />
         </Field>
-        <Field label={t('setup.profile.rateKbps')}>
+        <Field label={t('setup.profile.rateKbps')} hint={t('rate.hint')}>
           <TextInput
-            type="number"
             dir="ltr"
             value={down}
             onChange={(e) => {

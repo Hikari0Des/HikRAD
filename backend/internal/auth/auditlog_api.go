@@ -31,6 +31,7 @@ type auditEntry struct {
 	IP            string            `json:"ip"`
 	UA            string            `json:"ua"`
 	At            string            `json:"at"`
+	ActorUsername *string           `json:"actor_username"`
 	SummaryKey    string            `json:"summary_key"`
 	SummaryParams map[string]string `json:"summary_params"`
 }
@@ -73,17 +74,18 @@ func parseAuditFilter(r *http.Request) (auditFilter, error) {
 // queryAudit runs the filtered, id-descending query. afterID (keyset) and limit
 // are applied; pass limit<=0 for "no limit" (export).
 func queryAudit(r *http.Request, db *pgxpool.Pool, f auditFilter, afterID *int64, limit int) ([]auditEntry, error) {
-	sql := `SELECT id, actor_id::text, action, entity_type, entity_id,
-	               before, after, ip, ua, at
-	          FROM audit_log
-	         WHERE ($1 = '' OR entity_type = $1)
-	           AND ($2 = '' OR entity_id = $2)
-	           AND ($3 = '' OR actor_id = $3::uuid)
-	           AND ($4 = '' OR action = $4)
-	           AND ($5::timestamptz IS NULL OR at >= $5::timestamptz)
-	           AND ($6::timestamptz IS NULL OR at <= $6::timestamptz)
-	           AND ($7::bigint IS NULL OR id < $7::bigint)
-	         ORDER BY id DESC`
+	sql := `SELECT a.id, a.actor_id::text, a.action, a.entity_type, a.entity_id,
+	               a.before, a.after, a.ip, a.ua, a.at, m.username
+	          FROM audit_log a
+	          LEFT JOIN managers m ON m.id = a.actor_id
+	         WHERE ($1 = '' OR a.entity_type = $1)
+	           AND ($2 = '' OR a.entity_id = $2)
+	           AND ($3 = '' OR a.actor_id = $3::uuid)
+	           AND ($4 = '' OR a.action = $4)
+	           AND ($5::timestamptz IS NULL OR a.at >= $5::timestamptz)
+	           AND ($6::timestamptz IS NULL OR a.at <= $6::timestamptz)
+	           AND ($7::bigint IS NULL OR a.id < $7::bigint)
+	         ORDER BY a.id DESC`
 	args := []any{f.entityType, f.entityID, f.actorID, f.action, f.from, f.to, afterID}
 	if limit > 0 {
 		sql += ` LIMIT $8`
@@ -99,7 +101,7 @@ func queryAudit(r *http.Request, db *pgxpool.Pool, f auditFilter, afterID *int64
 		var e auditEntry
 		var at time.Time
 		if err := rows.Scan(&e.ID, &e.ActorID, &e.Action, &e.EntityType, &e.EntityID,
-			&e.Before, &e.After, &e.IP, &e.UA, &at); err != nil {
+			&e.Before, &e.After, &e.IP, &e.UA, &at, &e.ActorUsername); err != nil {
 			return nil, err
 		}
 		e.At = at.UTC().Format(time.RFC3339Nano)
@@ -118,6 +120,9 @@ func auditSummary(e auditEntry) (string, map[string]string) {
 	}
 	if e.ActorID != nil {
 		params["actor_id"] = *e.ActorID
+	}
+	if e.ActorUsername != nil {
+		params["actor"] = *e.ActorUsername
 	}
 	return "audit.action." + e.Action, params
 }

@@ -34,6 +34,21 @@ type managerView struct {
 	Disabled    bool      `json:"disabled"`
 	TOTPEnabled bool      `json:"totp_enabled"`
 	CreatedAt   time.Time `json:"created_at"`
+	FullName    *string   `json:"full_name"`
+	Phone       *string   `json:"phone"`
+	Email       *string   `json:"email"`
+	Address     *string   `json:"address"`
+	Notes       *string   `json:"notes"`
+}
+
+// managerProfile carries the optional contact fields (migration 0591). Nil =
+// leave unchanged on update / absent on create.
+type managerProfile struct {
+	FullName *string
+	Phone    *string
+	Email    *string
+	Address  *string
+	Notes    *string
 }
 
 const managerAuthCols = `m.id::text, m.username::text, m.password_hash, m.role, m.scoped, m.disabled,
@@ -74,26 +89,56 @@ func updatePasswordHash(ctx context.Context, db *pgxpool.Pool, id, hash string) 
 // managerViewCols is aliased for SELECTs over `managers m`; managerViewColsRet
 // is the same list unqualified, for INSERT/UPDATE ... RETURNING (no alias in
 // scope there). Both scan in the order scanManagerView expects.
-const managerViewCols = `m.id::text, m.username::text, m.role, m.role_id::text, m.scoped, m.disabled, m.totp_enabled, m.created_at`
-const managerViewColsRet = `id::text, username::text, role, role_id::text, scoped, disabled, totp_enabled, created_at`
+const managerViewCols = `m.id::text, m.username::text, m.role, m.role_id::text, m.scoped, m.disabled, m.totp_enabled, m.created_at,
+	 m.full_name, m.phone, m.email, m.address, m.notes`
+const managerViewColsRet = `id::text, username::text, role, role_id::text, scoped, disabled, totp_enabled, created_at,
+	 full_name, phone, email, address, notes`
 
 func scanManagerView(row interface {
 	Scan(dest ...any) error
 }) (managerView, error) {
 	var v managerView
-	err := row.Scan(&v.ID, &v.Username, &v.Role, &v.RoleID, &v.Scoped, &v.Disabled, &v.TOTPEnabled, &v.CreatedAt)
+	err := row.Scan(&v.ID, &v.Username, &v.Role, &v.RoleID, &v.Scoped, &v.Disabled, &v.TOTPEnabled, &v.CreatedAt,
+		&v.FullName, &v.Phone, &v.Email, &v.Address, &v.Notes)
 	v.CreatedAt = v.CreatedAt.UTC()
 	return v, err
 }
 
 // insertManager creates a manager assigned to the role named `role` (role text
 // kept for display/back-compat; role_id is the authoritative link).
-func insertManager(ctx context.Context, db *pgxpool.Pool, username, hash, role string, scoped bool) (managerView, error) {
+func insertManager(ctx context.Context, db *pgxpool.Pool, username, hash, role string, scoped bool, p managerProfile) (managerView, error) {
 	return scanManagerView(db.QueryRow(ctx,
-		`INSERT INTO managers (username, password_hash, role, role_id, scoped)
-		 VALUES ($1, $2, $3, (SELECT id FROM roles WHERE name = $3), $4)
+		`INSERT INTO managers (username, password_hash, role, role_id, scoped, full_name, phone, email, address, notes)
+		 VALUES ($1, $2, $3, (SELECT id FROM roles WHERE name = $3), $4, $5, $6, $7, $8, $9)
 		 RETURNING `+managerViewColsRet,
-		username, hash, role, scoped))
+		username, hash, role, scoped, p.FullName, p.Phone, p.Email, p.Address, p.Notes))
+}
+
+// updateManagerProfile writes only the profile fields present (non-nil) in p,
+// returning the new view. An explicit empty string clears a field.
+func updateManagerProfile(ctx context.Context, db *pgxpool.Pool, id string, p managerProfile) (managerView, error) {
+	return scanManagerView(db.QueryRow(ctx,
+		`UPDATE managers SET
+		    full_name = CASE WHEN $2::bool THEN NULLIF($3, '') ELSE full_name END,
+		    phone     = CASE WHEN $4::bool THEN NULLIF($5, '') ELSE phone END,
+		    email     = CASE WHEN $6::bool THEN NULLIF($7, '') ELSE email END,
+		    address   = CASE WHEN $8::bool THEN NULLIF($9, '') ELSE address END,
+		    notes     = CASE WHEN $10::bool THEN NULLIF($11, '') ELSE notes END
+		  WHERE id = $1::uuid
+		 RETURNING `+managerViewColsRet,
+		id,
+		p.FullName != nil, strOrEmpty(p.FullName),
+		p.Phone != nil, strOrEmpty(p.Phone),
+		p.Email != nil, strOrEmpty(p.Email),
+		p.Address != nil, strOrEmpty(p.Address),
+		p.Notes != nil, strOrEmpty(p.Notes)))
+}
+
+func strOrEmpty(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
 }
 
 func getManagerView(ctx context.Context, db *pgxpool.Pool, id string) (managerView, error) {

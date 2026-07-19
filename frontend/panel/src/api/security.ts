@@ -150,6 +150,7 @@ export interface AuditRow {
   ip: string
   ua: string
   at: string
+  actor_username: string | null
   summary_key: string
   summary_params: Record<string, string>
 }

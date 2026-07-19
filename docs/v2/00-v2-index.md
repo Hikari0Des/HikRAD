@@ -36,6 +36,6 @@
 
 Prepaid card designer · TWA store wrapper · public API docs · non-MikroTik vendor certification · application-aware QoS (Decision 20 marked post-v1 at most) · receipt/alert **email channel** (once v2-6's email field exists). Brief these the same way when chosen: one file here, mini-PRD + kickoff prompt, slotted into the execution plan.
 
-> **v3 backlog — merged and removed** (2026-07-17, PRD Decision 32): a short-lived `docs/v3/` parking list existed earlier the same day; three of its items shipped immediately in v1.x (NAS-uuid fix, manager removal, factory reset) and the remaining three became phases v2-10/11/12 above. There is one backlog again — new owner requests land **here**, either as a new brief or inside an unstarted phase's brief.
+> **v3 backlog — merged and removed, then re-established** (2026-07-17 PRD Decision 32; 2026-07-19 Decision 47): a short-lived `docs/v3/` parking list existed on 2026-07-17; three of its items shipped immediately in v1.x and the remaining three became phases v2-10/11/12 above. With **v2 fully complete**, a fresh, unrelated [docs/v3](../v3/00-v3-index.md) now holds the post-v2 backlog (UI/UX modernization program + single-book IQD currency redesign, from the owner's 2026-07-19 review). New owner requests land **there** from now on.
 
 **reseller/sub-manager tree** left this list on 2026-07-16: it is now the open blocker at the top of [09-cost-margin-and-reseller-pricing.md](09-cost-margin-and-reseller-pricing.md) §6, because whether resellers nest decides that phase's schema rather than being a separate feature.

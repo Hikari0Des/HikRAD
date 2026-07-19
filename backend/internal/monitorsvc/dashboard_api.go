@@ -177,6 +177,12 @@ func handleDashboardFiltered(w http.ResponseWriter, r *http.Request) {
 	if containsWidget(ids, "alerts-feed") {
 		out["alerts_feed"] = alertsFeed(ctx)
 	}
+	if containsWidget(ids, "top-usage-subscribers") {
+		out["top_usage_subscribers"] = topUsageSubscribers(ctx)
+	}
+	if containsWidget(ids, "top-session-subscribers") {
+		out["top_session_subscribers"] = topSessionSubscribers(ctx)
+	}
 	httpapi.JSON(w, http.StatusOK, out)
 }
 
@@ -390,6 +396,80 @@ func pendingPaymentTickets(ctx context.Context) int64 {
 		return 0
 	}
 	return n
+}
+
+type topUsageItem struct {
+	SubscriberID string `json:"subscriber_id"`
+	Username     string `json:"username"`
+	Service      string `json:"service"`
+	Bytes        int64  `json:"bytes"`
+}
+
+// topUsageSubscribers is the item-2 "who used the most data" leaderboard:
+// last 7 days from usage_daily, per subscriber per service (so a heavy
+// hotspot user and a heavy pppoe user rank independently, matching how
+// rates/quotas are service-scoped since FR-61). Same degrade-to-empty
+// posture as every other cross-domain read here.
+func topUsageSubscribers(ctx context.Context) []topUsageItem {
+	out := []topUsageItem{}
+	if pkgDB == nil {
+		return out
+	}
+	rows, err := pkgDB.Query(ctx,
+		`SELECT u.subscriber_id::text, COALESCE(s.username, ''), u.service,
+		        SUM(u.down_bytes + u.up_bytes)::bigint AS bytes
+		   FROM usage_daily u
+		   LEFT JOIN subscribers s ON s.id = u.subscriber_id
+		  WHERE u.day >= now() - interval '7 days' AND u.subscriber_id IS NOT NULL
+		  GROUP BY u.subscriber_id, s.username, u.service
+		  ORDER BY bytes DESC
+		  LIMIT 8`)
+	if err != nil {
+		return out
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var it topUsageItem
+		if err := rows.Scan(&it.SubscriberID, &it.Username, &it.Service, &it.Bytes); err != nil {
+			return out
+		}
+		out = append(out, it)
+	}
+	return out
+}
+
+type topSessionItem struct {
+	SubscriberID string `json:"subscriber_id"`
+	Username     string `json:"username"`
+	OpenSessions int64  `json:"open_sessions"`
+}
+
+// topSessionSubscribers ranks subscribers by currently-open session count —
+// the "who has the most simultaneous logins" view (item 2).
+func topSessionSubscribers(ctx context.Context) []topSessionItem {
+	out := []topSessionItem{}
+	if pkgDB == nil {
+		return out
+	}
+	rows, err := pkgDB.Query(ctx,
+		`SELECT subscriber_id::text, MAX(username), count(*)::bigint AS n
+		   FROM sessions
+		  WHERE stopped_at IS NULL AND subscriber_id IS NOT NULL
+		  GROUP BY subscriber_id
+		  ORDER BY n DESC
+		  LIMIT 8`)
+	if err != nil {
+		return out
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var it topSessionItem
+		if err := rows.Scan(&it.SubscriberID, &it.Username, &it.OpenSessions); err != nil {
+			return out
+		}
+		out = append(out, it)
+	}
+	return out
 }
 
 type alertFeedItem struct {

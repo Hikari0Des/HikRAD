@@ -11,6 +11,7 @@ import { Sparkline } from '../components/Sparkline'
 import { DASHBOARD_WIDGET_CATALOG, widgetDef, type DashboardWidgetId } from '../dashboard/widgets'
 import { resolveLayout, type EffectiveWidget } from '../dashboard/layout'
 import { useAsync } from '../hooks/useAsync'
+import { formatBytes } from '../lib/units'
 
 const REFRESH_MS = 15000
 
@@ -257,7 +258,7 @@ function WidgetFrame({
 
 function WidgetBody({ id, data }: { id: DashboardWidgetId; data: Dashboard | undefined }) {
   const t = useT()
-  const { formatDate } = useFormatters()
+  const { formatDate, formatNumber } = useFormatters()
   if (!data) return <SkeletonValue />
 
   switch (id) {
@@ -364,6 +365,46 @@ function WidgetBody({ id, data }: { id: DashboardWidgetId; data: Dashboard | und
             <li key={a.id} className="flex items-center justify-between gap-2 text-sm">
               <span className="truncate">{a.summary}</span>
               <span className="shrink-0 text-xs text-ink-muted">{formatDate(a.at)}</span>
+            </li>
+          ))}
+        </ul>
+      )
+    case 'top-usage-subscribers':
+      return (data.top_usage_subscribers ?? []).length === 0 ? (
+        <p className="text-sm text-ink-muted">{t('dashboard.noUsage')}</p>
+      ) : (
+        <ul className="space-y-1.5">
+          {(data.top_usage_subscribers ?? []).map((u) => (
+            <li
+              key={`${u.subscriber_id}:${u.service}`}
+              className="flex items-center justify-between gap-2 text-sm"
+            >
+              <Link to={`/subscribers/${u.subscriber_id}`} className="truncate hover:underline">
+                <bdi dir="ltr">{u.username || u.subscriber_id}</bdi>
+              </Link>
+              <span className="flex shrink-0 items-center gap-2">
+                <span className="rounded bg-surface-sunken px-1.5 py-0.5 text-xs text-ink-muted">
+                  {t(`dashboard.service.${u.service}`)}
+                </span>
+                <span dir="ltr">{formatBytes(u.bytes, formatNumber)}</span>
+              </span>
+            </li>
+          ))}
+        </ul>
+      )
+    case 'top-session-subscribers':
+      return (data.top_session_subscribers ?? []).length === 0 ? (
+        <p className="text-sm text-ink-muted">{t('dashboard.noOpenSessions')}</p>
+      ) : (
+        <ul className="space-y-1.5">
+          {(data.top_session_subscribers ?? []).map((u) => (
+            <li key={u.subscriber_id} className="flex items-center justify-between gap-2 text-sm">
+              <Link to={`/subscribers/${u.subscriber_id}`} className="truncate hover:underline">
+                <bdi dir="ltr">{u.username || u.subscriber_id}</bdi>
+              </Link>
+              <span className="shrink-0 text-ink-muted">
+                {t('dashboard.sessionCount', { n: u.open_sessions })}
+              </span>
             </li>
           ))}
         </ul>

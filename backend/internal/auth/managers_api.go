@@ -8,6 +8,7 @@ package auth
 import (
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/hikrad/hikrad/internal/httpapi"
@@ -30,6 +31,25 @@ type createManagerRequest struct {
 	Password string `json:"password" validate:"required,min=8,max=256"`
 	Role     string `json:"role" validate:"required"`
 	Scoped   bool   `json:"scoped"`
+	// Optional contact/profile fields (migration 0591).
+	FullName *string `json:"full_name"`
+	Phone    *string `json:"phone"`
+	Email    *string `json:"email"`
+	Address  *string `json:"address"`
+	Notes    *string `json:"notes"`
+}
+
+// validEmailLoose mirrors the subscribers module's deliberately loose check:
+// one "@" not at either end, no whitespace. Empty is valid (field optional).
+func validEmailLoose(s string) bool {
+	if s == "" {
+		return true
+	}
+	if strings.ContainsAny(s, " \t\r\n") {
+		return false
+	}
+	at := strings.LastIndex(s, "@")
+	return at > 0 && at < len(s)-1
 }
 
 func createManagerHandler(w http.ResponseWriter, r *http.Request) {
@@ -51,7 +71,14 @@ func createManagerHandler(w http.ResponseWriter, r *http.Request) {
 		httpapi.Error(w, http.StatusInternalServerError, "internal", "internal server error")
 		return
 	}
-	view, err := insertManager(r.Context(), svc.db, req.Username, hash, req.Role, req.Scoped)
+	if req.Email != nil && !validEmailLoose(strings.TrimSpace(*req.Email)) {
+		httpapi.Error(w, http.StatusUnprocessableEntity, "validation_failed", "request validation failed",
+			httpapi.FieldError{Field: "email", Message: "not a valid email address"})
+		return
+	}
+	view, err := insertManager(r.Context(), svc.db, req.Username, hash, req.Role, req.Scoped, managerProfile{
+		FullName: req.FullName, Phone: req.Phone, Email: req.Email, Address: req.Address, Notes: req.Notes,
+	})
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" { // unique_violation
@@ -74,6 +101,12 @@ type updateManagerRequest struct {
 	// the removal path for managers with financial history, who can never be
 	// hard-deleted (see deleteManagerHandler).
 	Disabled *bool `json:"disabled"`
+	// Optional contact/profile fields (migration 0591); explicit "" clears.
+	FullName *string `json:"full_name"`
+	Phone    *string `json:"phone"`
+	Email    *string `json:"email"`
+	Address  *string `json:"address"`
+	Notes    *string `json:"notes"`
 }
 
 func updateManagerHandler(w http.ResponseWriter, r *http.Request) {
@@ -139,6 +172,22 @@ func updateManagerHandler(w http.ResponseWriter, r *http.Request) {
 		svc.log.Error("update manager failed", "error", err)
 		httpapi.Error(w, http.StatusInternalServerError, "internal", "internal server error")
 		return
+	}
+
+	if req.FullName != nil || req.Phone != nil || req.Email != nil || req.Address != nil || req.Notes != nil {
+		if req.Email != nil && !validEmailLoose(strings.TrimSpace(*req.Email)) {
+			httpapi.Error(w, http.StatusUnprocessableEntity, "validation_failed", "request validation failed",
+				httpapi.FieldError{Field: "email", Message: "not a valid email address"})
+			return
+		}
+		view, err = updateManagerProfile(ctx, svc.db, id, managerProfile{
+			FullName: req.FullName, Phone: req.Phone, Email: req.Email, Address: req.Address, Notes: req.Notes,
+		})
+		if err != nil {
+			svc.log.Error("update manager profile failed", "error", err)
+			httpapi.Error(w, http.StatusInternalServerError, "internal", "internal server error")
+			return
+		}
 	}
 
 	if req.Disabled != nil && *req.Disabled != before.Disabled {
