@@ -63,13 +63,12 @@ func (m *Module) Register(r chi.Router, d httpapi.Deps) {
 	r.With(auth.Require("")).Get("/api/v1/managers/{id}/balances", m.balancesHandler)
 	r.With(auth.Require(auth.PermTopup)).Post("/api/v1/managers/{id}/topup", m.topupHandler)
 
-	// v2 phase 4 (FR-68/69): currency catalog + admin rate table + the
-	// exchange endpoint, the only path that ever moves value between a
-	// manager's currencies.
+	// Currency catalog + admin rate table survive as entry/display only (FR-101.4).
+	// v3-2 (FR-100.3): the exchange endpoint is RETIRED — with one IQD book there
+	// is nothing to exchange between; foreign amounts convert to IQD at entry.
 	r.With(auth.Require("")).Get("/api/v1/currencies", m.currenciesHandler)
 	r.With(auth.Require("")).Get("/api/v1/currency-rates", m.listCurrencyRatesHandler)
 	r.With(auth.Require("currency_rates.manage")).Post("/api/v1/currency-rates", m.createCurrencyRateHandler)
-	r.With(auth.Require("")).Post("/api/v1/managers/{id}/exchange", m.exchangeHandler)
 
 	// Vouchers (FR-22). Generation/void are batch-admin actions; the operator
 	// redeem path reuses the renewal permission (agents redeem for subscribers).

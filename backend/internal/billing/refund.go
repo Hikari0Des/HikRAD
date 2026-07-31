@@ -122,34 +122,60 @@ func (m *Module) refundHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if actor != "" {
-		if _, err := lockBalance(ctx, tx, actor, origCurrency); err != nil {
+		if _, err := lockBalance(ctx, tx, actor); err != nil {
 			m.internalError(w, "refund lock", err)
 			return
 		}
 	}
 
+	// v3-2 (FR-101.2): the refund lands in IQD. For a NEW (IQD) original it
+	// reverses the stored amount EXACTLY — never re-converted (the whole point).
+	// For a rare pre-v3-2 FOREIGN original (the foreign book no longer exists),
+	// the reversal is converted to IQD at the current rate and stamped, since
+	// there is no IQD figure to reverse to. `entered_*` records the original.
+	refundAmount, refundRateID, err := signedToIQD(ctx, tx, -origAmount, origCurrency)
+	if errors.Is(err, errNoRate) {
+		httpapi.Error(w, http.StatusUnprocessableEntity, "no_rate",
+			"no IQD rate is defined for "+origCurrency+"; add one before refunding this legacy transaction")
+		return
+	}
+	if err != nil {
+		m.internalError(w, "refund convert", err)
+		return
+	}
+	refundGross, _, err := signedToIQD(ctx, tx, -origGross, origCurrency)
+	if err != nil && !errors.Is(err, errNoRate) {
+		m.internalError(w, "refund gross convert", err)
+		return
+	}
+
 	// Reversing entry: negate the original balance effect, and (v2 phase 9,
 	// FR-72.2) the original cost_at_sale too, so a refunded renewal's margin
 	// nets to zero the same way its amount already does — read from the
-	// original row, never re-resolved from today's cost history (same
-	// no-re-resolution posture as the currency itself, FR-69.5). The unique
+	// original row, never re-resolved from today's cost history. The unique
 	// reverses_id index rejects a second refund of the same tx (23505).
 	var refundCostAtSale *int64
 	if origCostAtSale != nil {
 		neg := -*origCostAtSale
 		refundCostAtSale = &neg
 	}
-	refundID, err := insertLedger(ctx, tx, ledgerEntry{
+	entry := ledgerEntry{
 		Type:           "refund",
-		Amount:         -origAmount,
-		Currency:       origCurrency,
+		Amount:         refundAmount,
 		ActorManagerID: actor,
 		SubscriberID:   subID,
 		Source:         "panel",
 		ReversesID:     in.LedgerTxID,
 		Note:           in.Reason,
 		CostAtSale:     refundCostAtSale,
-	})
+		CurrencyRateID: refundRateID,
+	}
+	if origCurrency != "" && origCurrency != "IQD" {
+		ea := -origAmount
+		entry.EnteredAmount = &ea
+		entry.EnteredCurrency = origCurrency
+	}
+	refundID, err := insertLedger(ctx, tx, entry)
 	if isUniqueViolation(err) {
 		httpapi.Error(w, http.StatusConflict, "already_refunded", "this transaction has already been refunded")
 		return
@@ -159,13 +185,13 @@ func (m *Module) refundHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if actor != "" {
-		if err := recomputeBalance(ctx, tx, actor, origCurrency); err != nil {
+		if err := recomputeBalance(ctx, tx, actor); err != nil {
 			m.internalError(w, "refund recompute", err)
 			return
 		}
 	}
 
-	// Negative payment row so revenue_daily nets the reversal (gross of original).
+	// Negative IQD payment row so revenue_daily nets the reversal.
 	receiptNo, err := nextReceiptNo(ctx, tx, receiptPrefix)
 	if err != nil {
 		m.internalError(w, "refund receipt", err)
@@ -173,7 +199,7 @@ func (m *Module) refundHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := insertPayment(ctx, tx, paymentRow{
 		ReceiptNo: receiptNo, LedgerTxID: refundID, SubscriberID: subID,
-		Amount: -origGross, Currency: origCurrency, Method: "refund", Source: "panel", ShareToken: randToken(),
+		Amount: refundGross, Currency: "IQD", Method: "refund", Source: "panel", ShareToken: randToken(),
 	}); err != nil {
 		m.internalError(w, "refund payment", err)
 		return

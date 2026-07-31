@@ -15,6 +15,7 @@
 // Module verb permissions used to gate whole screens/actions.
 export const PERM_SUBSCRIBERS_VIEW = 'subscribers.view'
 export const PERM_PROFILES_VIEW = 'profiles.view'
+export const PERM_PROFILES_CREATE = 'profiles.create'
 export const PERM_NAS_VIEW = 'nas.view'
 export const PERM_POOLS_VIEW = 'pools.view'
 export const PERM_LIVE_VIEW = 'live.view'

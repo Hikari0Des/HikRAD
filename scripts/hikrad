@@ -418,6 +418,16 @@ cmd_update() {
         compose build || die "image build failed — nothing was restarted, previous version is still running"
     fi
 
+    # FR-106.3: ensure the branding-logo bind mount exists and is owned by the
+    # api uid BEFORE compose up. An install predating v3-4 never had this dir,
+    # and `hikrad update` never re-runs install.sh — so without this, the new
+    # compose.yml's branding volume would be auto-created root-owned and the
+    # logo upload would keep failing after the upgrade. Best-effort chown (a
+    # non-root updater just warns; the acct-spill block above is the precedent).
+    mkdir -p "$(data_dir)/branding"
+    chown 10001:10001 "$(data_dir)/branding" 2>/dev/null \
+        || log "WARNING: could not chown $(data_dir)/branding (not root?) — logo upload may fail; run: chown 10001:10001 $(data_dir)/branding"
+
     log "Applying update (hikrad-api runs forward-only migrations on boot)…"
     compose up -d || {
         log "compose up failed — rolling back images${RELEASE_DIR_FOR_ROLLBACK:+ and the release directory}."
@@ -616,9 +626,11 @@ EOF
     # Recreate the bind-mount targets exactly as install.sh prepares them —
     # Docker would otherwise auto-create them root-owned, which is the
     # documented acct-spill crash-loop (see scripts/install.sh §3d/3d2).
-    mkdir -p "$d/acct-spill" "$d/radius-control"
+    mkdir -p "$d/acct-spill" "$d/radius-control" "$d/branding"
     chown 10002:10002 "$d/acct-spill" 2>/dev/null \
         || log "WARNING: could not chown $d/acct-spill (not root?) — hikrad-acct may crash-loop; run: chown 10002:10002 $d/acct-spill"
+    chown 10001:10001 "$d/branding" 2>/dev/null \
+        || log "WARNING: could not chown $d/branding (not root?) — logo upload may fail; run: chown 10001:10001 $d/branding"
     chmod 777 "$d/radius-control"
 
     # The generated FreeRADIUS client list reflects the (now wiped) NAS table;

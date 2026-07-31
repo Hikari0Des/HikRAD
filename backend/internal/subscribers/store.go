@@ -39,7 +39,10 @@ type Subscriber struct {
 	SessionLimitOverride *int       `json:"session_limit_override"`
 	RateOverride         *string    `json:"rate_override"`
 	PriceOverride        *int64     `json:"price_override"`
-	DisabledReason       *string    `json:"disabled_reason"`
+	// AddressListOverride (FR-109): per-subscriber override of the profile's
+	// address-list; NULL = inherit the profile's. Empty/NULL both ⇒ inherit.
+	AddressListOverride *string `json:"address_list_override"`
+	DisabledReason      *string `json:"disabled_reason"`
 	// ServiceType (FR-61) is pppoe | hotspot | dual — it replaced v1's
 	// allow_hotspot bool, which could not express a hotspot-only account.
 	ServiceType   string `json:"service_type"`
@@ -62,7 +65,8 @@ type Subscriber struct {
 // /32 an inet host address would otherwise render with.
 const columns = `id::text, username::text, name, phone, email, address, notes, status,
 	profile_id::text, owner_manager_id::text, expires_at, mac_lock_mode, learned_mac,
-	host(static_ip), session_limit_override, rate_override, price_override, disabled_reason,
+	host(static_ip), session_limit_override, rate_override, price_override,
+	address_list_override, disabled_reason,
 	service_type, whatsapp_opt_in,
 	pending_profile_id::text, has_password, created_at, updated_at`
 
@@ -70,7 +74,8 @@ func scanSubscriber(row pgx.Row) (Subscriber, error) {
 	var s Subscriber
 	err := row.Scan(&s.ID, &s.Username, &s.Name, &s.Phone, &s.Email, &s.Address, &s.Notes, &s.Status,
 		&s.ProfileID, &s.OwnerManagerID, &s.ExpiresAt, &s.MacLockMode, &s.LearnedMac,
-		&s.StaticIP, &s.SessionLimitOverride, &s.RateOverride, &s.PriceOverride, &s.DisabledReason,
+		&s.StaticIP, &s.SessionLimitOverride, &s.RateOverride, &s.PriceOverride,
+		&s.AddressListOverride, &s.DisabledReason,
 		&s.ServiceType, &s.WhatsappOptIn,
 		&s.PendingProfileID, &s.HasPassword, &s.CreatedAt, &s.UpdatedAt)
 	if err != nil {

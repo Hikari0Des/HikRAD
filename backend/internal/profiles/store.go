@@ -41,6 +41,9 @@ type Profile struct {
 	BurstTime      *string `json:"burst_time"`
 	RatePriority   *string `json:"rate_priority"`
 	MinRate        *string `json:"min_rate"`
+	// AddressList (FR-109): named MikroTik address-list a normal login is placed
+	// into. Nullable; NULL/empty ⇒ no address_list intent is emitted.
+	AddressList *string `json:"address_list"`
 	// NASScopes lists every NAS / service instance a subscriber on this profile
 	// may authenticate on (FR-64), unless the subscriber carries a scope set of
 	// their own. EMPTY = any NAS (the v1 default).
@@ -55,6 +58,7 @@ const profileColumns = `id::text, name, price, currency, duration_days, rate_dow
 	quota_up_bytes, throttle_rate, expiry_behavior, quota_behavior,
 	hotspot_rate_down_kbps, hotspot_rate_up_kbps,
 	burst_rate, burst_threshold, burst_time, rate_priority, min_rate,
+	address_list,
 	archived,
 	to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
 	to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')`
@@ -66,6 +70,7 @@ func scanProfile(row pgx.Row) (Profile, error) {
 		&p.QuotaUpBytes, &p.ThrottleRate, &p.ExpiryBehavior, &p.QuotaBehavior,
 		&p.HotspotRateDownKbps, &p.HotspotRateUpKbps,
 		&p.BurstRate, &p.BurstThreshold, &p.BurstTime, &p.RatePriority, &p.MinRate,
+		&p.AddressList,
 		&p.Archived, &p.CreatedAt, &p.UpdatedAt)
 	// Scopes live in their own table; the caller attaches them. Default to empty
 	// (= any NAS) so an un-enriched row never serializes as null.
@@ -156,14 +161,14 @@ func insertProfile(ctx context.Context, tx pgx.Tx, in profileInput) (Profile, er
 		    session_limit_default, quota_mode, quota_total_bytes, quota_down_bytes,
 		    quota_up_bytes, throttle_rate, expiry_behavior, quota_behavior,
 		    hotspot_rate_down_kbps, hotspot_rate_up_kbps,
-		    burst_rate, burst_threshold, burst_time, rate_priority, min_rate)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7::uuid,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
+		    burst_rate, burst_threshold, burst_time, rate_priority, min_rate, address_list)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7::uuid,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)
 		 RETURNING `+profileColumns,
 		in.Name, in.Price, in.Currency, in.DurationDays, in.RateDownKbps, in.RateUpKbps, in.PoolID,
 		in.SessionLimitDefault, in.QuotaMode, in.QuotaTotalBytes, in.QuotaDownBytes,
 		in.QuotaUpBytes, in.ThrottleRate, in.ExpiryBehavior, in.QuotaBehavior,
 		in.HotspotRateDownKbps, in.HotspotRateUpKbps,
-		in.BurstRate, in.BurstThreshold, in.BurstTime, in.RatePriority, in.MinRate))
+		in.BurstRate, in.BurstThreshold, in.BurstTime, in.RatePriority, in.MinRate, in.AddressList))
 }
 
 func updateProfile(ctx context.Context, tx pgx.Tx, id string, in profileInput) (Profile, error) {
@@ -174,6 +179,7 @@ func updateProfile(ctx context.Context, tx pgx.Tx, id string, in profileInput) (
 		    quota_down_bytes=$12, quota_up_bytes=$13, throttle_rate=$14, expiry_behavior=$15,
 		    quota_behavior=$16, hotspot_rate_down_kbps=$17, hotspot_rate_up_kbps=$18,
 		    burst_rate=$20, burst_threshold=$21, burst_time=$22, rate_priority=$23, min_rate=$24,
+		    address_list=$25,
 		    archived=$19
 		  WHERE id=$1::uuid
 		 RETURNING `+profileColumns,
@@ -181,7 +187,7 @@ func updateProfile(ctx context.Context, tx pgx.Tx, id string, in profileInput) (
 		in.SessionLimitDefault, in.QuotaMode, in.QuotaTotalBytes, in.QuotaDownBytes,
 		in.QuotaUpBytes, in.ThrottleRate, in.ExpiryBehavior, in.QuotaBehavior,
 		in.HotspotRateDownKbps, in.HotspotRateUpKbps, in.Archived,
-		in.BurstRate, in.BurstThreshold, in.BurstTime, in.RatePriority, in.MinRate))
+		in.BurstRate, in.BurstThreshold, in.BurstTime, in.RatePriority, in.MinRate, in.AddressList))
 }
 
 // profileInUse reports whether anything references this plan. Checked before a

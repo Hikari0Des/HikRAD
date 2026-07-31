@@ -162,3 +162,29 @@ func TestComposeDeterministic(t *testing.T) {
 		t.Error("Compose did not change when machine-id changed")
 	}
 }
+
+// TestCompareComponents covers the FR-104 per-component drift view used by the
+// License page to name what changed (machine-id vs MAC vs both).
+func TestCompareComponents(t *testing.T) {
+	base := Compose("machine-a", "mac-a")
+	midDrift := Compose("machine-b", "mac-a")
+	macDrift := Compose("machine-a", "mac-b")
+	both := Compose("machine-b", "mac-b")
+
+	if mid, mac := CompareComponents(base, base); !mid || !mac {
+		t.Fatalf("identical should match both, got mid=%v mac=%v", mid, mac)
+	}
+	if mid, mac := CompareComponents(base, midDrift); mid || !mac {
+		t.Fatalf("machine-id drift: want mid=false mac=true, got mid=%v mac=%v", mid, mac)
+	}
+	if mid, mac := CompareComponents(base, macDrift); !mid || mac {
+		t.Fatalf("MAC drift: want mid=true mac=false, got mid=%v mac=%v", mid, mac)
+	}
+	if mid, mac := CompareComponents(base, both); mid || mac {
+		t.Fatalf("both drift: want both false, got mid=%v mac=%v", mid, mac)
+	}
+	// Malformed input yields both-false rather than panicking.
+	if mid, mac := CompareComponents("nosep", base); mid || mac {
+		t.Fatalf("malformed should be both-false, got mid=%v mac=%v", mid, mac)
+	}
+}

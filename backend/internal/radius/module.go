@@ -116,6 +116,15 @@ func (Module) Register(r chi.Router, d httpapi.Deps) {
 	r.With(auth.Require("pools.create")).Post("/api/v1/pools", m.createPoolHandler)
 	r.With(auth.Require("pools.edit")).Put("/api/v1/pools/{id}", m.updatePoolHandler)
 	r.With(auth.Require("pools.delete")).Delete("/api/v1/pools/{id}", m.deletePoolHandler)
+
+	// v3-5 / FR-108: pool ownership sync (Decision 48). Pushing a HikRAD-OWNED
+	// pool onto a router is a router write, hash-gated exactly like FR-66/67's
+	// plan/apply; adopting imports the router's pools as read-only references
+	// and writes nothing to the router. Both are pool edits (pools.edit) that
+	// happen in the context of one NAS.
+	r.With(auth.Require("pools.edit")).Post("/api/v1/nas/{id}/pools/{poolId}/push/plan", m.poolPushPlanHandler)
+	r.With(auth.Require("pools.edit")).Post("/api/v1/nas/{id}/pools/{poolId}/push/apply", m.poolPushApplyHandler)
+	r.With(auth.Require("pools.edit")).Post("/api/v1/nas/{id}/pools/adopt", m.poolAdoptHandler)
 }
 
 func init() { httpapi.Add(Module{}) }

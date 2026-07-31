@@ -1,6 +1,6 @@
 import { useState } from 'react'
 
-import { Ltr, ErrorState, LoadingState, useT } from '@hikrad/shared'
+import { Card, Ltr, ErrorState, LoadingState, useT } from '@hikrad/shared'
 
 import { adoptService, deleteNas, listNas, probeNas } from '../../api/nas'
 import { ApiError } from '../../api/client'
@@ -10,6 +10,7 @@ import { Button } from '../../components/Button'
 import { Modal } from '../../components/Modal'
 import { serviceLabel } from '../../components/NasScopePicker'
 import { PageHeader } from '../../components/PageHeader'
+import { Pill } from '../../components/Pill'
 import { useToast } from '../../components/Toast'
 import { useAsync } from '../../hooks/useAsync'
 import { DiscoverModal } from './DiscoverModal'
@@ -163,10 +164,7 @@ export function NasListPage() {
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {data?.items.map((n) => (
-            <div
-              key={n.id}
-              className="rounded-lg border border-surface-sunken bg-surface-raised p-4"
-            >
+            <Card key={n.id}>
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
                   <h3 className="truncate font-semibold">{n.name}</h3>
@@ -175,13 +173,9 @@ export function NasListPage() {
                   </p>
                 </div>
                 {/* Health color slot arrives Phase 3; enabled/disabled for now. */}
-                <span
-                  className={`rounded-full px-2 py-0.5 text-xs ${
-                    n.enabled ? 'bg-ok/12 text-ok' : 'bg-ink-muted/15 text-ink-muted'
-                  }`}
-                >
+                <Pill tone={n.enabled ? 'ok' : 'muted'}>
                   {n.enabled ? t('nas.enabledTag') : t('nas.disabledTag')}
-                </span>
+                </Pill>
               </div>
               {/* FR-63 services sub-list: which instances this router runs,
                   each with its own enabled state and live-session count. */}
@@ -198,24 +192,14 @@ export function NasListPage() {
                       <span className="text-ink-muted">
                         {t('nas.serviceSessions', { count: s.live_sessions })}
                       </span>
-                      {!s.enabled && (
-                        <span className="rounded-full bg-ink-muted/15 px-1.5 text-ink-muted">
-                          {t('nas.disabledTag')}
-                        </span>
-                      )}
+                      {!s.enabled && <Pill tone="muted">{t('nas.disabledTag')}</Pill>}
                       {/* v2 phase 2 / FR-67: management-mode badge + the
                           mode-appropriate action. */}
-                      <span
-                        className={`rounded-full px-1.5 ${
-                          s.management_mode === 'system'
-                            ? 'bg-brand/15 text-brand-strong'
-                            : 'bg-ink-muted/15 text-ink-muted'
-                        }`}
-                      >
+                      <Pill tone={s.management_mode === 'system' ? 'brand' : 'muted'}>
                         {s.management_mode === 'system'
                           ? t('nas.serverMgmt.modeSystem')
                           : t('nas.serverMgmt.modeRouter')}
-                      </span>
+                      </Pill>
                       {canEdit &&
                         (s.management_mode === 'system' ? (
                           <button
@@ -304,7 +288,7 @@ export function NasListPage() {
                   </Button>
                 )}
               </div>
-            </div>
+            </Card>
           ))}
         </div>
       )}

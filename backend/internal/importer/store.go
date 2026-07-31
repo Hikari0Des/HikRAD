@@ -9,9 +9,10 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// batch is the persisted state of one import run (migration 0400).
+// batch is the persisted state of one import run (migration 0400; entity 0594).
 type batch struct {
-	ID         string
+	ID     string
+	Entity string // subscribers | profiles (FR-111.3)
 	Filename   string
 	Encoding   string
 	Delimiter  string
@@ -28,14 +29,14 @@ type batch struct {
 	CreatedAt  time.Time
 }
 
-const batchColumns = `id::text, filename, encoding, delimiter, raw_csv, header, column_map,
+const batchColumns = `id::text, entity, filename, encoding, delimiter, raw_csv, header, column_map,
 	COALESCE(preset,''), status, row_count, dry_run_at, executed_at, summary,
 	COALESCE(created_by::text,''), created_at`
 
 func scanBatch(row pgx.Row) (batch, error) {
 	var b batch
 	var header, colmap, summary []byte
-	err := row.Scan(&b.ID, &b.Filename, &b.Encoding, &b.Delimiter, &b.RawCSV, &header, &colmap,
+	err := row.Scan(&b.ID, &b.Entity, &b.Filename, &b.Encoding, &b.Delimiter, &b.RawCSV, &header, &colmap,
 		&b.Preset, &b.Status, &b.RowCount, &b.DryRunAt, &b.ExecutedAt, &summary,
 		&b.CreatedBy, &b.CreatedAt)
 	if err != nil {
@@ -48,14 +49,14 @@ func scanBatch(row pgx.Row) (batch, error) {
 	return b, nil
 }
 
-func insertBatch(ctx context.Context, db *pgxpool.Pool, filename, encoding string, delimiter rune,
+func insertBatch(ctx context.Context, db *pgxpool.Pool, entity, filename, encoding string, delimiter rune,
 	rawUTF8 []byte, header []string, createdBy string) (string, error) {
 	headerJSON, _ := json.Marshal(header)
 	var id string
 	err := db.QueryRow(ctx,
-		`INSERT INTO import_batches (filename, encoding, delimiter, raw_csv, header, created_by)
-		 VALUES ($1,$2,$3,$4,$5,NULLIF($6,'')::uuid) RETURNING id::text`,
-		filename, encoding, string(delimiter), rawUTF8, headerJSON, createdBy).Scan(&id)
+		`INSERT INTO import_batches (entity, filename, encoding, delimiter, raw_csv, header, created_by)
+		 VALUES ($1,$2,$3,$4,$5,$6,NULLIF($7,'')::uuid) RETURNING id::text`,
+		entity, filename, encoding, string(delimiter), rawUTF8, headerJSON, createdBy).Scan(&id)
 	return id, err
 }
 

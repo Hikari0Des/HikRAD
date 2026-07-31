@@ -1,8 +1,18 @@
 import { useEffect, useState } from 'react'
 
-import { ErrorState, LoadingState, useFormatters, useT } from '@hikrad/shared'
+import { Card, ErrorState, LoadingState, useFormatters, useT } from '@hikrad/shared'
 
-import { createPool, deletePool, listPools, updatePool } from '../../api/pools'
+import {
+  adoptRouterPools,
+  applyPoolPush,
+  createPool,
+  deletePool,
+  listPools,
+  planPoolPush,
+  updatePool,
+  type PoolPushPlan,
+} from '../../api/pools'
+import { listNas } from '../../api/nas'
 import { ApiError } from '../../api/client'
 import type { Pool, PoolPurpose, PoolWrite } from '../../api/types'
 import { useAuth } from '../../auth/AuthContext'
@@ -26,6 +36,9 @@ export function PoolsPage() {
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState<Pool | undefined>(undefined)
   const [deleteTarget, setDeleteTarget] = useState<Pool | null>(null)
+  // FR-108 router sync: push a HikRAD-owned pool, or adopt the router's pools.
+  const [pushTarget, setPushTarget] = useState<Pool | null>(null)
+  const [adoptOpen, setAdoptOpen] = useState(false)
 
   const canCreate = can('pools.create')
   const canEdit = can('pools.edit')
@@ -47,17 +60,24 @@ export function PoolsPage() {
         title={t('nav.pools')}
         subtitle={t('pools.subtitle')}
         actions={
-          canCreate && (
-            <Button
-              size="sm"
-              onClick={() => {
-                setEditing(undefined)
-                setFormOpen(true)
-              }}
-            >
-              {t('pools.add')}
-            </Button>
-          )
+          <div className="flex gap-2">
+            {canEdit && (
+              <Button size="sm" variant="secondary" onClick={() => setAdoptOpen(true)}>
+                {t('pools.adopt.action')}
+              </Button>
+            )}
+            {canCreate && (
+              <Button
+                size="sm"
+                onClick={() => {
+                  setEditing(undefined)
+                  setFormOpen(true)
+                }}
+              >
+                {t('pools.add')}
+              </Button>
+            )}
+          </div>
         }
       />
 
@@ -89,6 +109,7 @@ export function PoolsPage() {
                 setFormOpen(true)
               }}
               onDelete={() => setDeleteTarget(p)}
+              onPush={() => setPushTarget(p)}
             />
           ))}
         </div>
@@ -115,7 +136,175 @@ export function PoolsPage() {
           if (deleteTarget) await doDelete(deleteTarget)
         }}
       />
+
+      <PoolPushModal pool={pushTarget} onClose={() => setPushTarget(null)} />
+      <PoolAdoptModal
+        open={adoptOpen}
+        onOpenChange={setAdoptOpen}
+        onAdopted={() => {
+          setAdoptOpen(false)
+          reload()
+        }}
+      />
     </section>
+  )
+}
+
+/**
+ * FR-108: push a HikRAD-OWNED pool onto one router's /ip pool. Two steps by
+ * design (Decision 17): plan is read-only and shows exactly what would change;
+ * apply sends the preview hash back, so a router that drifted in between is
+ * refused rather than silently overwritten.
+ */
+function PoolPushModal({ pool, onClose }: { pool: Pool | null; onClose: () => void }) {
+  const t = useT()
+  const { toast } = useToast()
+  const [nasId, setNasId] = useState('')
+  const [plan, setPlan] = useState<PoolPushPlan | null>(null)
+  const [busy, setBusy] = useState(false)
+  const { data: nasList } = useAsync(() => listNas(), [])
+
+  useEffect(() => {
+    setNasId('')
+    setPlan(null)
+  }, [pool?.id])
+
+  async function doPlan() {
+    if (!pool || !nasId) return
+    setBusy(true)
+    try {
+      setPlan(await planPoolPush(nasId, pool.id))
+    } catch (err) {
+      toast(err instanceof Error ? err.message : t('common.error.body'), 'danger')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function doApply() {
+    if (!pool || !nasId || !plan) return
+    setBusy(true)
+    try {
+      const res = await applyPoolPush(nasId, pool.id, plan.preview_hash)
+      toast(
+        res.no_op ? t('pools.push.noOp') : t('pools.push.applied'),
+        res.all_ok ? 'ok' : 'danger',
+      )
+      onClose()
+    } catch (err) {
+      toast(err instanceof Error ? err.message : t('common.error.body'), 'danger')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Modal
+      open={pool !== null}
+      onOpenChange={(o) => !o && onClose()}
+      title={t('pools.push.title', { name: pool?.name ?? '' })}
+    >
+      <div className="space-y-3">
+        <p className="text-sm text-ink-muted">{t('pools.push.body')}</p>
+        <Field label={t('pools.push.nas')} htmlFor="pool-push-nas">
+          <Select id="pool-push-nas" value={nasId} onChange={(e) => setNasId(e.target.value)}>
+            <option value="">{t('ui.select')}</option>
+            {nasList?.items.map((n) => (
+              <option key={n.id} value={n.id}>
+                {n.name}
+              </option>
+            ))}
+          </Select>
+        </Field>
+
+        {plan && (
+          <div className="rounded border border-surface-sunken p-2 text-xs">
+            {plan.items.length === 0 ? (
+              <p className="text-ink-muted">{t('pools.push.inSync')}</p>
+            ) : (
+              plan.items.map((it, i) => (
+                <code key={i} className="block overflow-x-auto py-0.5" dir="ltr">
+                  {it.command}
+                </code>
+              ))
+            )}
+          </div>
+        )}
+
+        <div className="flex justify-end gap-2">
+          <Button variant="ghost" onClick={onClose}>
+            {t('ui.cancel')}
+          </Button>
+          {plan ? (
+            <Button disabled={busy || plan.items.length === 0} onClick={() => void doApply()}>
+              {busy ? t('ui.working') : t('pools.push.apply')}
+            </Button>
+          ) : (
+            <Button disabled={busy || !nasId} onClick={() => void doPlan()}>
+              {busy ? t('ui.working') : t('pools.push.preview')}
+            </Button>
+          )}
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
+/** FR-108: import a router's pools as read-only references. Never writes. */
+function PoolAdoptModal({
+  open,
+  onOpenChange,
+  onAdopted,
+}: {
+  open: boolean
+  onOpenChange: (o: boolean) => void
+  onAdopted: () => void
+}) {
+  const t = useT()
+  const { toast } = useToast()
+  const [nasId, setNasId] = useState('')
+  const [busy, setBusy] = useState(false)
+  const { data: nasList } = useAsync(() => listNas(), [])
+
+  async function doAdopt() {
+    if (!nasId) return
+    setBusy(true)
+    try {
+      const res = await adoptRouterPools(nasId)
+      const n = res.items.filter((i) => i.adopted).length
+      toast(t('pools.adopt.done', { count: n }), 'ok')
+      onAdopted()
+    } catch (err) {
+      toast(err instanceof Error ? err.message : t('common.error.body'), 'danger')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Modal open={open} onOpenChange={onOpenChange} title={t('pools.adopt.title')}>
+      <div className="space-y-3">
+        <p className="text-sm text-ink-muted">{t('pools.adopt.body')}</p>
+        <Field label={t('pools.push.nas')} htmlFor="pool-adopt-nas">
+          <Select id="pool-adopt-nas" value={nasId} onChange={(e) => setNasId(e.target.value)}>
+            <option value="">{t('ui.select')}</option>
+            {nasList?.items.map((n) => (
+              <option key={n.id} value={n.id}>
+                {n.name}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <div className="flex justify-end gap-2">
+          <Button variant="ghost" onClick={() => onOpenChange(false)}>
+            {t('ui.cancel')}
+          </Button>
+          <Button disabled={busy || !nasId} onClick={() => void doAdopt()}>
+            {busy ? t('ui.working') : t('pools.adopt.confirm')}
+          </Button>
+        </div>
+      </div>
+    </Modal>
   )
 }
 
@@ -125,24 +314,36 @@ function PoolCard({
   canDelete,
   onEdit,
   onDelete,
+  onPush,
 }: {
   pool: Pool
   canEdit: boolean
   canDelete: boolean
   onEdit: () => void
   onDelete: () => void
+  onPush: () => void
 }) {
   const t = useT()
   const { formatNumber } = useFormatters()
   const pct = Math.min(100, pool.util_percent)
+  const routerManaged = pool.management_mode === 'router'
   return (
-    <div className="rounded-lg border border-surface-sunken bg-surface-raised p-4">
+    <Card>
       <div className="flex items-start justify-between gap-2">
         <div>
           <h3 className="font-semibold">{pool.name}</h3>
           <span className="rounded bg-surface-sunken px-1.5 py-0.5 text-xs text-ink-muted">
             {t(`pools.purpose.${pool.purpose}`)}
           </span>
+          {/* FR-108: a router-adopted pool is a read-only reference. */}
+          {routerManaged && (
+            <span
+              className="ms-1 rounded bg-warn/10 px-1.5 py-0.5 text-xs text-warn"
+              title={t('pools.mode.routerHint')}
+            >
+              {t('pools.mode.router')}
+            </span>
+          )}
         </div>
         {pool.exhausted && (
           <span className="rounded bg-danger/10 px-2 py-0.5 text-xs text-danger">
@@ -172,24 +373,33 @@ function PoolCard({
       </div>
 
       <p className="mt-2 truncate text-xs text-ink-muted" dir="ltr">
-        {pool.ranges.join(', ')}
+        {routerManaged ? pool.router_ranges || '—' : pool.ranges.join(', ')}
       </p>
 
-      {(canEdit || canDelete) && (
-        <div className="mt-3 flex gap-2">
-          {canEdit && (
-            <Button size="sm" variant="ghost" onClick={onEdit}>
-              {t('ui.edit')}
-            </Button>
-          )}
-          {canDelete && (
-            <Button size="sm" variant="ghost" onClick={onDelete}>
-              {t('ui.delete')}
-            </Button>
-          )}
-        </div>
+      {routerManaged ? (
+        <p className="mt-3 text-xs text-ink-muted">{t('pools.mode.routerHint')}</p>
+      ) : (
+        (canEdit || canDelete) && (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {canEdit && (
+              <Button size="sm" variant="ghost" onClick={onEdit}>
+                {t('ui.edit')}
+              </Button>
+            )}
+            {canEdit && (
+              <Button size="sm" variant="ghost" onClick={onPush}>
+                {t('pools.push.action')}
+              </Button>
+            )}
+            {canDelete && (
+              <Button size="sm" variant="ghost" onClick={onDelete}>
+                {t('ui.delete')}
+              </Button>
+            )}
+          </div>
+        )
       )}
-    </div>
+    </Card>
   )
 }
 

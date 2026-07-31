@@ -287,6 +287,19 @@ export function SubscriberFormModal({
             onChange={(v) => set('rateOverride', v)}
           />
         </Field>
+        {/* FR-109: per-subscriber override of the plan's address-list. */}
+        <Field
+          label={t('subscriber.addressListOverride')}
+          hint={t('subscriber.addressListOverrideHint')}
+          htmlFor="sub-address-list-override"
+        >
+          <TextInput
+            id="sub-address-list-override"
+            dir="ltr"
+            value={form.addressListOverride}
+            onChange={(e) => set('addressListOverride', e.target.value)}
+          />
+        </Field>
         <Field
           label={t('subscriber.sessionLimitOverride')}
           error={errors.session_limit_override}
@@ -419,6 +432,7 @@ interface FormState {
   macLockMode: string
   staticIp: string
   rateOverride: string
+  addressListOverride: string
   sessionLimitOverride: string
   priceOverride: string
   disabledReason: string
@@ -444,6 +458,7 @@ function initialForm(s?: Subscriber): FormState {
     macLockMode: s?.mac_lock_mode ?? 'off',
     staticIp: s?.static_ip ?? '',
     rateOverride: s?.rate_override ?? '',
+    addressListOverride: s?.address_list_override ?? '',
     sessionLimitOverride: s?.session_limit_override != null ? String(s.session_limit_override) : '',
     priceOverride: s?.price_override != null ? String(s.price_override) : '',
     disabledReason: s?.disabled_reason ?? '',
@@ -467,6 +482,7 @@ function toWrite(f: FormState, editing: boolean): SubscriberWrite {
     // Prefix entry (item 5): normalized to explicit-suffix "rx/tx" so a bare
     // kbit number can never be misread by the router.
     rate_override: normalizeRatePair(f.rateOverride) || null,
+    address_list_override: f.addressListOverride.trim() || null,
     session_limit_override: f.sessionLimitOverride ? Number(f.sessionLimitOverride) : null,
     price_override: f.priceOverride ? Number(f.priceOverride) : null,
     disabled_reason: f.status === 'disabled' ? f.disabledReason || null : null,

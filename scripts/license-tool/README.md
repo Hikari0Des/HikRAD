@@ -48,3 +48,19 @@ license step or `POST /api/v1/license`. Nothing here or on the buyer's side
 makes a network call as part of this exchange (NFR-7, AC-50a) — the
 fingerprint and the signed license travel by whatever offline channel you
 already use (email, support ticket, USB).
+
+### Graphical issuer — `serve`
+
+If you'd rather not remember flags, run a local web form instead:
+
+```sh
+go run . serve -key dev-vendor-key.b64 -keyid K-2026-0001
+# → open http://127.0.0.1:7070/ in a browser
+```
+
+Fill in licensee / tier / fingerprint, pick a tier (a catalog tier fixes its
+own subscriber cap; choose *Custom…* to type your own), click **Sign license**
+and **Download** the resulting `.json`. It uses the exact same signing core as
+`issue`, so the output is byte-identical. The private key is read server-side
+and never sent to the browser, and the listener is **loopback-only** unless you
+pass `-allow-remote` (which exposes the signer — don't, unless you know why).

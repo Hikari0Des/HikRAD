@@ -129,6 +129,11 @@ for my $attr (@{ $decoded->{attributes} // [] }) {
     } elsif ($intent eq 'redirect_expired') {
         # Walled-garden address-list the router's expired-redirect rules match.
         print qq{Mikrotik-Address-List := "$value"\n};
+    } elsif ($intent eq 'address_list') {
+        # FR-109: operator-named address-list applied at a NORMAL login. Same
+        # VSA as redirect_expired; the backend emits only one per accept
+        # (address_list in modeNormal/Throttled, redirect_expired in expired).
+        print qq{Mikrotik-Address-List := "$value"\n};
     }
 }
 exit 0;

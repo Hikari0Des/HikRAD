@@ -100,7 +100,7 @@ export function SubscribersReportPage() {
           <div className="print:hidden" />
         )}
         <label className="mb-4 text-xs print:hidden">
-          <span className="mb-1 block text-ink-muted">{t('reports.subscribers.view')}</span>
+          <span className="mb-1 block text-ink-muted">{t('reports.subscribers.view.label')}</span>
           <Select value={view} onChange={(e) => setView(e.target.value)}>
             {VIEWS.map((v) => (
               <option key={v} value={v}>

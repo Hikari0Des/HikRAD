@@ -18,6 +18,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -72,6 +74,89 @@ type createBody struct {
 	ServiceType *string `json:"service_type,omitempty"`
 }
 
+// targetPath is the real create endpoint an entity's rows self-dispatch to.
+func targetPath(entity string) string {
+	if entity == "profiles" {
+		return "/api/v1/profiles"
+	}
+	return "/api/v1/subscribers"
+}
+
+// buildBody marshals one dry-run row's mapped fields into the create-endpoint
+// body for its entity.
+func buildBody(entity string, f map[string]string) []byte {
+	if entity == "profiles" {
+		return buildProfileBody(f)
+	}
+	body := createBody{Username: f["username"], Password: f["password"]}
+	if v := f["name"]; v != "" {
+		body.Name = &v
+	}
+	if v := f["phone"]; v != "" {
+		body.Phone = &v
+	}
+	if v := f["email"]; v != "" {
+		body.Email = &v
+	}
+	if v := f["address"]; v != "" {
+		body.Address = &v
+	}
+	if v := f["profile_id"]; v != "" {
+		body.ProfileID = &v
+	}
+	if v := f["expires_at"]; v != "" {
+		body.ExpiresAt = &v
+	}
+	if v := f["service_type"]; v != "" {
+		body.ServiceType = &v
+	}
+	buf, _ := json.Marshal(body)
+	return buf
+}
+
+// buildProfileBody maps a dry-run plan row onto the profiles create body. Rates
+// come from the `*_kbps` fields dry-run computed via parseRateKbpsLocal; the
+// profiles API re-validates everything authoritatively. Unset numeric/enum
+// fields are omitted so the API applies its own defaults (unlimited quota,
+// block behaviors, session_limit 1, currency IQD).
+func buildProfileBody(f map[string]string) []byte {
+	body := map[string]any{"name": f["name"]}
+	putInt := func(field, key string) {
+		if v := strings.TrimSpace(f[field]); v != "" {
+			if n, err := strconv.Atoi(v); err == nil {
+				body[key] = n
+			}
+		}
+	}
+	putInt("price", "price")
+	putInt("duration_days", "duration_days")
+	putInt("session_limit", "session_limit_default")
+	putInt("rate_down_kbps", "rate_down_kbps")
+	putInt("rate_up_kbps", "rate_up_kbps")
+	if v := strings.TrimSpace(f["currency"]); v != "" {
+		body["currency"] = strings.ToUpper(v)
+	}
+	if v := strings.TrimSpace(f["quota_mode"]); v != "" {
+		body["quota_mode"] = strings.ToLower(v)
+	}
+	if v := strings.TrimSpace(f["quota_total_bytes"]); v != "" {
+		if n, err := strconv.ParseInt(v, 10, 64); err == nil {
+			body["quota_total_bytes"] = n
+		}
+	}
+	if v := strings.TrimSpace(f["expiry_behavior"]); v != "" {
+		body["expiry_behavior"] = strings.ToLower(v)
+	}
+	if v := strings.TrimSpace(f["quota_behavior"]); v != "" {
+		body["quota_behavior"] = strings.ToLower(v)
+	}
+	if v := strings.TrimSpace(f["address_list"]); v != "" {
+		body["address_list"] = v
+	}
+	buf, _ := json.Marshal(body)
+	return buf
+}
+
 // runExecute processes every eligible row of the batch, self-dispatching
 // creates through router with authHeader forwarded (the executing manager's
 // bearer token, captured before this goroutine detached from the request —
@@ -79,10 +164,11 @@ type createBody struct {
 // wall-clock runtime exceeds the token TTL will see its remaining rows stay
 // 'pending' and complete on a subsequent execute call with a fresh token,
 // which is safe because this whole path is idempotent).
-func (m *Module) runExecute(batchID, authHeader string, prog *execProgress) {
+func (m *Module) runExecute(batchID, entity, authHeader string, prog *execProgress) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 
+	path := targetPath(entity)
 	rows, err := listRows(ctx, m.db, batchID)
 	if err != nil {
 		m.log.Error("importer: execute list rows", "batch", batchID, "error", err)
@@ -121,31 +207,29 @@ func (m *Module) runExecute(batchID, authHeader string, prog *execProgress) {
 			continue
 		}
 
-		body := createBody{Username: r.Fields["username"], Password: r.Fields["password"]}
-		if v := r.Fields["name"]; v != "" {
-			body.Name = &v
-		}
-		if v := r.Fields["phone"]; v != "" {
-			body.Phone = &v
-		}
-		if v := r.Fields["email"]; v != "" {
-			body.Email = &v
-		}
-		if v := r.Fields["address"]; v != "" {
-			body.Address = &v
-		}
-		if v := r.Fields["profile_id"]; v != "" {
-			body.ProfileID = &v
-		}
-		if v := r.Fields["expires_at"]; v != "" {
-			body.ExpiresAt = &v
-		}
-		if v := r.Fields["service_type"]; v != "" {
-			body.ServiceType = &v
+		// Profiles have no unique-name constraint, so the create endpoint never
+		// 409s a duplicate — check here immediately before dispatch and skip, the
+		// way the subscriber path leans on the username 409. Checked per row (not
+		// batched at dry-run) so a name created earlier in THIS execute is also
+		// caught (idempotent re-run + within-run safety).
+		if entity == "profiles" {
+			if name := r.Fields["name"]; name != "" {
+				var exists bool
+				_ = m.db.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM profiles WHERE lower(name) = lower($1))`, name).Scan(&exists)
+				if exists {
+					_ = markRowResult(ctx, m.db, r.ID, "skipped", "", "a plan with this name already exists")
+					skipped++
+					prog.mu.Lock()
+					prog.Done++
+					prog.Skipped++
+					prog.mu.Unlock()
+					continue
+				}
+			}
 		}
 
-		buf, _ := json.Marshal(body)
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/subscribers", bytes.NewReader(buf))
+		buf := buildBody(entity, r.Fields)
+		req := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(buf))
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Authorization", authHeader)
 		rec := httptest.NewRecorder()

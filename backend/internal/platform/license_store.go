@@ -28,6 +28,60 @@ import (
 
 var cachedLicenseState atomic.Value // holds license.State; zero value -> StateValid (no license row yet)
 
+// cachedLicenseMaxSubscribers holds the installed license's MaxSubscribers
+// (FR-105) for the cap check on subscriber create/import, without a DB read on
+// the hot create path. 0 means "no cap": either an unlimited-tier license or
+// no license at all (a fresh/dev install is never restricted). Kept current by
+// SaveLicenseRecord and RefreshLicenseCache alongside cachedLicenseState.
+var cachedLicenseMaxSubscribers atomic.Int64
+
+// CachedLicenseMaxSubscribers returns the licensed subscriber cap without a DB
+// round-trip; 0 means unlimited (or no license installed).
+func CachedLicenseMaxSubscribers() int {
+	return int(cachedLicenseMaxSubscribers.Load())
+}
+
+// SetCachedLicenseMaxSubscribersForTest overrides the cached cap. Test-only,
+// mirroring SetCachedLicenseStateForTest — lets cap-enforcement tests exercise
+// every band without standing up a signed license row.
+func SetCachedLicenseMaxSubscribersForTest(n int) {
+	cachedLicenseMaxSubscribers.Store(int64(n))
+}
+
+// SubscriberCapStatus describes how a subscriber count sits against the
+// licensed cap (FR-105). Cap 0 => Unlimited (no query, never Blocked).
+type SubscriberCapStatus struct {
+	Cap       int  `json:"cap"`    // licensed MaxSubscribers; 0 = unlimited
+	Buffer    int  `json:"buffer"` // overage buffer = max(10, ceil(cap*5%)); 0 when unlimited
+	Count     int  `json:"count"`  // the evaluated count (post-add for a create check)
+	Unlimited bool `json:"unlimited"`
+	Over      bool `json:"over"`    // Count > Cap — in or past the warn band (renew/upgrade prompt)
+	Blocked   bool `json:"blocked"` // Count > Cap+Buffer — creation must be refused
+}
+
+// EvalSubscriberCap evaluates a (would-be) subscriber count against the cached
+// license cap. Pure: the buffer is max(10, ceil(cap*0.05)); Blocked means the
+// count exceeds cap+buffer (refuse the create), Over means it exceeds cap (a
+// warn-band prompt, still allowed). An unlimited/absent license is never
+// Over/Blocked.
+func EvalSubscriberCap(count int) SubscriberCapStatus {
+	cap := CachedLicenseMaxSubscribers()
+	if cap <= 0 {
+		return SubscriberCapStatus{Count: count, Unlimited: true}
+	}
+	buffer := (cap + 19) / 20 // ceil(cap/20) == ceil(cap*0.05)
+	if buffer < 10 {
+		buffer = 10
+	}
+	return SubscriberCapStatus{
+		Cap:     cap,
+		Buffer:  buffer,
+		Count:   count,
+		Over:    count > cap,
+		Blocked: count > cap+buffer,
+	}
+}
+
 // CachedLicenseState returns the last-evaluated license state without a DB
 // round-trip. LicenseGate reads this on every request; RefreshLicenseCache
 // (called at boot and on a ticker, plus synchronously after every upload)
@@ -94,6 +148,7 @@ func SaveLicenseRecord(ctx context.Context, db *pgxpool.Pool, rec license.Record
 		return fmt.Errorf("platform: save license: %w", err)
 	}
 	cachedLicenseState.Store(rec.State)
+	cachedLicenseMaxSubscribers.Store(int64(rec.Payload.MaxSubscribers))
 	return nil
 }
 
@@ -120,8 +175,10 @@ func RefreshLicenseCache(ctx context.Context, db *pgxpool.Pool, log *slog.Logger
 	}
 	if !ok {
 		cachedLicenseState.Store(license.StateValid)
+		cachedLicenseMaxSubscribers.Store(0)
 		return
 	}
+	cachedLicenseMaxSubscribers.Store(int64(rec.Payload.MaxSubscribers))
 
 	cur, ferr := license.Current()
 	if ferr != nil {
@@ -144,6 +201,13 @@ func RefreshLicenseCache(ctx context.Context, db *pgxpool.Pool, log *slog.Logger
 		}
 		log.Info("license: state transition", "from", before, "to", updated.State)
 	}
+	// Whenever the license reads valid, clear any firing grace notifications —
+	// not just on the transition edge, so a pile of stale rows from earlier
+	// fingerprint flapping self-heals on the next boot/tick. Idempotent: a
+	// no-op when nothing is firing.
+	if updated.State == license.StateValid {
+		resolveGraceAlerts(ctx, db, log)
+	}
 	cachedLicenseState.Store(updated.State)
 }
 
@@ -161,11 +225,29 @@ func raiseGraceAlert(ctx context.Context, db *pgxpool.Pool, log *slog.Logger, re
 		"issued_fingerprint": rec.IssuedFingerprint,
 		"grace_started_at":   rec.GraceStartedAt,
 	})
+	// Dedup: only one firing grace notification at a time. Without this, every
+	// fingerprint flap raised a fresh row and they piled up in the feed.
 	_, err := db.Exec(ctx,
 		`INSERT INTO alert_events (rule_id, state, type, summary, payload, deliveries)
-		 VALUES (NULL, 'firing', 'license_grace', $1, $2, '[]')`,
+		 SELECT NULL, 'firing', 'license_grace', $1, $2, '[]'
+		 WHERE NOT EXISTS (
+		     SELECT 1 FROM alert_events WHERE type = 'license_grace' AND state = 'firing'
+		 )`,
 		summary, payload)
 	if err != nil {
 		log.Warn("license: raise grace alert failed", "error", err)
+	}
+}
+
+// resolveGraceAlerts marks every still-firing license_grace notification
+// resolved. Called whenever the license reads valid again (re-issued key
+// uploaded, or the fingerprint drifted back within tolerance) so the mismatch
+// banner in the notification feed clears instead of lingering forever.
+func resolveGraceAlerts(ctx context.Context, db *pgxpool.Pool, log *slog.Logger) {
+	if _, err := db.Exec(ctx,
+		`UPDATE alert_events SET state = 'resolved'
+		 WHERE type = 'license_grace' AND state = 'firing'`,
+	); err != nil {
+		log.Warn("license: resolve grace alerts failed", "error", err)
 	}
 }

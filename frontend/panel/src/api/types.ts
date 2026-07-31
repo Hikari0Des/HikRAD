@@ -50,6 +50,8 @@ export interface Subscriber {
   static_ip: string | null
   session_limit_override: number | null
   rate_override: string | null
+  /** FR-109: overrides the profile's address_list; null = inherit. */
+  address_list_override: string | null
   price_override: number | null
   disabled_reason: string | null
   /** FR-61: which service(s) this account may use. Replaced v1's allow_hotspot. */
@@ -81,6 +83,8 @@ export interface SubscriberWrite {
   static_ip?: string | null
   session_limit_override?: number | null
   rate_override?: string | null
+  /** FR-109: overrides the profile's address_list; null = inherit. */
+  address_list_override?: string | null
   price_override?: number | null
   disabled_reason?: string | null
   service_type?: ServiceType
@@ -223,6 +227,8 @@ export interface Profile {
   quota_down_bytes: number | null
   quota_up_bytes: number | null
   throttle_rate: string | null
+  /** FR-109: named MikroTik address-list applied at a normal login. */
+  address_list: string | null
   expiry_behavior: ExpiryBehavior
   quota_behavior: QuotaBehavior
   hotspot_rate_down_kbps: number | null
@@ -248,6 +254,8 @@ export interface ProfileWrite {
   quota_down_bytes?: number | null
   quota_up_bytes?: number | null
   throttle_rate?: string | null
+  /** FR-109: named MikroTik address-list applied at a normal login. */
+  address_list?: string | null
   expiry_behavior: ExpiryBehavior
   quota_behavior: QuotaBehavior
   hotspot_rate_down_kbps?: number | null
@@ -255,6 +263,52 @@ export interface ProfileWrite {
   /** FR-64 scope; an empty array means "any NAS". */
   nas_scopes?: NasScope[]
   archived?: boolean
+}
+
+// --- profile bulk (FR-111.2) ----------------------------------------------
+
+export interface ProfileBulkFilter {
+  q?: string
+  archived?: string // ""|"any" = both; "yes"; "no"
+  quota_mode?: string
+  expiry_behavior?: string
+  pool_id?: string
+}
+
+export type ProfileBulkAction =
+  | 'archive'
+  | 'unarchive'
+  | 'change_pool'
+  | 'set_address_list'
+  | 'set_expiry_behavior'
+  | 'set_quota_behavior'
+  | 'delete'
+  | 'export'
+
+export interface ProfileBulkRequest {
+  filter: ProfileBulkFilter
+  /** Explicit selection; non-empty REPLACES the filter (profiles are instance-global — no scoping). */
+  profile_ids?: string[]
+  action: ProfileBulkAction
+  params?: Record<string, unknown>
+}
+
+export interface ProfileBulkFailure {
+  profile_id: string
+  name: string
+  error: string
+}
+
+export interface ProfileBulkJob {
+  id: string
+  action: string
+  status: 'running' | 'completed'
+  total: number
+  done: number
+  succeeded: number
+  failed: number
+  failures: ProfileBulkFailure[]
+  started_at: string
 }
 
 export interface OnlineRef {
@@ -513,11 +567,21 @@ export interface DiscoveredNas {
 
 export type PoolPurpose = 'active' | 'expired' | 'static'
 
+/**
+ * FR-108 pool ownership (Decision 48): 'system' = HikRAD owns it (editable,
+ * deletable, pushable to a router); 'router' = adopted from a router, a
+ * read-only reference HikRAD never writes back.
+ */
+export type PoolManagementMode = 'system' | 'router'
+
 export interface Pool {
   id: string
   name: string
   ranges: string[]
   purpose: PoolPurpose
+  management_mode: PoolManagementMode
+  /** The router's raw ranges string for an adopted pool (not valid inet, kept verbatim). */
+  router_ranges?: string
   size: number
   used: number
   util_percent: number

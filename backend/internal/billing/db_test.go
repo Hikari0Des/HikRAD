@@ -231,6 +231,20 @@ func (e env) cachedBalance(t *testing.T, mgr string) int64 {
 	return n
 }
 
+// balanceFor reads the cached balance for (manager, currency). v3-2: only the
+// IQD row exists (single book), so callers pass "IQD"; retained so the v2-9 /
+// tickets gate tests keep reading the balance the same way.
+func (e env) balanceFor(t *testing.T, mgr, currency string) int64 {
+	t.Helper()
+	var n int64
+	if err := e.db.QueryRow(context.Background(),
+		`SELECT COALESCE((SELECT balance FROM manager_balances WHERE manager_id=$1::uuid AND currency=$2),0)`,
+		mgr, currency).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	return n
+}
+
 // --- tests ------------------------------------------------------------------
 
 // TestRenewWritesLedgerAndExtendsExpiry — gate item 1 (scriptable half).

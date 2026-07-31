@@ -15,8 +15,17 @@ import type {
 export function listSubscribers(params: {
   cursor?: string
   limit?: number
+  // Server-side filters (mirror the FilterBar) so a search/filter matches across
+  // ALL subscribers and paginates the matches, not just the loaded page.
+  q?: string
+  status?: string
+  service_type?: string
+  profile_id?: string
+  owner_manager_id?: string
+  expiring_days?: string
 }): Promise<Page<Subscriber>> {
-  return listPage<Subscriber>('/subscribers', params)
+  const { cursor, limit, ...filters } = params
+  return listPage<Subscriber>('/subscribers', { cursor, limit }, filters)
 }
 
 export function getSubscriber(id: string): Promise<SubscriberDetail> {

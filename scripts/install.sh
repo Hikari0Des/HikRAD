@@ -264,6 +264,14 @@ fi
 mkdir -p "$HIKRAD_ROOT/data/acct-spill"
 chown 10002:10002 "$HIKRAD_ROOT/data/acct-spill"
 
+# --- 3d0. branding logo dir ownership (idempotent; also runs on repair) ------
+# hikrad-api (uid 10001) writes the uploaded instance logo here (FR-91). Same
+# bug/fix shape as acct-spill: without a pre-created, api-owned dir, Docker
+# auto-creates the bind mount root-owned and the non-root container's logo
+# upload fails with "mkdir … permission denied" (FR-106.3).
+mkdir -p "$HIKRAD_ROOT/data/branding"
+chown 10001:10001 "$HIKRAD_ROOT/data/branding"
+
 # --- 3d1. clients-generated.conf ownership (idempotent; also runs on repair) -
 # hikrad-api runs as a fixed non-root uid (10001, deploy/docker/api.Dockerfile)
 # and regenerates this file on every NAS create/update/delete (FR-13.2). A

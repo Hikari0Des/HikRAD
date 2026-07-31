@@ -9,15 +9,33 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/hikrad/hikrad/internal/auth"
 	"github.com/hikrad/hikrad/internal/httpapi"
+	"github.com/hikrad/hikrad/internal/platform"
 	"github.com/hikrad/hikrad/internal/platform/crypto"
 	"github.com/hikrad/hikrad/internal/radius"
 )
+
+// subscriberCapStatus evaluates the FR-105 license subscriber cap for a
+// create/import of `adding` rows. It skips the COUNT entirely when the license
+// is unlimited or absent, so the common (unlicensed dev / unlimited-tier) case
+// pays nothing. The count is of every non-deleted subscriber — disabled and
+// expired accounts still occupy a licensed slot (owner decision 2026-07-22).
+func (m *Module) subscriberCapStatus(ctx context.Context, adding int) (platform.SubscriberCapStatus, error) {
+	if platform.CachedLicenseMaxSubscribers() <= 0 {
+		return platform.SubscriberCapStatus{Unlimited: true}, nil
+	}
+	var n int
+	if err := m.db.QueryRow(ctx, `SELECT COUNT(*) FROM subscribers`).Scan(&n); err != nil {
+		return platform.SubscriberCapStatus{}, err
+	}
+	return platform.EvalSubscriberCap(n + adding), nil
+}
 
 // writeInput is the create/update body. Pointers distinguish "field omitted"
 // (leave/clear per handler) from a zero value; username is create-only.
@@ -38,6 +56,7 @@ type writeInput struct {
 	SessionLimitOverride *int       `json:"session_limit_override"`
 	RateOverride         *string    `json:"rate_override"`
 	PriceOverride        *int64     `json:"price_override"`
+	AddressListOverride  *string    `json:"address_list_override"` // FR-109: override the profile's address-list
 	DisabledReason       *string    `json:"disabled_reason"`
 	// ServiceType (FR-61) is pppoe | hotspot | dual; it replaced v1's
 	// allow_hotspot bool. Omitted on create defaults to pppoe.
@@ -80,17 +99,58 @@ func (m *Module) listHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	scope := auth.ScopeFilter(r.Context())
-	// $1 cursor, $2 limit, $3 service_type filter, optional $4 owner scope.
+	// $1 cursor, $2 limit, $3 service_type; the FilterBar's other filters are
+	// applied here server-side (not just over the loaded page) so a search or
+	// filter finds matches across ALL subscribers, then paginates the matches.
 	q := `SELECT ` + columns + ` FROM subscribers
 	       WHERE ($1::uuid IS NULL OR id > $1::uuid)
 	         AND ($3::text = '' OR service_type = $3::text)`
 	args := []any{after, page.Limit + 1, serviceType}
-	clause, arg := scopeClause(scope, 4)
+	n := 4 // next positional placeholder
+	if status := r.URL.Query().Get("status"); status != "" {
+		q += fmt.Sprintf(" AND status = $%d", n)
+		args = append(args, status)
+		n++
+	}
+	if pid := r.URL.Query().Get("profile_id"); pid != "" {
+		q += fmt.Sprintf(" AND profile_id = $%d::uuid", n)
+		args = append(args, pid)
+		n++
+	}
+	if owner := r.URL.Query().Get("owner_manager_id"); owner != "" {
+		q += fmt.Sprintf(" AND owner_manager_id = $%d::uuid", n)
+		args = append(args, owner)
+		n++
+	}
+	// Same folded-trigram match as the global search (search.go): username/name
+	// case- and diacritic-folded, plus a phone fragment normalized to +964 form.
+	if qt := strings.TrimSpace(r.URL.Query().Get("q")); qt != "" {
+		phoneFrag := qt
+		if p, ok := normalizePhone(qt); ok && p != "" {
+			phoneFrag = p
+		}
+		q += fmt.Sprintf(" AND (subscriber_fold(username::text) ILIKE '%%'||subscriber_fold($%d)||'%%'"+
+			" OR subscriber_fold(name) ILIKE '%%'||subscriber_fold($%d)||'%%'"+
+			" OR phone ILIKE '%%'||$%d||'%%')", n, n, n+1)
+		args = append(args, qt, phoneFrag)
+		n += 2
+	}
+	if days := r.URL.Query().Get("expiring_days"); days != "" {
+		d, convErr := strconv.Atoi(days)
+		if convErr != nil || d < 0 {
+			httpapi.Error(w, http.StatusBadRequest, "invalid_filter", "expiring_days must be a non-negative integer")
+			return
+		}
+		q += fmt.Sprintf(" AND expires_at IS NOT NULL AND expires_at <= now() + ($%d::int * interval '1 day')", n)
+		args = append(args, d)
+		n++
+	}
+	clause, arg := scopeClause(scope, n)
 	q += clause
-	q += ` ORDER BY id LIMIT $2`
 	if arg != nil {
 		args = append(args, arg)
 	}
+	q += ` ORDER BY id LIMIT $2`
 	rows, err := m.db.Query(r.Context(), q, args...)
 	if err != nil {
 		m.internalError(w, "list", err)
@@ -123,19 +183,6 @@ func (m *Module) listHandler(w http.ResponseWriter, r *http.Request) {
 	httpapi.JSON(w, http.StatusOK, httpapi.NewListResponse(items, next))
 }
 
-func (m *Module) getHandler(w http.ResponseWriter, r *http.Request) {
-	s, err := getByID(r.Context(), m.db, chi.URLParam(r, "id"), auth.ScopeFilter(r.Context()))
-	if isNotFound(err) {
-		httpapi.Error(w, http.StatusNotFound, "not_found", "subscriber not found")
-		return
-	}
-	if err != nil {
-		m.internalError(w, "get", err)
-		return
-	}
-	httpapi.JSON(w, http.StatusOK, s)
-}
-
 func (m *Module) createHandler(w http.ResponseWriter, r *http.Request) {
 	var in writeInput
 	if !httpapi.Bind(w, r, &in) {
@@ -154,6 +201,20 @@ func (m *Module) createHandler(w http.ResponseWriter, r *http.Request) {
 	if len(fe) > 0 {
 		httpapi.Error(w, http.StatusUnprocessableEntity, "validation_failed", "request validation failed", fe...)
 		return
+	}
+
+	// FR-105 license cap: refuse a create that would push the subscriber count
+	// past cap+buffer; warn (but allow) inside the buffer band. Orthogonal to
+	// the expired_grace write-gate and never touches auth/accounting.
+	if st, err := m.subscriberCapStatus(r.Context(), 1); err != nil {
+		m.internalError(w, "license cap check", err)
+		return
+	} else if st.Blocked {
+		httpapi.Error(w, http.StatusForbidden, "license_subscriber_cap",
+			fmt.Sprintf("subscriber limit reached: this license permits %d subscribers (plus a %d buffer). Renew or upgrade to add more.", st.Cap, st.Buffer))
+		return
+	} else if st.Over {
+		w.Header().Set("X-HikRAD-Warning", "license_over_cap")
 	}
 
 	plainPassword := ""
@@ -204,13 +265,13 @@ func (m *Module) createHandler(w http.ResponseWriter, r *http.Request) {
 		   (username, password_enc, name, phone, email, address, notes, status, profile_id,
 		    owner_manager_id, expires_at, mac_lock_mode, static_ip, session_limit_override,
 		    rate_override, price_override, disabled_reason, service_type, whatsapp_opt_in,
-		    has_password, quota_cycle_anchor)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::uuid,$10::uuid,$11,$12,$13::inet,$14,$15,$16,$17,$18,$19,$20, now())
+		    has_password, address_list_override, quota_cycle_anchor)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::uuid,$10::uuid,$11,$12,$13::inet,$14,$15,$16,$17,$18,$19,$20,$21, now())
 		 RETURNING `+columns,
 		in.Username, enc, in.Name, norm.phonePtr, norm.emailPtr, in.Address, in.Notes, status, in.ProfileID,
 		owner, in.ExpiresAt, macMode, norm.staticIP, in.SessionLimitOverride,
 		in.RateOverride, in.PriceOverride, in.DisabledReason, serviceType,
-		boolOr(in.WhatsappOptIn, false), !noPassword))
+		boolOr(in.WhatsappOptIn, false), !noPassword, in.AddressListOverride))
 	if err != nil {
 		if isUniqueViolation(err) {
 			httpapi.Error(w, http.StatusConflict, "conflict", "username already exists")
@@ -323,7 +384,8 @@ func (m *Module) updateHandler(w http.ResponseWriter, r *http.Request) {
 		    disabled_reason       = CASE WHEN $29::bool THEN $30 ELSE disabled_reason END,
 		    service_type          = COALESCE($31, service_type),
 		    whatsapp_opt_in       = COALESCE($32, whatsapp_opt_in),
-		    has_password          = COALESCE($33, has_password)
+		    has_password          = COALESCE($33, has_password),
+		    address_list_override = CASE WHEN $34::bool THEN $35 ELSE address_list_override END
 		  WHERE id = $1::uuid
 		 RETURNING `+columns,
 		id, encArg,
@@ -341,7 +403,8 @@ func (m *Module) updateHandler(w http.ResponseWriter, r *http.Request) {
 		in.PriceOverride != nil, in.PriceOverride,
 		in.DisabledReason != nil, in.DisabledReason,
 		nilIfEmpty(in.ServiceType), in.WhatsappOptIn,
-		hasPasswordArg))
+		hasPasswordArg,
+		in.AddressListOverride != nil, in.AddressListOverride))
 	if err != nil {
 		if isForeignKeyViolation(err) {
 			httpapi.Error(w, http.StatusUnprocessableEntity, "validation_failed", "request validation failed",

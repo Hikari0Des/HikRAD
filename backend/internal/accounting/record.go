@@ -7,8 +7,6 @@
 package accounting
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"strconv"
@@ -146,14 +144,6 @@ func (r Record) eventTime() time.Time {
 		return r.EventTimeParsed
 	}
 	return parseEventTime(r.EventTimeRaw, r.ReceiptTime)
-}
-
-// dedupID is a compact deterministic id for the (nas, session, type, event)
-// tuple — used as the disk-spill line key and for logging. The DB unique
-// constraint is the authoritative dedup; this is a convenience/debug handle.
-func (r Record) dedupID(nasID string) string {
-	h := sha256.Sum256([]byte(nasID + "|" + r.AcctSessionID + "|" + r.RecordType + "|" + r.eventTime().Format(time.RFC3339Nano)))
-	return hex.EncodeToString(h[:8])
 }
 
 // totalBytes reconstructs a full 64-bit counter from 32-bit octets + gigawords

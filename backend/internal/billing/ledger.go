@@ -9,27 +9,35 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
 )
 
-// ledgerEntry is one row to append. Amount is signed, minor units of Currency
-// (v2 phase 4, FR-68/69 — was AmountIQD, always-IQD).
+// ledgerEntry is one row to append. Amount is signed IQD (v3-2 FR-100.2: the
+// book is single-currency IQD again; new rows are always IQD). A foreign
+// amount is converted to IQD BEFORE this struct is built (convertToIQD), and
+// the original figure is carried in EnteredAmount/EnteredCurrency (the FR-101.1
+// conversion stamp).
 type ledgerEntry struct {
 	Type           string
-	Amount         int64  // signed balance effect on ActorManagerID, minor units of Currency
-	Currency       string // required — every entry moves money in exactly one currency
+	Amount         int64 // signed IQD balance effect on ActorManagerID
 	ActorManagerID string
 	SubscriberID   string // "" -> NULL
 	Source         string
 	Reference      string
 	ReversesID     string // "" -> NULL
 	Note           string
-	// CurrencyRateID stamps the currency_rates row an "exchange" entry used
-	// (FR-68.1: every rate actually used is stamped so history never
-	// re-values); "" -> NULL for every other entry type.
+	// CurrencyRateID stamps the currency_rates row an entry-time conversion
+	// used (FR-101.1: every rate actually used is stamped so history never
+	// re-values); "" -> NULL for a native-IQD entry.
 	CurrencyRateID string
+	// EnteredAmount/EnteredCurrency are the FR-101.1 conversion stamp: the
+	// original foreign figure this IQD row was converted from (for the
+	// receipt/audit). Nil/"" for a native-IQD entry.
+	EnteredAmount   *int64
+	EnteredCurrency string
 	// CostAtSale is the plan cost in force at the moment of a renewal (v2
 	// phase 9, FR-72.1), in the same Currency as Amount. nil -> NULL, meaning
 	// the plan had no recorded cost at that moment (never defaulted to 0 —
@@ -38,53 +46,107 @@ type ledgerEntry struct {
 	CostAtSale *int64
 }
 
-// insertLedger appends one entry within tx and returns its id.
+// insertLedger appends one entry within tx and returns its id. Every new row is
+// IQD by construction (v3-2 FR-100.2 single book): the currency column is
+// written 'IQD' unconditionally, and the original foreign figure — if this
+// amount came from an entry-time conversion — is carried in the entered_* stamp.
 func insertLedger(ctx context.Context, tx pgx.Tx, e ledgerEntry) (string, error) {
-	if e.Currency == "" {
-		e.Currency = "IQD"
-	}
 	var id string
 	err := tx.QueryRow(ctx,
 		`INSERT INTO ledger_transactions
-		   (type, amount, currency, actor_manager_id, subscriber_id, source, reference, reverses_id, note, currency_rate_id, cost_at_sale)
-		 VALUES ($1, $2, $3, NULLIF($4,'')::uuid, NULLIF($5,'')::uuid, $6, $7, NULLIF($8,'')::uuid, $9, NULLIF($10,'')::uuid, $11)
+		   (type, amount, currency, actor_manager_id, subscriber_id, source, reference, reverses_id, note, currency_rate_id, cost_at_sale, entered_amount, entered_currency)
+		 VALUES ($1, $2, 'IQD', NULLIF($3,'')::uuid, NULLIF($4,'')::uuid, $5, $6, NULLIF($7,'')::uuid, $8, NULLIF($9,'')::uuid, $10, $11, NULLIF($12,''))
 		 RETURNING id::text`,
-		e.Type, e.Amount, e.Currency, e.ActorManagerID, e.SubscriberID, e.Source, e.Reference, e.ReversesID, e.Note, e.CurrencyRateID, e.CostAtSale,
+		e.Type, e.Amount, e.ActorManagerID, e.SubscriberID, e.Source, e.Reference, e.ReversesID, e.Note, e.CurrencyRateID, e.CostAtSale, e.EnteredAmount, e.EnteredCurrency,
 	).Scan(&id)
 	return id, err
 }
 
-// lockBalance ensures a manager_balances row exists for (managerID, currency)
-// and locks it FOR UPDATE, serializing concurrent balance movements for that
-// manager IN THAT CURRENCY (v2 phase 4: balances are per-currency — a lock on
-// one currency never blocks or is confused with another). Returns the current
-// cached balance.
-func lockBalance(ctx context.Context, tx pgx.Tx, managerID, currency string) (int64, error) {
+// lockBalance ensures the manager's IQD balance row exists and locks it FOR
+// UPDATE, serializing concurrent balance movements for that manager. v3-2
+// (FR-100.1): the book is single-currency IQD again, so there is exactly one
+// balance row per manager and no currency dimension to confuse. Returns the
+// current cached IQD balance.
+func lockBalance(ctx context.Context, tx pgx.Tx, managerID string) (int64, error) {
 	if _, err := tx.Exec(ctx,
-		`INSERT INTO manager_balances (manager_id, currency, balance) VALUES ($1::uuid, $2, 0)
-		 ON CONFLICT (manager_id, currency) DO NOTHING`, managerID, currency); err != nil {
+		`INSERT INTO manager_balances (manager_id, currency, balance) VALUES ($1::uuid, 'IQD', 0)
+		 ON CONFLICT (manager_id, currency) DO NOTHING`, managerID); err != nil {
 		return 0, err
 	}
 	var bal int64
 	err := tx.QueryRow(ctx,
-		`SELECT balance FROM manager_balances WHERE manager_id = $1::uuid AND currency = $2 FOR UPDATE`,
-		managerID, currency).Scan(&bal)
+		`SELECT balance FROM manager_balances WHERE manager_id = $1::uuid AND currency = 'IQD' FOR UPDATE`,
+		managerID).Scan(&bal)
 	return bal, err
 }
 
-// recomputeBalance sets manager_balances.balance to the exact ledger sum for
-// the manager IN THAT CURRENCY — the invariant that makes cache ≡ ledger true
-// after every entry. Summing across currencies here would be the single most
-// consequential bug in this phase (AC-69c) — every caller must pass the
-// specific currency the entry it just inserted actually moved.
-func recomputeBalance(ctx context.Context, tx pgx.Tx, managerID, currency string) error {
+// recomputeBalance sets the manager's IQD balance to the exact ledger sum — the
+// invariant that makes cache ≡ ledger true after every entry (FR-100.4). Only
+// IQD rows are summed; historical foreign rows net to zero after the migration
+// and never appear in a new balance.
+func recomputeBalance(ctx context.Context, tx pgx.Tx, managerID string) error {
 	_, err := tx.Exec(ctx,
 		`UPDATE manager_balances
 		    SET balance = (SELECT COALESCE(sum(amount),0)
-		                     FROM ledger_transactions WHERE actor_manager_id = $1::uuid AND currency = $2),
+		                     FROM ledger_transactions WHERE actor_manager_id = $1::uuid AND currency = 'IQD'),
 		        updated_at = now()
-		  WHERE manager_id = $1::uuid AND currency = $2`, managerID, currency)
+		  WHERE manager_id = $1::uuid AND currency = 'IQD'`, managerID)
 	return err
+}
+
+// convertToIQD converts a foreign minor-unit amount to whole IQD at the current
+// admin rate (FR-101.1), rounding half-up. Returns the IQD amount, the
+// currency_rates row id used (to stamp on the ledger), or ("",nil) unchanged
+// when the input is already IQD. errNoRate when no from->IQD rate exists — the
+// caller surfaces it as a validation error (never a silent 1:1 conversion).
+func convertToIQD(ctx context.Context, tx pgx.Tx, amount int64, fromCurrency string) (int64, string, error) {
+	if fromCurrency == "" || fromCurrency == "IQD" {
+		return amount, "", nil
+	}
+	var rate float64
+	var rateID string
+	err := tx.QueryRow(ctx,
+		`SELECT id::text, rate FROM currency_rates
+		   WHERE from_currency = $1 AND to_currency = 'IQD'
+		   ORDER BY effective_from DESC LIMIT 1`, fromCurrency).Scan(&rateID, &rate)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, "", errNoRate
+	}
+	if err != nil {
+		return 0, "", err
+	}
+	var digits int
+	if err := tx.QueryRow(ctx, `SELECT minor_unit_digits FROM currencies WHERE code = $1`, fromCurrency).Scan(&digits); err != nil {
+		return 0, "", err
+	}
+	whole := float64(amount) / pow10(digits)
+	iqd := int64(whole*rate + 0.5) // amounts are non-negative → round-half-up
+	return iqd, rateID, nil
+}
+
+var errNoRate = errors.New("billing: no IQD exchange rate defined for this currency")
+
+// signedToIQD converts a SIGNED foreign amount to signed IQD, preserving sign
+// (convertToIQD only handles non-negative magnitudes). Used by the refund path,
+// where a reversal can be a credit or a debit. IQD input passes through
+// unchanged with rateID "".
+func signedToIQD(ctx context.Context, tx pgx.Tx, amount int64, fromCurrency string) (int64, string, error) {
+	if fromCurrency == "" || fromCurrency == "IQD" {
+		return amount, "", nil
+	}
+	neg := amount < 0
+	mag := amount
+	if neg {
+		mag = -mag
+	}
+	iqd, rateID, err := convertToIQD(ctx, tx, mag, fromCurrency)
+	if err != nil {
+		return 0, "", err
+	}
+	if neg {
+		iqd = -iqd
+	}
+	return iqd, rateID, nil
 }
 
 // nextReceiptNo returns the next sequential receipt number with the settings

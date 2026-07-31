@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 
 import { Ltr, useT } from '@hikrad/shared'
 
-import { createNas, discoverNasServices, updateNas } from '../../api/nas'
+import { createNas, discoverNasServices, probeNas, updateNas } from '../../api/nas'
 import { ApiError, type FieldError } from '../../api/client'
 import type { Nas, NasHealthFinding, NasServiceWrite, NasType, NasWrite } from '../../api/types'
 import { Button } from '../../components/Button'
@@ -45,6 +45,54 @@ export function NasWizardModal({
   const [form, setForm] = useState(() => initial(existing, prefill))
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [busy, setBusy] = useState(false)
+  // FR-107: id of a NAS created mid-wizard by "Save & detect", so the subsequent
+  // Save updates it (never a duplicate) and the services editor can detect
+  // against it. detectSignal drives a one-shot auto-detect on step 1.
+  const [createdId, setCreatedId] = useState<string | null>(null)
+  const [detectSignal, setDetectSignal] = useState(0)
+  const [probing, setProbing] = useState(false)
+  const targetId = existing?.id ?? createdId
+  const hasApiCreds = Boolean(existing?.has_api_creds) || Boolean(createdId)
+
+  // Map a full RouterOS version string ("7.11.2", "6.49.10") to the major the
+  // form's version selector understands ("7"/"6"). Anything else clears it.
+  function majorOf(version: string): string {
+    const major = version.trim().split('.')[0]
+    return major === '6' || major === '7' ? major : ''
+  }
+
+  // #1 / FR-107: detect the router's RouterOS version and reflect it in the
+  // form. Shared by "Save & detect" (auto) and the inline Detect button (manual,
+  // when editing a NAS that already has saved credentials). The probe persists
+  // the version server-side; here we only mirror it into the selector.
+  async function probeVersion(id: string, announce: boolean) {
+    try {
+      const probed = await probeNas(id)
+      const major = majorOf(probed.ros_version)
+      if (major) set('rosVersion', major)
+      if (announce) toast(t('nas.versionDetected', { version: probed.ros_version }), 'ok')
+      return true
+    } catch (err) {
+      if (announce) {
+        if (err instanceof ApiError && err.code === 'no_api_credentials') {
+          toast(t('nas.detectNeedsCreds'), 'danger')
+        } else {
+          toast(err instanceof Error ? err.message : t('common.error.body'), 'danger')
+        }
+      }
+      return false
+    }
+  }
+
+  async function detectVersionClick() {
+    if (!targetId) return
+    setProbing(true)
+    try {
+      await probeVersion(targetId, true)
+    } finally {
+      setProbing(false)
+    }
+  }
 
   const openKey = `${open}:${existing?.id ?? 'new'}:${prefill?.ip ?? ''}`
   useEffect(() => {
@@ -52,31 +100,67 @@ export function NasWizardModal({
       setForm(initial(existing, prefill))
       setErrors({})
       setStep(1)
+      setCreatedId(null)
+      setDetectSignal(0)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openKey])
 
   const set = <K extends keyof NasForm>(k: K, v: NasForm[K]) => setForm((f) => ({ ...f, [k]: v }))
 
+  function handleSaveError(err: unknown) {
+    if (err instanceof ApiError && err.fieldErrors.length > 0) {
+      setErrors(mapErrors(err.fieldErrors))
+      setStep(1)
+    } else if (err instanceof ApiError && err.code === 'conflict') {
+      setErrors({ ip: t('nas.ipTaken') })
+      setStep(1)
+    } else {
+      toast(err instanceof Error ? err.message : t('common.error.body'), 'danger')
+    }
+  }
+
   async function save() {
     setBusy(true)
     setErrors({})
     try {
-      const body = toWrite(form, editing)
-      if (editing && existing) await updateNas(existing.id, body)
+      const body = toWrite(form, Boolean(targetId))
+      // targetId is set either on edit or after a mid-wizard "Save & detect"
+      // create — either way we update it, so we never create a duplicate NAS.
+      if (targetId) await updateNas(targetId, body)
       else await createNas(body)
-      toast(editing ? t('nas.saved') : t('nas.created'), 'ok')
+      toast(targetId ? t('nas.saved') : t('nas.created'), 'ok')
       onSaved()
     } catch (err) {
-      if (err instanceof ApiError && err.fieldErrors.length > 0) {
-        setErrors(mapErrors(err.fieldErrors))
-        setStep(1)
-      } else if (err instanceof ApiError && err.code === 'conflict') {
-        setErrors({ ip: t('nas.ipTaken') })
-        setStep(1)
-      } else {
-        toast(err instanceof Error ? err.message : t('common.error.body'), 'danger')
-      }
+      handleSaveError(err)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  /**
+   * FR-107: create the NAS with the just-entered API credentials, then jump to
+   * step 1 and auto-run service discovery against it — removing the old
+   * save → reopen-in-edit → detect round trip. The NAS now exists, so the
+   * final Save updates it (see targetId in save()). Read-only: discovery never
+   * writes to the router (Decision 17).
+   */
+  async function saveAndDetect() {
+    setBusy(true)
+    setErrors({})
+    try {
+      const created = await createNas(toWrite(form, false))
+      setCreatedId(created.id)
+      // #1: detect the RouterOS version in the same action, so onboarding is a
+      // single "Save & detect" — no separate trip to NAS management to probe the
+      // version before service discovery will work. Best-effort: a version-probe
+      // failure must not block the service discovery the operator asked for.
+      await probeVersion(created.id, false)
+      toast(t('nas.created'), 'ok')
+      setStep(1)
+      setDetectSignal((n) => n + 1)
+    } catch (err) {
+      handleSaveError(err)
     } finally {
       setBusy(false)
     }
@@ -101,8 +185,9 @@ export function NasWizardModal({
             services={form.services}
             onChange={(services) => set('services', services)}
             errors={errors}
-            nasId={existing?.id}
-            hasApiCreds={Boolean(existing?.has_api_creds)}
+            nasId={targetId ?? undefined}
+            hasApiCreds={hasApiCreds}
+            autoDetect={detectSignal}
           />
           <div className="flex justify-end gap-2 pt-2">
             <Button variant="ghost" onClick={() => onOpenChange(false)}>
@@ -134,11 +219,30 @@ export function NasWizardModal({
               />
             </Field>
             <Field label={t('nas.rosVersion')} error={errors.ros_version}>
-              <Select value={form.rosVersion} onChange={(e) => set('rosVersion', e.target.value)}>
-                <option value="">{t('ui.unknown')}</option>
-                <option value="7">7</option>
-                <option value="6">6</option>
-              </Select>
+              <div className="flex items-center gap-2">
+                <Select
+                  value={form.rosVersion}
+                  onChange={(e) => set('rosVersion', e.target.value)}
+                  className="min-w-0 flex-1"
+                >
+                  <option value="">{t('ui.unknown')}</option>
+                  <option value="7">7</option>
+                  <option value="6">6</option>
+                </Select>
+                {/* #1: detect the version inline when the NAS exists and has API
+                    creds (editing, or after Save & detect) — no trip to NAS
+                    management. For a brand-new NAS use "Save & detect" below. */}
+                {targetId && hasApiCreds ? (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={probing}
+                    onClick={detectVersionClick}
+                  >
+                    {probing ? t('ui.working') : t('nas.detectVersion')}
+                  </Button>
+                ) : null}
+              </div>
             </Field>
           </div>
           <Field label={t('nas.location')} error={errors.location}>
@@ -197,13 +301,22 @@ export function NasWizardModal({
             </Field>
           </div>
 
-          <div className="flex justify-between gap-2 pt-2">
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-2">
             <Button variant="ghost" onClick={() => setStep(1)}>
               {t('ui.back')}
             </Button>
-            <Button disabled={busy} onClick={save}>
-              {busy ? t('ui.working') : t('ui.save')}
-            </Button>
+            <div className="flex gap-2">
+              {/* FR-107: create + detect in one flow, only meaningful for a
+                  brand-new NAS whose API creds are filled in. */}
+              {!editing && !createdId && form.apiUser && form.apiPassword ? (
+                <Button variant="secondary" disabled={busy} onClick={saveAndDetect}>
+                  {busy ? t('ui.working') : t('nas.saveAndDetect')}
+                </Button>
+              ) : null}
+              <Button disabled={busy} onClick={save}>
+                {busy ? t('ui.working') : t('ui.save')}
+              </Button>
+            </div>
           </div>
         </div>
       )}
@@ -229,12 +342,15 @@ function ServicesEditor({
   errors,
   nasId,
   hasApiCreds,
+  autoDetect,
 }: {
   services: NasServiceWrite[]
   onChange: (next: NasServiceWrite[]) => void
   errors: Record<string, string>
   nasId?: string
   hasApiCreds: boolean
+  /** FR-107: bumped by the parent after a "Save & detect" create to auto-run detect once. */
+  autoDetect?: number
 }) {
   const t = useT()
   const { toast } = useToast()
@@ -314,6 +430,14 @@ function ServicesEditor({
       setDetecting(false)
     }
   }
+
+  // FR-107: after a "Save & detect" create, the parent bumps autoDetect; run
+  // discovery once against the just-created NAS. Guarded by detect()'s own
+  // nasId check; skipped on mount (autoDetect starts at 0).
+  useEffect(() => {
+    if (autoDetect && nasId && hasApiCreds) void detect()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoDetect])
 
   return (
     <Field label={t('nas.services')} error={errors.services} hint={t('nas.servicesHint')}>

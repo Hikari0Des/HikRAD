@@ -8,9 +8,9 @@ import "strings"
 // export columns vary by version (sub-PRD 04 §7 open question), so this is a
 // best-effort default, not a hard contract.
 
-// hikradFields are the subscriber attributes the wizard understands. Only
+// subscriberFields are the subscriber attributes the wizard understands. Only
 // "username" is required; everything else is optional per row.
-var hikradFields = map[string]bool{
+var subscriberFields = map[string]bool{
 	"username":   true,
 	"password":   true,
 	"name":       true,
@@ -24,18 +24,66 @@ var hikradFields = map[string]bool{
 	"email":        true, // FR-85
 }
 
-// presets maps a preset name to its default column_map. Column names are
+// profileFields are the plan attributes the wizard understands (FR-111.3). Only
+// "name" is required. Rates accept the FR-95 prefix forms (10M/512k/bare kbps).
+var profileFields = map[string]bool{
+	"name":              true,
+	"price":             true,
+	"currency":          true,
+	"duration_days":     true,
+	"rate_down":         true,
+	"rate_up":           true,
+	"session_limit":     true,
+	"quota_mode":        true,
+	"quota_total_bytes": true,
+	"expiry_behavior":   true,
+	"quota_behavior":    true,
+	"address_list":      true,
+}
+
+// fieldsFor returns the mappable field set for an entity.
+func fieldsFor(entity string) map[string]bool {
+	if entity == "profiles" {
+		return profileFields
+	}
+	return subscriberFields
+}
+
+// requiredField is the one column an entity's import cannot proceed without.
+func requiredField(entity string) string {
+	if entity == "profiles" {
+		return "name"
+	}
+	return "username"
+}
+
+// presets maps entity → preset name → default column_map. Column names are
 // matched case-insensitively against the uploaded file's header.
-var presets = map[string]map[string]string{
-	"sas4": {
-		"username":   "UserName",
-		"password":   "Password",
-		"name":       "FullName",
-		"phone":      "Mobile",
-		"address":    "Address",
-		"profile":    "Package",
-		"expires_at": "ExpireDate",
-		"email":      "Email", // matched case-insensitively, only if present in the uploaded header
+var presets = map[string]map[string]map[string]string{
+	"subscribers": {
+		"sas4": {
+			"username":   "UserName",
+			"password":   "Password",
+			"name":       "FullName",
+			"phone":      "Mobile",
+			"address":    "Address",
+			"profile":    "Package",
+			"expires_at": "ExpireDate",
+			"email":      "Email", // matched case-insensitively, only if present in the uploaded header
+		},
+	},
+	"profiles": {
+		// A best-effort default matching common plan-export column names; the
+		// operator confirms/adjusts before dry-run like every other preset.
+		"sas4": {
+			"name":              "Name",
+			"price":             "Price",
+			"currency":          "Currency",
+			"duration_days":     "Days",
+			"rate_down":         "DownloadRate",
+			"rate_up":           "UploadRate",
+			"quota_total_bytes": "Quota",
+		},
 	},
 }
 
@@ -61,11 +109,15 @@ func normalizeServiceType(s string) (string, bool) {
 	return "", false
 }
 
-// resolvePreset returns the column_map for a named preset restricted to
-// columns actually present in header (case-insensitive), or nil for an
-// unknown/empty preset name.
-func resolvePreset(name string, header []string) map[string]string {
-	base, ok := presets[name]
+// resolvePreset returns the column_map for a named preset (within an entity)
+// restricted to columns actually present in header (case-insensitive), or nil
+// for an unknown/empty preset name.
+func resolvePreset(entity, name string, header []string) map[string]string {
+	byName, ok := presets[entity]
+	if !ok {
+		return nil
+	}
+	base, ok := byName[name]
 	if !ok {
 		return nil
 	}

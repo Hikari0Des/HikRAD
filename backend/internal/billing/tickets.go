@@ -378,13 +378,10 @@ func (m *Module) rejectTicket(ctx context.Context, ticketID, approverID, reason 
 	}
 
 	if trialLedgerTxID != nil {
-		var trialCurrency string
-		if err := tx.QueryRow(ctx, `SELECT currency FROM ledger_transactions WHERE id = $1::uuid`, *trialLedgerTxID).
-			Scan(&trialCurrency); err != nil {
-			return err
-		}
+		// A zero-amount reversal of the trial grant (currency is irrelevant at
+		// amount 0; the book is IQD, v3-2).
 		if _, err := insertLedger(ctx, tx, ledgerEntry{
-			Type: "refund", Amount: 0, Currency: trialCurrency, ActorManagerID: approverID, SubscriberID: subscriberID,
+			Type: "refund", Amount: 0, ActorManagerID: approverID, SubscriberID: subscriberID,
 			Source: "ticket-reject", ReversesID: *trialLedgerTxID, Note: reason,
 		}); err != nil && !isUniqueViolation(err) {
 			return err

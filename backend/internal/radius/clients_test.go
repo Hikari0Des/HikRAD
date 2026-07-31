@@ -30,6 +30,7 @@ func TestIntentConstantsInSync(t *testing.T) {
 		{string(IntentSessionTimeout), vendor.IntentSessionTimeout},
 		{string(IntentRedirectExpired), vendor.IntentRedirectExpired},
 		{string(IntentStaticIP), vendor.IntentStaticIP},
+		{string(IntentAddressList), vendor.IntentAddressList},
 	}
 	for _, p := range pairs {
 		if p[0] != p[1] {

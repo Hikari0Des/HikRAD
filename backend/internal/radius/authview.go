@@ -101,6 +101,11 @@ type AuthView struct {
 	BurstTime      string `json:"burst_time"`
 	RatePriority   string `json:"rate_priority"`
 	MinRate        string `json:"min_rate"`
+	// AddressList is the operator-named MikroTik address-list a NORMAL login's
+	// IP is placed into (FR-109), resolved subscriber-override-else-profile.
+	// Empty ⇒ no address_list intent is emitted. Backward-compatible C4
+	// extension, same posture as StaticIP/BurstRate above.
+	AddressList string `json:"address_list"`
 }
 
 // PolicyProvider is D's C4 read-model, injected into the authorize path.

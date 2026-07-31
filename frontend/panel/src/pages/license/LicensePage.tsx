@@ -22,6 +22,19 @@ export function LicensePage() {
   const { license, reload, isReadOnly } = useLicense()
   const canManage = can(PERM_LICENSE_MANAGE)
 
+  // FR-104: name which fingerprint component drifted, so the operator knows
+  // whether a re-issue is needed (both changed) or the install is still within
+  // tolerance (one changed). Null when nothing has drifted.
+  const fm = license?.fingerprint_match
+  const driftKey =
+    fm && !(fm.machine_id_match && fm.mac_match)
+      ? !fm.machine_id_match && !fm.mac_match
+        ? 'both'
+        : !fm.machine_id_match
+          ? 'machineId'
+          : 'mac'
+      : null
+
   const [payload, setPayload] = useState('')
   const [signature, setSignature] = useState('')
   const [busy, setBusy] = useState(false)
@@ -83,16 +96,54 @@ export function LicensePage() {
         </div>
       ) : null}
 
+      {license?.over_cap ? (
+        <div className="mb-4 rounded-md bg-warn/10 p-3 text-sm text-warn">
+          {t('license.overCap', {
+            count: String(license.subscriber_count ?? ''),
+            cap: String(license.max_subscribers ?? ''),
+          })}
+        </div>
+      ) : null}
+
       <div className="mb-6 space-y-2 rounded-md border border-surface-sunken bg-surface-raised p-4">
-        <Row
-          label={t('license.state')}
-          value={license ? t(`license.state.${license.state}`) : '…'}
-        />
+        {/* Status banner: green when valid, amber with a countdown while in
+            grace, red once grace has expired — so the state and (for grace)
+            how long is left read at a glance, not just the word "valid". */}
+        <div
+          className={`mb-1 rounded-md px-3 py-2 text-sm font-semibold ${
+            !license
+              ? 'bg-surface-sunken text-ink-muted'
+              : license.state === 'valid'
+                ? 'bg-ok/10 text-ok'
+                : license.state === 'grace'
+                  ? 'bg-warn/10 text-warn'
+                  : 'bg-danger/10 text-danger'
+          }`}
+        >
+          {license ? t(`license.state.${license.state}`) : '…'}
+          {license?.state === 'grace' && graceDaysLeft(license.grace_expires_at) != null ? (
+            <span className="font-normal">
+              {' — '}
+              {t('license.graceRemaining', { n: String(graceDaysLeft(license.grace_expires_at)) })}
+            </span>
+          ) : null}
+        </div>
         {license?.licensee ? <Row label={t('license.licensee')} value={license.licensee} /> : null}
         {license?.tier ? <Row label={t('license.tier')} value={license.tier} /> : null}
         {license?.max_subscribers ? (
-          <Row label={t('license.maxSubscribers')} value={String(license.max_subscribers)} />
+          <Row
+            label={t('license.maxSubscribers')}
+            value={
+              license.subscriber_count != null
+                ? `${license.subscriber_count} / ${license.max_subscribers}`
+                : String(license.max_subscribers)
+            }
+          />
         ) : null}
+        {license?.entitled_version ? (
+          <Row label={t('license.entitledVersion')} value={license.entitled_version} />
+        ) : null}
+        {license?.key_id ? <Row label={t('license.keyId')} value={license.key_id} /> : null}
         {license?.grace_expires_at ? (
           <Row label={t('license.graceExpires')} value={formatDate(license.grace_expires_at)} />
         ) : null}
@@ -104,6 +155,9 @@ export function LicensePage() {
             </code>
             <CopyButton text={license?.fingerprint ?? ''} />
           </div>
+          {driftKey ? (
+            <p className="mt-2 text-xs text-warn">{t(`license.fingerprintDrift.${driftKey}`)}</p>
+          ) : null}
         </div>
       </div>
 
@@ -143,6 +197,14 @@ export function LicensePage() {
       ) : null}
     </section>
   )
+}
+
+// Whole days from now until the grace window closes (never negative). Null when
+// there is no grace expiry — the banner then just shows the state word.
+function graceDaysLeft(iso?: string): number | null {
+  if (!iso) return null
+  const ms = new Date(iso).getTime() - Date.now()
+  return Math.max(0, Math.ceil(ms / 86_400_000))
 }
 
 function Row({ label, value }: { label: string; value: string }) {

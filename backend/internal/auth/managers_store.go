@@ -141,11 +141,6 @@ func strOrEmpty(s *string) string {
 	return *s
 }
 
-func getManagerView(ctx context.Context, db *pgxpool.Pool, id string) (managerView, error) {
-	return scanManagerView(db.QueryRow(ctx,
-		`SELECT `+managerViewCols+` FROM managers m WHERE m.id = $1::uuid`, id))
-}
-
 func listManagerViews(ctx context.Context, db *pgxpool.Pool) ([]managerView, error) {
 	rows, err := db.Query(ctx,
 		`SELECT `+managerViewCols+` FROM managers m ORDER BY m.created_at, m.id`)

@@ -9,6 +9,7 @@ import { useAuth } from '../auth/AuthContext'
 import { Button } from '../components/Button'
 import { Sparkline } from '../components/Sparkline'
 import { DASHBOARD_WIDGET_CATALOG, widgetDef, type DashboardWidgetId } from '../dashboard/widgets'
+import { WidgetIcon } from './dashboard/widgetIcons'
 import { resolveLayout, type EffectiveWidget } from '../dashboard/layout'
 import { useAsync } from '../hooks/useAsync'
 import { formatBytes } from '../lib/units'
@@ -29,6 +30,8 @@ export function DashboardPage() {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState<EffectiveWidget[] | null>(null)
   const [saving, setSaving] = useState(false)
+  const [dragIndex, setDragIndex] = useState<number | null>(null)
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
 
   const savedLayout = useMemo(
     () => (prefsQ.data ? resolveLayout(prefsQ.data.dashboard_layout, can) : null),
@@ -120,6 +123,17 @@ export function DashboardPage() {
       return next
     })
   }
+  // Pointer drag-and-drop reorder (FR-99.2). The handle is the drag source; each
+  // card is a drop target. Keyboard ‹ › stay as the accessible fallback.
+  function reorderWidget(from: number, to: number) {
+    setDraft((d) => {
+      if (!d || from === to || to < 0 || to >= d.length) return d
+      const next = [...d]
+      const [moved] = next.splice(from, 1)
+      next.splice(to, 0, moved)
+      return next
+    })
+  }
 
   const availableToAdd = DASHBOARD_WIDGET_CATALOG.filter(
     (w) => (w.permission === '' || can(w.permission)) && !(draft ?? []).some((d) => d.id === w.id),
@@ -148,34 +162,82 @@ export function DashboardPage() {
         )}
       </div>
 
+      {/* FR-99.2: the "Add widget" flow is a gallery with a name + description
+          per widget, not a row of bare pills. Reorder/resize stay on the
+          keyboard-accessible controls in each widget frame. */}
       {editing && availableToAdd.length > 0 && (
-        <div className="flex flex-wrap items-center gap-2 rounded-md border border-dashed border-surface-sunken p-3">
-          <span className="text-xs text-ink-muted">{t('dashboard.addWidget')}</span>
-          {availableToAdd.map((w) => (
-            <button
-              key={w.id}
-              type="button"
-              onClick={() => addWidget(w.id)}
-              className="rounded-full bg-brand-soft px-2.5 py-1 text-xs text-brand-strong hover:opacity-80"
-            >
-              + {t(`dashboard.widget.${w.id}`)}
-            </button>
-          ))}
+        <div className="rounded-md border border-dashed border-surface-sunken p-3">
+          <p className="mb-2 text-xs font-medium text-ink-muted">{t('dashboard.addWidget')}</p>
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {availableToAdd.map((w) => (
+              <button
+                key={w.id}
+                type="button"
+                onClick={() => addWidget(w.id)}
+                className="flex flex-col items-start gap-0.5 rounded-md border border-surface-sunken bg-surface-raised p-3 text-start transition-shadow hover:shadow-sm"
+              >
+                <span className="flex w-full items-center justify-between gap-2 font-medium">
+                  {t(`dashboard.widget.${w.id}`)}
+                  <span className="text-brand-strong" aria-hidden="true">
+                    +
+                  </span>
+                </span>
+                <span className="text-xs text-ink-muted">{t(`dashboard.widgetDesc.${w.id}`)}</span>
+              </button>
+            ))}
+          </div>
         </div>
       )}
 
+      {editing && <p className="text-xs text-ink-muted">{t('dashboard.dragHint')}</p>}
+
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {(draft ?? widgets).map((w, i) => (
-          <div key={w.id} className={w.size === '2x' ? 'sm:col-span-2' : undefined}>
+          <div
+            key={w.id}
+            className={[
+              w.size === '2x' ? 'sm:col-span-2' : '',
+              dragIndex === i ? 'opacity-40' : '',
+              editing && dragOverIndex === i && dragIndex !== i
+                ? 'rounded-lg ring-2 ring-brand ring-offset-2 ring-offset-surface'
+                : '',
+            ]
+              .filter(Boolean)
+              .join(' ')}
+            onDragOver={
+              editing
+                ? (e) => {
+                    e.preventDefault()
+                    if (dragOverIndex !== i) setDragOverIndex(i)
+                  }
+                : undefined
+            }
+            onDrop={
+              editing
+                ? (e) => {
+                    e.preventDefault()
+                    if (dragIndex !== null) reorderWidget(dragIndex, i)
+                    setDragIndex(null)
+                    setDragOverIndex(null)
+                  }
+                : undefined
+            }
+          >
             <WidgetFrame
               widget={w}
               editing={editing}
+              dragging={dragIndex === i}
               canMoveLeft={i > 0}
               canMoveRight={!!draft && i < draft.length - 1}
               onRemove={() => removeWidget(w.id)}
               onToggleSize={() => toggleSize(w.id)}
               onMoveLeft={() => moveWidget(i, -1)}
               onMoveRight={() => moveWidget(i, 1)}
+              onDragStart={() => setDragIndex(i)}
+              onDragEnd={() => {
+                setDragIndex(null)
+                setDragOverIndex(null)
+              }}
             >
               <WidgetBody id={w.id} data={dataQ.data} />
             </WidgetFrame>
@@ -189,29 +251,54 @@ export function DashboardPage() {
 function WidgetFrame({
   widget,
   editing,
+  dragging,
   canMoveLeft,
   canMoveRight,
   onRemove,
   onToggleSize,
   onMoveLeft,
   onMoveRight,
+  onDragStart,
+  onDragEnd,
   children,
 }: {
   widget: EffectiveWidget
   editing: boolean
+  dragging: boolean
   canMoveLeft: boolean
   canMoveRight: boolean
   onRemove: () => void
   onToggleSize: () => void
   onMoveLeft: () => void
   onMoveRight: () => void
+  onDragStart: () => void
+  onDragEnd: () => void
   children: React.ReactNode
 }) {
   const t = useT()
   return (
-    <div className="h-full rounded-lg border border-surface-sunken bg-surface-raised p-4">
+    <div
+      className={`h-full rounded-lg border border-surface-sunken bg-surface-raised p-4 shadow-sm transition-shadow ${
+        dragging ? 'shadow-lg' : ''
+      }`}
+    >
       <div className="mb-2 flex items-center justify-between gap-2">
-        <p className="text-xs text-ink-muted">{t(`dashboard.widget.${widget.id}`)}</p>
+        <p className="flex items-center gap-1.5 text-xs text-ink-muted">
+          {editing && (
+            <span
+              draggable
+              onDragStart={onDragStart}
+              onDragEnd={onDragEnd}
+              aria-hidden="true"
+              title={t('dashboard.dragHint')}
+              className="cursor-grab select-none text-sm leading-none text-ink-muted active:cursor-grabbing"
+            >
+              ⠿
+            </span>
+          )}
+          {t(`dashboard.widget.${widget.id}`)}
+        </p>
+        {!editing && <WidgetIcon name={widget.id} />}
         {editing && (
           <div className="flex items-center gap-1">
             <button

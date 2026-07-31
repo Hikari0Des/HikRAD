@@ -2,7 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 
 import { I18nProvider, useLocale, useT } from './I18nProvider'
-import { resolveMessage } from './messages'
+import { lookup, MESSAGES, resolveMessage } from './messages'
 
 describe('resolveMessage — fallback chain', () => {
   const trees = {
@@ -82,4 +82,27 @@ describe('I18nProvider / useT / useLocale', () => {
     expect(screen.getByTestId('locale')).toHaveTextContent('ar')
     expect(document.documentElement.dir).toBe('rtl')
   })
+})
+
+// FR-104 (v3-3) regression lock: the license.state keys previously collided —
+// "state" was both a string ("License state") and a set of dotted flat keys
+// ("state.valid", …), so the dot-path resolver dead-ended and the UI showed
+// the raw key. This asserts the restructured object resolves in all locales.
+describe('license.state key resolves (v3-3 i18n collision fix)', () => {
+  for (const locale of ['en', 'ar', 'ku']) {
+    it(`resolves label + every state value in ${locale}`, () => {
+      const tree = MESSAGES[locale]
+      for (const key of [
+        'license.state.label',
+        'license.state.valid',
+        'license.state.grace',
+        'license.state.expired_grace',
+      ]) {
+        const v = lookup(tree, key)
+        expect(v, `${locale}:${key}`).toBeTruthy()
+        // Must not fall through to the raw key (the pre-fix symptom).
+        expect(v).not.toBe(key)
+      }
+    })
+  }
 })

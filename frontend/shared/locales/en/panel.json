@@ -41,6 +41,7 @@
     "auditLog": "Audit log",
     "account": "My security",
     "group": {
+      "overview": "Overview",
       "billing": "Billing",
       "network": "Network",
       "admin": "Administration"
@@ -54,7 +55,6 @@
     "reports": "Reports",
     "currencyRates": "Currency rates",
     "pricingAdmin": "Overheads & reseller pricing",
-    "import": "Import subscribers",
     "settings": "Settings",
     "license": "License"
   },
@@ -69,7 +69,8 @@
     "signedInAs": "Signed in as",
     "logout": "Sign out",
     "language": "Language",
-    "preferences": "My preferences"
+    "preferences": "My preferences",
+    "account": "My account"
   },
   "languages": {
     "en": "English",
@@ -97,6 +98,7 @@
     "edit": "Customize",
     "resetDefault": "Reset to default",
     "addWidget": "Add widget:",
+    "dragHint": "Drag the ⠿ handle to rearrange widgets, or use the arrows.",
     "moveEarlier": "Move earlier",
     "moveLater": "Move later",
     "toggleSize": "Toggle size",
@@ -119,6 +121,21 @@
     "empty": {
       "title": "Nothing here yet",
       "body": "Subscriber, profile and live-session screens will appear here."
+    },
+    "widgetDesc": {
+      "online-now": "Sessions online right now.",
+      "revenue-today": "Money taken so far today.",
+      "radius-rps": "RADIUS requests per second.",
+      "subs-active": "Subscribers in good standing.",
+      "subs-expired": "Subscribers past their expiry.",
+      "subs-expiring": "Subscribers due to expire within 7 days.",
+      "pipeline-health": "Accounting pipeline received vs persisted.",
+      "nas-health": "Reachability of your NAS devices.",
+      "my-balance": "Your own account balance.",
+      "pending-payment-tickets": "Payment tickets awaiting your review.",
+      "alerts-feed": "Recent monitoring alerts.",
+      "top-usage-subscribers": "Heaviest data users this week.",
+      "top-session-subscribers": "Subscribers with the most open sessions."
     }
   },
   "notFound": {
@@ -153,6 +170,7 @@
     "apply": "Apply",
     "next": "Next",
     "back": "Back",
+    "select": "Choose…",
     "working": "Working…",
     "copy": "Copy",
     "copied": "Copied",
@@ -168,11 +186,15 @@
     "no": "No",
     "done": "Done",
     "unknown": "Unknown",
-    "ok": "OK"
+    "ok": "OK",
+    "collapse": "Collapse",
+    "expand": "Expand",
+    "search": "Search"
   },
   "users": {
     "create": "Add subscriber",
     "bulkToggle": "Bulk actions",
+    "importCsv": "Import CSV",
     "columns": "Columns",
     "empty": "No subscribers match.",
     "clearFilters": "Clear filters",
@@ -188,7 +210,8 @@
       "d7": "7 days",
       "d30": "30 days"
     },
-    "filterServiceType": "Service"
+    "filterServiceType": "Service",
+    "searchName": "Search by name or username"
   },
   "subscriber": {
     "username": "Username",
@@ -221,6 +244,8 @@
     "staticIpHint": "Must fall inside a static-purpose IP pool.",
     "rateOverride": "Rate override",
     "rateOverrideHint": "e.g. 5M/10M — overrides the profile rate.",
+    "addressListOverride": "Address list override",
+    "addressListOverrideHint": "Overrides the plan's address list for this subscriber. Empty = inherit the plan.",
     "sessionLimitOverride": "Session limit override",
     "priceOverride": "Price override",
     "priceOverrideHint": "In the profile's own currency.",
@@ -309,6 +334,8 @@
     },
     "throttleRate": "Throttle rate",
     "throttleHint": "e.g. 512k/512k.",
+    "addressList": "Address list",
+    "addressListHint": "Optional MikroTik address-list this plan's logins are added to (e.g. vip-customers). Leave empty for none.",
     "archive": "Archive",
     "archived": "Profile archived.",
     "archivedTag": "Archived",
@@ -317,7 +344,42 @@
     "deleteTitle": "Delete {name}?",
     "deleteBody": "This only works for a plan nothing has ever used. Anything already sold must be archived instead, so past renewals keep the price and speeds they were sold at.",
     "deleted": "{name} was deleted.",
-    "deleteInUse": "This plan is in use by subscribers, vouchers or payment history — archive it instead of deleting it."
+    "deleteInUse": "This plan is in use by subscribers, vouchers or payment history — archive it instead of deleting it.",
+    "bulkToggle": "Bulk",
+    "importCsv": "Import CSV",
+    "filterNamePlaceholder": "Search plans…",
+    "filterArchived": "Archived",
+    "archivedYes": "Archived only",
+    "noneMatch": "No plans match these filters.",
+    "pool": "IP pool",
+    "bulk": {
+      "scopeHint": "Nothing is selected, so these apply to every plan matching the current filters. Tick rows to act on those instead.",
+      "archive": "Archive",
+      "unarchive": "Unarchive",
+      "changePool": "Change pool",
+      "setAddressList": "Set address list",
+      "setExpiryBehavior": "Set on-expiry",
+      "setQuotaBehavior": "Set on-quota",
+      "delete": "Delete",
+      "deleteWarning": "Deleted plans cannot be recovered.",
+      "deleteInUseNote": "Any plan in use by subscribers, vouchers or payments will be skipped and listed below — archive those instead.",
+      "throttleExcluded": "Throttle is set per plan (it needs its own rate) and is not offered here.",
+      "action": {
+        "archive": "Archive",
+        "unarchive": "Unarchive",
+        "change_pool": "Change pool",
+        "set_address_list": "Set address list",
+        "set_expiry_behavior": "Set on-expiry",
+        "set_quota_behavior": "Set on-quota",
+        "delete": "Delete",
+        "export": "Export"
+      }
+    },
+    "section": {
+      "identity": "Identity & billing",
+      "service": "Speed & limits",
+      "advanced": "Advanced"
+    }
   },
   "nas": {
     "add": "Add NAS",
@@ -432,7 +494,10 @@
     "serviceLastHint": "A NAS must keep at least one service.",
     "serviceSessions": "{count} online",
     "addService": "Add service",
+    "saveAndDetect": "Save & detect from router",
     "detectServices": "Detect from router",
+    "detectVersion": "Detect version",
+    "versionDetected": "RouterOS version detected: {version}",
     "detectHint": "Reads this router's real PPPoE/Hotspot servers so you don't retype their names.",
     "detectNeedsCreds": "Add RouterOS API credentials (step 2) to detect services from the router.",
     "health": {
@@ -446,6 +511,8 @@
       "addServer": "Add server",
       "createTitle": "Create a server",
       "editTitle": "Edit server",
+      "fromRouterHint": "Suggestions come from this router; you can still type a new name.",
+      "routerPools": "Pools on the router: {pools}",
       "interface": "Interface",
       "pool": "Address pool",
       "planButton": "Preview",
@@ -476,6 +543,28 @@
     "ranges": "Ranges",
     "rangesHint": "One IP or CIDR per line.",
     "utilization": "{used} / {size} used ({pct}%)",
+    "mode": {
+      "router": "Router-managed",
+      "routerHint": "This pool is defined on the router. HikRAD references it read-only and never changes it."
+    },
+    "push": {
+      "action": "Push to router",
+      "title": "Push \"{name}\" to a router",
+      "body": "Creates or updates this pool on the selected router. You will see exactly what changes before anything is written.",
+      "nas": "Router (NAS)",
+      "preview": "Preview changes",
+      "apply": "Apply to router",
+      "applied": "Pool pushed to the router.",
+      "noOp": "The router already matches this pool — nothing to change.",
+      "inSync": "The router already matches this pool — nothing to change."
+    },
+    "adopt": {
+      "action": "Adopt from router",
+      "title": "Adopt pools from a router",
+      "body": "Imports the router's existing IP pools as read-only references. Nothing is written to the router, and pools you already own are left untouched.",
+      "confirm": "Adopt pools",
+      "done": "Adopted {count} pool(s) from the router."
+    },
     "exhausted": "Nearly full",
     "createTitle": "Add IP pool",
     "editTitle": "Edit IP pool",
@@ -488,11 +577,7 @@
     "serviceNote": "Profile pools are PPPoE pools. Hotspot addresses come from the hotspot service’s own pool, or the router’s local pool when none is set."
   },
   "live": {
-    "search": "Search sessions",
     "searchPlaceholder": "Filter by user, IP or MAC…",
-    "allNas": "All NAS",
-    "allProfiles": "All profiles",
-    "allManagers": "All owners",
     "connLive": "Live · {count}",
     "connConnecting": "Connecting…",
     "connReconnecting": "Reconnecting…",
@@ -521,8 +606,7 @@
       "usage": "Usage / rate",
       "service": "Service",
       "actions": "Actions"
-    },
-    "allServices": "All services"
+    }
   },
   "usage": {
     "daily": "Daily",
@@ -1019,7 +1103,15 @@
         "tod": {
           "create": "Time-of-day rule added",
           "delete": "Time-of-day rule removed"
-        }
+        },
+        "bulk_archive": "Plans archived (bulk)",
+        "bulk_unarchive": "Plans unarchived (bulk)",
+        "bulk_change_pool": "Plan pool changed (bulk)",
+        "bulk_set_address_list": "Plan address list set (bulk)",
+        "bulk_set_expiry_behavior": "Plan on-expiry set (bulk)",
+        "bulk_set_quota_behavior": "Plan on-quota set (bulk)",
+        "bulk_delete": "Plans deleted (bulk)",
+        "bulk_export": "Plans exported"
       },
       "reseller_price": {
         "create": "Reseller price set"
@@ -1073,7 +1165,19 @@
     "sessionRevoked": "Session revoked.",
     "unknownDevice": "Unknown device",
     "thisDevice": "This device",
-    "revoke": "Revoke"
+    "revoke": "Revoke",
+    "subtitle": "Signed in as {username}",
+    "security": "Security",
+    "securityDesc": "Password, two-factor, and active sessions.",
+    "preferences": "Preferences",
+    "preferencesDesc": "Language, theme, and personal defaults.",
+    "paymentMethods": "Payment methods",
+    "paymentMethodsDesc": "The accounts and methods you accept.",
+    "adminSection": "Administration",
+    "settings": "Settings",
+    "settingsDesc": "Branding, system, and instance settings.",
+    "roles": "Managers & roles",
+    "rolesDesc": "Team members and their permissions."
   },
   "preferences": {
     "title": "My preferences",
@@ -1283,12 +1387,6 @@
     "subtitle": "Revenue, settlement, subscribers and usage.",
     "export": "Export CSV",
     "print": "Print",
-    "groupBy": "Group by",
-    "groupBy.day": "Day",
-    "groupBy.month": "Month",
-    "groupBy.manager": "Manager",
-    "groupBy.profile": "Profile",
-    "groupBy.method": "Method",
     "generatedAt": "Generated {at}",
     "unattributed": "(unattributed)",
     "empty": {
@@ -1357,19 +1455,31 @@
     "subscribers": {
       "title": "Subscriber report",
       "desc": "New, expired, expiring or inactive subscribers.",
-      "view": "View",
-      "view.new": "New",
-      "view.expired": "Expired",
-      "view.expiring": "Expiring",
-      "view.by_profile": "By profile",
-      "view.inactive": "Inactive"
+      "view": {
+        "label": "View",
+        "new": "New",
+        "expired": "Expired",
+        "expiring": "Expiring",
+        "by_profile": "By profile",
+        "inactive": "Inactive"
+      }
     },
     "usage": {
       "title": "Usage report",
       "desc": "Top consumers and totals per NAS.",
-      "view": "View",
-      "view.top_consumers": "Top consumers",
-      "view.per_nas": "Per NAS"
+      "view": {
+        "label": "View",
+        "top_consumers": "Top consumers",
+        "per_nas": "Per NAS"
+      }
+    },
+    "groupBy": {
+      "label": "Group by",
+      "day": "Day",
+      "month": "Month",
+      "manager": "Manager",
+      "profile": "Profile",
+      "method": "Method"
     }
   },
   "settings": {
@@ -1512,11 +1622,15 @@
   },
   "paymentTickets": {
     "title": "Payment tickets",
-    "filter": "Filter",
-    "filter.all": "All",
-    "scope": "Scope",
-    "scope.mine": "My queue",
-    "scope.all": "All agents",
+    "filter": {
+      "label": "Filter",
+      "all": "All"
+    },
+    "scope": {
+      "label": "Scope",
+      "mine": "My queue",
+      "all": "All agents"
+    },
     "state": {
       "pending": "Pending",
       "approved": "Approved",
@@ -1608,10 +1722,12 @@
       "willSkip": "{n} will be skipped",
       "download": "Download report",
       "row": "Row",
-      "action": "Action",
-      "action.create": "Create",
-      "action.skip": "Skip",
-      "issues": "Issues"
+      "issues": "Issues",
+      "action": {
+        "label": "Action",
+        "create": "Create",
+        "skip": "Skip"
+      }
     },
     "execute": "Execute import",
     "executing": "Import is running…",
@@ -1628,7 +1744,18 @@
       "phone": "Phone",
       "address": "Address",
       "profile": "Profile",
-      "expires_at": "Expiry"
+      "expires_at": "Expiry",
+      "price": "Price",
+      "currency": "Currency",
+      "duration_days": "Duration (days)",
+      "rate_down": "Download rate",
+      "rate_up": "Upload rate",
+      "session_limit": "Session limit",
+      "quota_mode": "Quota mode",
+      "quota_total_bytes": "Total quota (bytes)",
+      "expiry_behavior": "On expiry",
+      "quota_behavior": "On quota",
+      "address_list": "Address list"
     },
     "step": {
       "upload": "Upload",
@@ -1636,19 +1763,32 @@
       "dryrun": "Dry-run",
       "execute": "Execute",
       "summary": "Summary"
-    }
+    },
+    "titleProfiles": "Import plans",
+    "subtitleProfiles": "Import a plan catalogue from a CSV file."
   },
   "license": {
     "title": "License",
-    "state": "License state",
-    "state.valid": "Valid",
-    "state.grace": "Grace period",
-    "state.expired_grace": "Expired",
+    "state": {
+      "label": "License state",
+      "valid": "Valid",
+      "grace": "Grace period",
+      "expired_grace": "Expired"
+    },
     "licensee": "Licensee",
     "tier": "Tier",
     "maxSubscribers": "Max subscribers",
     "graceExpires": "Grace expires",
+    "graceRemaining": "{n} day(s) remaining",
+    "entitledVersion": "Entitled version",
+    "keyId": "Key ID",
     "fingerprint": "Machine fingerprint",
+    "fingerprintDrift": {
+      "machineId": "This server's machine ID changed since the license was issued. This alone stays within tolerance — a re-issue is only needed if the network card also changes.",
+      "mac": "This server's network card changed since the license was issued. This alone stays within tolerance — a re-issue is only needed if the machine ID also changes.",
+      "both": "Both the machine ID and network card changed — this install has moved to different hardware. Send the current fingerprint below to your vendor to request a re-issue."
+    },
+    "overCap": "Subscriber count ({count}) has reached the licensed limit ({cap}). Renew or upgrade to add more subscribers.",
     "readOnlyNotice": "The license grace period has expired. The panel is read-only until a valid license is installed.",
     "uploaded": "License installed.",
     "invalidJson": "Invalid JSON. Check the license file or the payload/signature fields.",
@@ -1733,5 +1873,27 @@
     "noNas": "No NAS has been added yet.",
     "loadFailed": "Could not load the NAS list.",
     "search": "Search…"
+  },
+  "filter": {
+    "add": "Add filter",
+    "choose": "Choose {field}"
+  },
+  "design": {
+    "title": "Design gallery",
+    "subtitle": "Every UI pattern, for review in both themes and all languages.",
+    "demoHint": "Sample hint text",
+    "demoCardBody": "Card content",
+    "section": {
+      "stats": "Stat cards",
+      "cards": "Cards",
+      "filter": "Filter bar + table",
+      "states": "Table states",
+      "form": "Form sections"
+    },
+    "form": {
+      "identity": "Identity",
+      "service": "Service",
+      "advanced": "Advanced"
+    }
   }
 }

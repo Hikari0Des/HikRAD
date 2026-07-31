@@ -11,6 +11,7 @@ import {
   uploadImportFile,
   type BatchStatus,
   type DryRunResult,
+  type ImportEntity,
   type UploadResult,
 } from '../../api/importer'
 import { triggerDownload } from '../../api/billing'
@@ -20,26 +21,64 @@ import { Select } from '../../components/form'
 import { PageHeader } from '../../components/PageHeader'
 import { useToast } from '../../components/Toast'
 
-const HIKRAD_FIELDS = [
-  'username',
-  'password',
-  'name',
-  'phone',
-  'address',
-  'profile',
-  'expires_at',
-] as const
+// Per-entity mappable fields + a best-effort client-side preset guess (the
+// backend also seeds a preset; this only pre-fills the pickers). FR-111.3.
+const FIELDS: Record<ImportEntity, readonly string[]> = {
+  subscribers: ['username', 'password', 'name', 'phone', 'address', 'profile', 'expires_at'],
+  profiles: [
+    'name',
+    'price',
+    'currency',
+    'duration_days',
+    'rate_down',
+    'rate_up',
+    'session_limit',
+    'quota_mode',
+    'quota_total_bytes',
+    'expiry_behavior',
+    'quota_behavior',
+    'address_list',
+  ],
+}
+
+const PRESET_GUESS: Record<ImportEntity, Record<string, string>> = {
+  subscribers: {
+    username: 'username',
+    password: 'password',
+    name: 'fullname',
+    phone: 'mobile',
+    address: 'address',
+    profile: 'package',
+    expires_at: 'expiredate',
+  },
+  profiles: {
+    name: 'name',
+    price: 'price',
+    currency: 'currency',
+    duration_days: 'days',
+    rate_down: 'downloadrate',
+    rate_up: 'uploadrate',
+    quota_total_bytes: 'quota',
+  },
+}
+
+const REQUIRED_FIELD: Record<ImportEntity, string> = {
+  subscribers: 'username',
+  profiles: 'name',
+}
 
 type Step = 'upload' | 'map' | 'dryrun' | 'execute' | 'summary'
 
 /**
- * SAS4/CSV import wizard (FR-6, task 3): upload → map → dry-run → execute →
- * summary. Every failure surfaces a next step ("never dead-end") — a bad
- * upload re-shows the picker with the reason, a failed map re-shows the
- * mapping form with field errors, etc.
+ * CSV import wizard (FR-6 subscribers / FR-111.3 profiles): upload → map →
+ * dry-run → execute → summary, parameterized by `entity`. Every failure
+ * surfaces a next step ("never dead-end") — a bad upload re-shows the picker
+ * with the reason, a failed map re-shows the mapping form with field errors.
  */
-export function ImportWizardPage() {
+export function ImportWizardPage({ entity = 'subscribers' }: { entity?: ImportEntity }) {
   const t = useT()
+  const fields = FIELDS[entity]
+  const requiredField = REQUIRED_FIELD[entity]
   const { toast } = useToast()
   const [step, setStep] = useState<Step>('upload')
   const [upload, setUpload] = useState<UploadResult | null>(null)
@@ -57,7 +96,7 @@ export function ImportWizardPage() {
     setUploadError(null)
     try {
       const base64 = await fileToBase64(file)
-      const res = await uploadImportFile(file.name, base64, 'sas4')
+      const res = await uploadImportFile(entity, file.name, base64, 'sas4')
       setUpload(res)
       if (res.column_map) setColumnMap(res.column_map)
       setStep('map')
@@ -72,17 +111,8 @@ export function ImportWizardPage() {
   function applyPreset() {
     if (!upload) return
     const byLower = new Map(upload.header.map((h) => [h.toLowerCase(), h]))
-    const preset: Record<string, string> = {
-      username: 'username',
-      password: 'password',
-      name: 'fullname',
-      phone: 'mobile',
-      address: 'address',
-      profile: 'package',
-      expires_at: 'expiredate',
-    }
     const next: Record<string, string> = {}
-    for (const [field, guess] of Object.entries(preset)) {
+    for (const [field, guess] of Object.entries(PRESET_GUESS[entity])) {
       const match = byLower.get(guess)
       if (match) next[field] = match
     }
@@ -151,7 +181,10 @@ export function ImportWizardPage() {
 
   return (
     <section>
-      <PageHeader title={t('import.title')} subtitle={t('import.subtitle')} />
+      <PageHeader
+        title={t(entity === 'profiles' ? 'import.titleProfiles' : 'import.title')}
+        subtitle={t(entity === 'profiles' ? 'import.subtitleProfiles' : 'import.subtitle')}
+      />
       <ImportSteps step={step} />
 
       {step === 'upload' && (
@@ -183,11 +216,11 @@ export function ImportWizardPage() {
             {t('import.map.sas4Preset')}
           </Button>
           <div className="grid gap-3 sm:grid-cols-2">
-            {HIKRAD_FIELDS.map((field) => (
+            {fields.map((field) => (
               <label key={field} className="text-xs">
                 <span className="mb-1 block text-ink-muted">
                   {t(`import.field.${field}`)}
-                  {field === 'username' ? ' *' : ''}
+                  {field === requiredField ? ' *' : ''}
                 </span>
                 <Select
                   value={columnMap[field] ?? ''}
@@ -203,7 +236,7 @@ export function ImportWizardPage() {
               </label>
             ))}
           </div>
-          <Button disabled={busy || !columnMap.username} onClick={() => void saveMap()}>
+          <Button disabled={busy || !columnMap[requiredField]} onClick={() => void saveMap()}>
             {busy ? t('ui.working') : t('import.map.dryRun')}
           </Button>
         </div>
@@ -227,7 +260,9 @@ export function ImportWizardPage() {
               <thead className="sticky top-0 bg-surface-sunken/60 text-start text-xs text-ink-muted">
                 <tr>
                   <th className="px-3 py-2 text-start font-medium">{t('import.dryRun.row')}</th>
-                  <th className="px-3 py-2 text-start font-medium">{t('import.dryRun.action')}</th>
+                  <th className="px-3 py-2 text-start font-medium">
+                    {t('import.dryRun.action.label')}
+                  </th>
                   <th className="px-3 py-2 text-start font-medium">{t('import.dryRun.issues')}</th>
                 </tr>
               </thead>

@@ -16,6 +16,7 @@ const (
 	IntentSessionTimeout  Intent = vendor.IntentSessionTimeout
 	IntentRedirectExpired Intent = vendor.IntentRedirectExpired
 	IntentStaticIP        Intent = vendor.IntentStaticIP
+	IntentAddressList     Intent = vendor.IntentAddressList
 )
 
 // Reject reasons, per the C4 "reason" enum (+ extensions this phase adds:

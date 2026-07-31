@@ -42,20 +42,56 @@ func (m *Module) Register(r chi.Router, d httpapi.Deps) {
 	m.router = r
 	m.jobs = newJobRegistry()
 
-	// Upload/map/dry-run are read-only over subscriber data (no writes
-	// happen until execute); gated the same as browsing subscribers.
-	r.With(auth.Require("subscribers.view")).Post("/api/v1/import/subscribers", m.uploadHandler)
-	r.With(auth.Require("subscribers.view")).Get("/api/v1/import/{batch}", m.batchStatusHandler)
-	r.With(auth.Require("subscribers.view")).Post("/api/v1/import/{batch}/map", m.mapHandler)
-	r.With(auth.Require("subscribers.view")).Post("/api/v1/import/{batch}/dry-run", m.dryRunHandler)
-	// execute performs real creates: same permission the underlying
-	// POST /api/v1/subscribers itself requires (defense in depth — even a
-	// caller who reached this route without it would be 403'd on every
-	// self-dispatched create).
-	r.With(auth.Require("subscribers.create")).Post("/api/v1/import/{batch}/execute", m.executeHandler)
+	// Per-entity upload (FR-111.3): the entity is bound at registration and the
+	// route guard is that entity's view permission. A subscribers upload still
+	// requires subscribers.view exactly as before.
+	r.With(auth.Require("subscribers.view")).Post("/api/v1/import/subscribers", m.uploadHandler("subscribers"))
+	r.With(auth.Require("profiles.view")).Post("/api/v1/import/profiles", m.uploadHandler("profiles"))
+
+	// The {batch} routes are SHARED across entities: they authenticate at the
+	// route (Require("") = any valid token) and then enforce the batch's
+	// entity-appropriate permission inside the handler, since a single route
+	// guard cannot know the batch's entity before loading it. A subscribers
+	// batch therefore still requires subscribers.view/create; a profiles batch
+	// requires profiles.view/create — behavior for the pre-existing subscriber
+	// import is unchanged.
+	r.With(auth.Require("")).Get("/api/v1/import/{batch}", m.batchStatusHandler)
+	r.With(auth.Require("")).Post("/api/v1/import/{batch}/map", m.mapHandler)
+	r.With(auth.Require("")).Post("/api/v1/import/{batch}/dry-run", m.dryRunHandler)
+	r.With(auth.Require("")).Post("/api/v1/import/{batch}/execute", m.executeHandler)
 }
 
 func init() { httpapi.Add(&Module{}) }
+
+// entityViewPerm / entityCreatePerm map a batch's entity onto the permission its
+// browse / create paths require — the SAME permissions the underlying
+// GET/POST endpoints enforce, so the import wizard can never be a route around
+// them (defense in depth: execute also re-checks per self-dispatched create).
+func entityViewPerm(entity string) string {
+	if entity == "profiles" {
+		return "profiles.view"
+	}
+	return "subscribers.view"
+}
+
+func entityCreatePerm(entity string) string {
+	if entity == "profiles" {
+		return "profiles.create"
+	}
+	return "subscribers.create"
+}
+
+// authorize enforces a permission inside a handler (for the shared {batch}
+// routes, whose guard only authenticates). Returns false and writes a 403 when
+// the caller lacks it.
+func (m *Module) authorize(w http.ResponseWriter, r *http.Request, perm string) bool {
+	mgr, ok := auth.ManagerFrom(r.Context())
+	if !ok || !mgr.Can(perm) {
+		httpapi.Error(w, http.StatusForbidden, "forbidden", "you do not have permission to perform this action")
+		return false
+	}
+	return true
+}
 
 func (m *Module) internalError(w http.ResponseWriter, what string, err error) {
 	m.log.Error("importer: "+what+" failed", "error", err)

@@ -28,6 +28,10 @@ export type { SubscriberStatus } from './ui/StatusBadge'
 export { QuotaBar } from './ui/QuotaBar'
 export { EmptyState, ErrorState, LoadingState } from './ui/states'
 export { IQDAmount } from './ui/IQDAmount'
+// v3-1 FR-97.2 pattern primitives
+export { Card, StatCard, SectionCard } from './ui/Card'
+export { DataTable } from './ui/DataTable'
+export type { Column } from './ui/DataTable'
 
 // Theme preference (item 19): dark/light/system, applied as data-theme on <html>
 export { initTheme, setThemePreference, THEME_PREFERENCES, useTheme } from './ui/theme'

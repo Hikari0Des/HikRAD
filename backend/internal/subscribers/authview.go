@@ -63,6 +63,9 @@ func (p *policyProvider) GetAuthView(ctx context.Context, username string) (radi
 		burstTime    *string
 		ratePriority *string
 		minRate      *string
+		// FR-109: named address-list, subscriber override else profile.
+		addrListOverride *string
+		addrListProfile  *string
 		// FR-64 effective NAS scope, as the jsonb array the query below builds
 		// (empty array = any NAS).
 		scopesJSON []byte
@@ -77,6 +80,7 @@ func (p *policyProvider) GetAuthView(ctx context.Context, username string) (radi
 		        (SELECT name FROM ip_pools WHERE id = p.pool_id),
 		        (SELECT name FROM ip_pools WHERE purpose = 'expired' ORDER BY name LIMIT 1),
 		        p.burst_rate, p.burst_threshold, p.burst_time, p.rate_priority, p.min_rate,
+		        s.address_list_override, p.address_list,
 		        -- FR-64 effective scope, subscriber-over-profile taken WHOLE: a
 		        -- subscriber with ANY scope row of their own uses only their own
 		        -- set, never a union with the profile's. jsonb_agg is NULL (not an
@@ -102,6 +106,7 @@ func (p *policyProvider) GetAuthView(ctx context.Context, username string) (radi
 		&sessOverride, &rateOverride, &v.MacLockMode, &learnedMac,
 		&staticIP, &v.ServiceType, &poolName, &expiredPool,
 		&burstRate, &burstThresh, &burstTime, &ratePriority, &minRate,
+		&addrListOverride, &addrListProfile,
 		&scopesJSON)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return radius.AuthView{}, radius.ErrNoSubscriber
@@ -125,6 +130,12 @@ func (p *policyProvider) GetAuthView(ctx context.Context, username string) (radi
 	v.BurstTime = strOr(burstTime, "")
 	v.RatePriority = strOr(ratePriority, "")
 	v.MinRate = strOr(minRate, "")
+	// FR-109: subscriber override wins, else the profile's address-list, else empty.
+	if addrListOverride != nil && *addrListOverride != "" {
+		v.AddressList = *addrListOverride
+	} else {
+		v.AddressList = strOr(addrListProfile, "")
+	}
 	// A scope set that fails to decode must not silently become "any NAS" — that
 	// would widen an operator's deliberate restriction on a corrupt read. Fail
 	// the load instead; the engine turns the error into a 500 and FreeRADIUS

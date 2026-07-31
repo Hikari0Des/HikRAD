@@ -93,6 +93,9 @@ func (m *module) updatePoolHandler(w http.ResponseWriter, r *http.Request) {
 		m.internal(w, "lookup pool", err)
 		return
 	}
+	if m.refuseIfRouterManaged(w, before, "edit") {
+		return
+	}
 	var req poolRequest
 	if !httpapi.Bind(w, r, &req) {
 		return
@@ -132,12 +135,27 @@ func (m *module) deletePoolHandler(w http.ResponseWriter, r *http.Request) {
 		m.internal(w, "lookup pool", err)
 		return
 	}
+	if m.refuseIfRouterManaged(w, before, "delete") {
+		return
+	}
 	if err := deletePool(r.Context(), m.db, id); err != nil {
 		m.internal(w, "delete pool", err)
 		return
 	}
 	_ = auth.Audit(r.Context(), "pools.delete", "pool", id, before.view(0), nil)
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// refuseIfRouterManaged enforces the FR-108 / Decision-48 ownership rule: a
+// pool adopted from a router is a read-only reference — HikRAD never edits,
+// deletes, or pushes it. Returns true when the request was refused.
+func (m *module) refuseIfRouterManaged(w http.ResponseWriter, p poolRow, action string) bool {
+	if p.ManagementMode != poolModeRouter {
+		return false
+	}
+	httpapi.Error(w, http.StatusConflict, "pool_router_managed",
+		"this pool is managed by the router and is read-only in HikRAD; "+action+" it on the router instead")
+	return true
 }
 
 func isUniqueViolation(err error) bool {

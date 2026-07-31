@@ -120,6 +120,32 @@ This module is HikRAD's protocol heart: FreeRADIUS 3.2 wired to the Go backend's
 - **FR-67.5** — **Adopt**: for a `router`-mode instance, HikRAD reads its full current config (FR-65/FR-67.2) into the same edit form pre-filled entirely from the router, the operator reviews and confirms (even an unchanged confirm is an explicit action), and only then does `management_mode` flip to `system` — never silently, never as a side effect of merely viewing the config.
 - **FR-67.6** — **Never delete.** No server is ever removed from the router by HikRAD, matching FR-66.4. Disabling a `nas_services` row (existing FR-62 toggle) only stops HikRAD serving/counting that instance; the router-side server is untouched either way.
 
+### FR-107 (S) — v3-4: Inline NAS service auto-detection
+
+**Master (Decision 50):** the NAS wizard can auto-detect the router's services **during** onboarding, without forcing a save → reopen-in-edit → detect round trip. Exact UI flow frozen in `docs/v3/phases/phase-v3-4-first-run-nas-onboarding/00-phase.md`.
+
+*Elaboration:*
+- **FR-107.1** — Today the "Detect services" button (`NasWizardModal.tsx`'s `ServicesEditor`, which calls FR-62.6's `POST /nas/{id}/discover-services`) is gated on a **persisted** `nasId` plus saved API credentials — neither exists on a brand-new NAS — so an operator must create the NAS, reopen it in edit mode, and only then detect (owner report #9). This FR removes that friction with a **"Save & detect"** action on the wizard: it creates the NAS with the just-entered API credentials, then runs `discover-services` against the new id and merges the results into the form in one uninterrupted flow, the modal staying open for review.
+- **FR-107.2** — No new backend endpoint and **no router write**: it reuses the existing create + read-only `discover-services` (FR-62.6) exactly; Decision 17's preview/apply safety and the additive-only guarantee are unchanged. Discovered services are **router-managed, read-only references** (FR-67.1 `management_mode='router'`) per the Decision-48 ownership principle — detection never provisions or adopts anything.
+- **FR-107.3** — After the create-for-detect, the wizard's own Save updates (not re-creates) the same NAS, so a "Save & detect" followed by "Save" produces exactly one NAS row, never a duplicate.
+
+**Acceptance:**
+- **AC-107a** — Given a new NAS with API credentials entered, when "Save & detect" is pressed, then the NAS is created once and its real services appear merged into the form without closing/reopening the wizard; a subsequent Save updates the same NAS (no duplicate).
+- **AC-107b** — Given detection runs, then the router's config is only read (no `/ip` write), and discovered instances are marked router-managed.
+
+### FR-108–110 (v3-5) — Pool ownership, address-lists, service-form dropdowns
+
+**Master (Decision 51):** three NAS/RADIUS items; exact contracts frozen in `docs/v3/phases/phase-v3-5-radius-service-pools/00-phase.md`. Migration 0593.
+
+- **FR-108 (M) — IP-pool ownership & router push.** `ip_pools.management_mode` (`system`=HikRAD-owned, full CRUD + push to a router's `/ip pool`; `router`=adopted, read-only reference) — the router-ownership sync principle (Decision 48) applied to pools, mirroring FR-67's `nas_services.management_mode`. Existing pools default to `system` (preserve today's edit/delete). A new vendor-neutral `PlanPool` (`/ip/pool` read-`print`/`add`/`set`, mirroring `planHotspotServer`) drives a hash-gated `POST /nas/{nasId}/pools/{poolId}/push/plan|apply` for a `system` pool; `POST /nas/{nasId}/pools/adopt` imports router pools as read-only `router`-mode rows without writing the router; `router` pools refuse edit/delete/push. No router write except an explicit hash-matched apply (Decision 17 intact).
+- **FR-109 (S) — address-list on login (auth half).** New vendor-neutral reply intent `address_list` (mapped to `Mikrotik-Address-List` only inside `internal/radius/vendor/`, FR-17), emitted at NORMAL login via `policy.go`'s shared normal/throttled tail — never in `modeExpiredPool`, so it can't collide with the redirect's use of the same VSA. Threaded through `AuthView.AddressList`, sourced from the FR-109 profile/subscriber field (sub-PRD 04). Amends the frozen reply contract (`vendor.go`/`intents.go`/`mikrotik.go`/`authorize.pl`), done explicitly.
+- **FR-110 (S) — service-form dynamic router-field inputs.** `ServiceProvisionModal`'s free-text `ros_server_name`/`interface` become dropdowns populated from the existing read-only `discover-services` (with a free-text fallback for values not yet on the router); the modal's hand-rolled raw `<select>`s convert to the panel `Select` (keeps `no-native-controls` green).
+
+**Acceptance:**
+- **AC-108a** — A `system` pool can be edited/deleted and pushed to a chosen NAS's router (plan shows the `/ip/pool` add/set, apply writes only on a hash match); a `router` (adopted) pool refuses edit/delete/push and HikRAD never writes its ranges.
+- **AC-109a** — A subscriber whose profile (or own override) sets an address-list receives `Mikrotik-Address-List` at a normal hotspot/PPPoE login; an expired session's reply is byte-unchanged (still only the redirect list).
+- **AC-110a** — The service form offers the router's real server-name/interface values as dropdown options and still accepts a typed value the router doesn't yet report.
+
 ### NFR-1 (owned) — Performance
 **Master:** At 5,000 subscribers / ~2,000 concurrent sessions with 5-minute interims (~7 acct packets/sec sustained, 50/sec burst): auth latency < 100 ms at the backend (p99), accounting ingest keeps queue depth near zero, panel pages load < 1.5 s, live-session updates ≤ 2 s end-to-end.
 

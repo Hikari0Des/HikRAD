@@ -128,3 +128,130 @@
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+
+/*
+ * v3-1 FR-97.2 pattern primitives. Plain CSS on the --hik-* tokens (same
+ * reason as the primitives above: the panel's Tailwind does not scan shared
+ * sources, so these can't rely on Tailwind utilities). Logical properties only.
+ */
+
+/* Card + StatCard */
+.hk-card {
+  background: rgb(var(--hik-surface-raised));
+  border: 1px solid rgb(var(--hik-surface-sunken));
+  border-radius: var(--hik-radius-lg, 0.5rem);
+  box-shadow: var(--hik-shadow-sm);
+}
+
+.hk-card--pad {
+  padding: 1rem;
+}
+
+.hk-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.hk-stat__label {
+  font-size: 0.8125rem;
+  color: rgb(var(--hik-ink-muted));
+}
+
+.hk-stat__value {
+  font-size: 1.5rem;
+  font-weight: 600;
+  line-height: 1.2;
+  color: rgb(var(--hik-ink));
+  font-variant-numeric: tabular-nums;
+}
+
+.hk-stat__hint {
+  font-size: 0.8125rem;
+  color: rgb(var(--hik-ink-muted));
+}
+
+.hk-stat__delta--up {
+  color: rgb(var(--hik-ok));
+}
+
+.hk-stat__delta--down {
+  color: rgb(var(--hik-danger));
+}
+
+/* SectionCard */
+.hk-section {
+  background: rgb(var(--hik-surface-raised));
+  border: 1px solid rgb(var(--hik-surface-sunken));
+  border-radius: var(--hik-radius-lg, 0.5rem);
+  overflow: hidden;
+}
+
+.hk-section__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding-block: 0.75rem;
+  padding-inline: 1rem;
+  border-block-end: 1px solid rgb(var(--hik-surface-sunken));
+}
+
+.hk-section__title {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: rgb(var(--hik-ink));
+}
+
+.hk-section__body {
+  padding: 1rem;
+}
+
+/* DataTable */
+.hk-table-wrap {
+  inline-size: 100%;
+  overflow-x: auto;
+  border: 1px solid rgb(var(--hik-surface-sunken));
+  border-radius: var(--hik-radius-lg, 0.5rem);
+}
+
+.hk-table {
+  inline-size: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.hk-table thead th {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 1;
+  background: rgb(var(--hik-surface-raised));
+  text-align: start;
+  font-weight: 500;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: rgb(var(--hik-ink-muted));
+  padding-block: 0.5rem;
+  padding-inline: 0.75rem;
+  white-space: nowrap;
+}
+
+.hk-table tbody td {
+  padding-block: 0.5rem;
+  padding-inline: 0.75rem;
+  border-block-start: 1px solid rgb(var(--hik-surface-sunken));
+  color: rgb(var(--hik-ink));
+}
+
+.hk-table--compact tbody td {
+  padding-block: 0.3125rem;
+}
+
+.hk-table tbody tr:hover td {
+  background: rgb(var(--hik-surface-raised));
+}
+
+.hk-td--end {
+  text-align: end;
+}

@@ -2,11 +2,12 @@ import { useEffect, useState } from 'react'
 
 import { useT, type TFunction } from '@hikrad/shared'
 
-import { applyService, planService } from '../../api/nas'
+import { applyService, discoverNasServices, planService } from '../../api/nas'
 import { listPools } from '../../api/pools'
 import { ApiError } from '../../api/client'
 import type {
   AutoSetupPreview,
+  DiscoveredService,
   Nas,
   NasService,
   NasType,
@@ -15,6 +16,7 @@ import type {
 } from '../../api/types'
 import { Button } from '../../components/Button'
 import { Modal } from '../../components/Modal'
+import { Field, Select, TextInput } from '../../components/form'
 import { useToast } from '../../components/Toast'
 
 /**
@@ -40,6 +42,7 @@ export function ServiceProvisionModal({
   const t = useT()
   const { toast } = useToast()
   const [pools, setPools] = useState<Pool[]>([])
+  const [discovered, setDiscovered] = useState<DiscoveredService[]>([])
   const [kind, setKind] = useState<NasType>(editing?.service ?? 'hotspot')
   const [label, setLabel] = useState(editing?.label ?? '')
   const [rosServerName, setRosServerName] = useState(editing?.ros_server_name ?? '')
@@ -56,6 +59,17 @@ export function ServiceProvisionModal({
     listPools()
       .then((r) => setPools(r.items))
       .catch(() => setPools([]))
+    // FR-110: read the router's real service instances so the server-name and
+    // interface fields can suggest them instead of being typed blind. Purely
+    // additive and best-effort — no creds, an unreachable router, or any error
+    // just means no suggestions, never a broken form.
+    if (nas.has_api_creds) {
+      discoverNasServices(nas.id)
+        .then((r) => setDiscovered(r.items))
+        .catch(() => setDiscovered([]))
+    } else {
+      setDiscovered([])
+    }
     setKind(editing?.service ?? 'hotspot')
     setLabel(editing?.label ?? '')
     setRosServerName(editing?.ros_server_name ?? '')
@@ -65,6 +79,17 @@ export function ServiceProvisionModal({
     setResult(null)
     setError(null)
   }, [open, editing])
+
+  // FR-110 option lists, scoped to the service kind being edited so a PPPoE
+  // form never suggests a hotspot zone's name. uniq + drop empties.
+  const forKind = discovered.filter((d) => d.service === kind)
+  const uniq = (xs: string[]) => Array.from(new Set(xs.filter(Boolean)))
+  const serverNameOptions = uniq(forKind.map((d) => d.ros_server_name))
+  const ifaceOptions = uniq(forKind.map((d) => d.interface_note))
+  // The router's own pool names, surfaced because a service pointing at a pool
+  // that exists here but not on the router is the "no address from ip pool"
+  // login failure (docs/ops/known-issues.md).
+  const routerPoolNames = uniq(forKind.map((d) => d.router_pool_name))
 
   function body() {
     return {
@@ -123,61 +148,84 @@ export function ServiceProvisionModal({
         {!preview && !result ? (
           <>
             <div className="grid gap-3 sm:grid-cols-2">
-              <label className="text-xs">
-                <span className="mb-1 block text-ink-muted">{t('nas.serviceKind')}</span>
-                <select
-                  className="w-full rounded border border-surface-sunken bg-surface px-2 py-1 text-sm"
+              <Field label={t('nas.serviceKind')} htmlFor="svc-kind">
+                <Select
+                  id="svc-kind"
                   value={kind}
                   disabled={!!editing}
                   onChange={(e) => setKind(e.target.value as NasType)}
                 >
                   <option value="pppoe">{t('nas.typeName.pppoe')}</option>
                   <option value="hotspot">{t('nas.typeName.hotspot')}</option>
-                </select>
-              </label>
-              <label className="text-xs">
-                <span className="mb-1 block text-ink-muted">{t('nas.serviceLabel')}</span>
-                <input
-                  className="w-full rounded border border-surface-sunken bg-surface px-2 py-1 text-sm"
+                </Select>
+              </Field>
+              <Field label={t('nas.serviceLabel')} htmlFor="svc-label">
+                <TextInput
+                  id="svc-label"
                   value={label}
                   onChange={(e) => setLabel(e.target.value)}
                   placeholder={t('nas.serviceLabelPlaceholder')}
                 />
-              </label>
-              <label className="text-xs">
-                <span className="mb-1 block text-ink-muted">{t('nas.rosServerName')}</span>
-                <input
+              </Field>
+              {/* FR-110: the router's real server names / interfaces are offered as
+                  suggestions (read from the read-only discover-services), but the
+                  field stays free text so a name the router doesn't have yet — the
+                  create case — can still be typed. */}
+              <Field
+                label={t('nas.rosServerName')}
+                hint={serverNameOptions.length > 0 ? t('nas.serverMgmt.fromRouterHint') : undefined}
+                htmlFor="svc-ros-name"
+              >
+                <TextInput
+                  id="svc-ros-name"
                   dir="ltr"
-                  className="w-full rounded border border-surface-sunken bg-surface px-2 py-1 text-sm"
+                  list="svc-ros-name-options"
                   value={rosServerName}
                   onChange={(e) => setRosServerName(e.target.value)}
                   placeholder={t('nas.rosServerNamePlaceholder')}
                 />
-              </label>
-              <label className="text-xs">
-                <span className="mb-1 block text-ink-muted">{t('nas.serverMgmt.interface')}</span>
-                <input
+                <datalist id="svc-ros-name-options">
+                  {serverNameOptions.map((n) => (
+                    <option key={n} value={n} />
+                  ))}
+                </datalist>
+              </Field>
+              <Field
+                label={t('nas.serverMgmt.interface')}
+                hint={ifaceOptions.length > 0 ? t('nas.serverMgmt.fromRouterHint') : undefined}
+                htmlFor="svc-iface"
+              >
+                <TextInput
+                  id="svc-iface"
                   dir="ltr"
-                  className="w-full rounded border border-surface-sunken bg-surface px-2 py-1 text-sm"
+                  list="svc-iface-options"
                   value={iface}
                   onChange={(e) => setIface(e.target.value)}
                 />
-              </label>
-              <label className="text-xs sm:col-span-2">
-                <span className="mb-1 block text-ink-muted">{t('nas.serverMgmt.pool')}</span>
-                <select
-                  className="w-full rounded border border-surface-sunken bg-surface px-2 py-1 text-sm"
-                  value={poolId}
-                  onChange={(e) => setPoolId(e.target.value)}
-                >
-                  <option value="">{t('ui.none')}</option>
-                  {pools.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                    </option>
+                <datalist id="svc-iface-options">
+                  {ifaceOptions.map((n) => (
+                    <option key={n} value={n} />
                   ))}
-                </select>
-              </label>
+                </datalist>
+              </Field>
+              <div className="sm:col-span-2">
+                <Field label={t('nas.serverMgmt.pool')} htmlFor="svc-pool">
+                  <Select id="svc-pool" value={poolId} onChange={(e) => setPoolId(e.target.value)}>
+                    <option value="">{t('ui.none')}</option>
+                    {pools.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                        {p.management_mode === 'router' ? ` (${t('pools.mode.router')})` : ''}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+                {routerPoolNames.length > 0 && (
+                  <p className="mt-1 text-xs text-ink-muted" dir="ltr">
+                    {t('nas.serverMgmt.routerPools', { pools: routerPoolNames.join(', ') })}
+                  </p>
+                )}
+              </div>
             </div>
             {error ? <p className="text-sm text-danger">{error}</p> : null}
             <Button disabled={!valid || loading} onClick={() => void runPlan()}>

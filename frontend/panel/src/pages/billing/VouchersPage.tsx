@@ -20,6 +20,14 @@ import { ConfirmDialog } from '../../components/ConfirmDialog'
 import { Field, Select, TextInput } from '../../components/form'
 import { Modal } from '../../components/Modal'
 import { PageHeader } from '../../components/PageHeader'
+import { Pill } from '../../components/Pill'
+
+// Voucher lifecycle → pill tone (v3-1 SAMM restyle).
+const VOUCHER_TONE: Record<string, 'ok' | 'muted' | 'danger'> = {
+  unused: 'ok',
+  used: 'muted',
+  void: 'danger',
+}
 import { useToast } from '../../components/Toast'
 import { useAsync } from '../../hooks/useAsync'
 
@@ -280,7 +288,7 @@ function BatchDetailModal({ batch, onClose }: { batch: VoucherBatch | null; onCl
               className="flex items-center justify-between border-b border-surface-sunken/60 py-1.5"
             >
               <code>{c.id}</code>
-              <span className="text-xs text-ink-muted">{t(`vouchers.state.${c.state}`)}</span>
+              <Pill tone={VOUCHER_TONE[c.state] ?? 'muted'}>{t(`vouchers.state.${c.state}`)}</Pill>
             </li>
           ))}
         </ul>

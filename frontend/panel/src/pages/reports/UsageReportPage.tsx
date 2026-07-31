@@ -78,7 +78,7 @@ export function UsageReportPage() {
       <div className="flex flex-wrap items-end justify-between gap-3">
         <DateRangeFilter range={range} />
         <label className="mb-4 text-xs print:hidden">
-          <span className="mb-1 block text-ink-muted">{t('reports.usage.view')}</span>
+          <span className="mb-1 block text-ink-muted">{t('reports.usage.view.label')}</span>
           <Select value={view} onChange={(e) => setView(e.target.value)}>
             <option value="top_consumers">{t('reports.usage.view.top_consumers')}</option>
             <option value="per_nas">{t('reports.usage.view.per_nas')}</option>

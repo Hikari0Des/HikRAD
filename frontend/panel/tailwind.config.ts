@@ -25,7 +25,22 @@ export default {
           inverse: 'rgb(var(--hik-ink-inverse) / <alpha-value>)',
         },
         danger: 'rgb(var(--hik-danger) / <alpha-value>)',
+        warn: 'rgb(var(--hik-warn) / <alpha-value>)',
         ok: 'rgb(var(--hik-ok) / <alpha-value>)',
+      },
+      // v3-1 FR-97.1: radius + elevation resolve to the CSS tokens in
+      // theme/tokens.css. Additive — the DEFAULT keys keep Tailwind's own
+      // values so no existing `rounded`/`shadow` utility shifts.
+      borderRadius: {
+        sm: 'var(--hik-radius-sm)',
+        md: 'var(--hik-radius-md)',
+        lg: 'var(--hik-radius-lg)',
+        xl: 'var(--hik-radius-xl)',
+      },
+      boxShadow: {
+        sm: 'var(--hik-shadow-sm)',
+        md: 'var(--hik-shadow-md)',
+        lg: 'var(--hik-shadow-lg)',
       },
     },
   },

@@ -38,6 +38,8 @@ type profileInput struct {
 	BurstTime      *string `json:"burst_time"`
 	RatePriority   *string `json:"rate_priority"`
 	MinRate        *string `json:"min_rate"`
+	// AddressList (FR-109): optional named MikroTik address-list; NULL/empty = none.
+	AddressList *string `json:"address_list"`
 	// NASScopes lists every NAS / service instance this profile's subscribers may
 	// authenticate on (FR-64 / C9). An empty array (or omitted) = any NAS. The
 	// set is replaced wholesale.

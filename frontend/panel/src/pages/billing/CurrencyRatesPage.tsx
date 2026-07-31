@@ -1,16 +1,13 @@
 import { useState } from 'react'
 
-import { ErrorState, IQDAmount, LoadingState, useFormatters, useT } from '@hikrad/shared'
+import { ErrorState, LoadingState, useFormatters, useT } from '@hikrad/shared'
 
 import {
   createCurrencyRate,
-  exchangeManagerBalance,
   listCurrencies,
   listCurrencyRates,
-  listManagerBalances,
   type CurrencyRate,
 } from '../../api/billing'
-import { ApiError } from '../../api/client'
 import { useAuth } from '../../auth/AuthContext'
 import { PERM_CURRENCY_RATES_MANAGE } from '../../auth/permissions'
 import { Button } from '../../components/Button'
@@ -28,7 +25,7 @@ import { useAsync } from '../../hooks/useAsync'
  */
 export function CurrencyRatesPage() {
   const t = useT()
-  const { can, manager } = useAuth()
+  const { can } = useAuth()
   const {
     data: currencies,
     loading: currenciesLoading,
@@ -45,13 +42,9 @@ export function CurrencyRatesPage() {
     <section>
       <PageHeader title={t('currencyRates.title')} subtitle={t('currencyRates.subtitle')} />
 
-      {manager ? (
-        <ExchangeCard
-          managerId={manager.id}
-          currencies={currencies?.items ?? []}
-          rates={rates?.items ?? []}
-        />
-      ) : null}
+      {/* v3-2 (FR-100.3): the wallet-to-wallet exchange card is gone — the book
+          is a single IQD balance, so there is nothing to exchange between. Rates
+          stay, now used only for entry-time conversion + display. */}
 
       <div className="mt-6 rounded-md border border-surface-sunken">
         <div className="flex items-center justify-between border-b border-surface-sunken p-3">
@@ -182,121 +175,6 @@ function CreateRateForm({
         {busy ? t('ui.working') : t('currencyRates.addRate')}
       </Button>
     </form>
-  )
-}
-
-/** The signed-in manager's own exchange (C4) — converts part of their balance. */
-function ExchangeCard({
-  managerId,
-  currencies,
-  rates,
-}: {
-  managerId: string
-  currencies: { code: string }[]
-  rates: CurrencyRate[]
-}) {
-  const t = useT()
-  const { toast } = useToast()
-  const {
-    data: balances,
-    loading: balancesLoading,
-    reload: reloadBalances,
-  } = useAsync(() => listManagerBalances(managerId), [managerId])
-
-  const [from, setFrom] = useState('')
-  const [to, setTo] = useState('')
-  const [amount, setAmount] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  const applicableRate = rates.find((r) => r.from_currency === from && r.to_currency === to)
-
-  async function submit() {
-    if (!applicableRate) return
-    setBusy(true)
-    setError(null)
-    try {
-      await exchangeManagerBalance(managerId, {
-        from_currency: from,
-        to_currency: to,
-        amount: Number(amount),
-        currency_rate_id: applicableRate.id,
-      })
-      toast(t('currencyRates.exchangeDone'), 'ok')
-      setAmount('')
-      reloadBalances()
-    } catch (err) {
-      if (err instanceof ApiError) setError(err.message)
-      else setError(t('common.error.body'))
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  return (
-    <div className="rounded-md border border-surface-sunken p-4">
-      <h2 className="mb-3 text-sm font-semibold">{t('currencyRates.exchange.title')}</h2>
-
-      {balancesLoading ? (
-        <LoadingState />
-      ) : (
-        <div className="mb-4 flex flex-wrap gap-3">
-          {(balances?.balances ?? []).map((b) => (
-            <div key={b.currency} className="rounded-md bg-surface-sunken px-3 py-1.5 text-sm">
-              <span className="text-ink-muted">{b.currency}</span>{' '}
-              <IQDAmount amount={b.balance} currency={b.currency} />
-            </div>
-          ))}
-        </div>
-      )}
-
-      <form
-        onSubmit={(e) => {
-          e.preventDefault()
-          void submit()
-        }}
-        className="grid gap-3 sm:grid-cols-4 sm:items-end"
-      >
-        <Field label={t('currencyRates.from')} htmlFor="exch-from">
-          <Select id="exch-from" value={from} onChange={(e) => setFrom(e.target.value)} required>
-            <option value="">{t('ui.choose')}</option>
-            {currencies.map((c) => (
-              <option key={c.code} value={c.code}>
-                {c.code}
-              </option>
-            ))}
-          </Select>
-        </Field>
-        <Field label={t('currencyRates.to')} htmlFor="exch-to">
-          <Select id="exch-to" value={to} onChange={(e) => setTo(e.target.value)} required>
-            <option value="">{t('ui.choose')}</option>
-            {currencies.map((c) => (
-              <option key={c.code} value={c.code}>
-                {c.code}
-              </option>
-            ))}
-          </Select>
-        </Field>
-        <Field label={t('currencyRates.exchange.amount')} htmlFor="exch-amount">
-          <TextInput
-            id="exch-amount"
-            type="number"
-            dir="ltr"
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            required
-          />
-        </Field>
-        <Button type="submit" disabled={busy || !from || !to || !amount || !applicableRate}>
-          {busy ? t('ui.working') : t('currencyRates.exchange.submit')}
-        </Button>
-      </form>
-
-      {from && to && !applicableRate ? (
-        <p className="mt-2 text-xs text-warn">{t('currencyRates.exchange.noRate')}</p>
-      ) : null}
-      {error ? <p className="mt-2 text-sm text-danger">{error}</p> : null}
-    </div>
   )
 }
 

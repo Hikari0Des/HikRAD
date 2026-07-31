@@ -19,8 +19,9 @@ import (
 
 // Module is the httpapi registration hook (contract C3).
 type Module struct {
-	db  *pgxpool.Pool
-	log *slog.Logger
+	db   *pgxpool.Pool
+	log  *slog.Logger
+	jobs *jobRegistry
 }
 
 func (Module) Name() string { return "profiles" }
@@ -28,8 +29,14 @@ func (Module) Name() string { return "profiles" }
 func (m *Module) Register(r chi.Router, d httpapi.Deps) {
 	m.db = d.DB
 	m.log = d.Log
+	m.jobs = newJobRegistry()
 
 	r.With(auth.Require("profiles.view")).Get("/api/v1/profiles", m.listHandler)
+	// Bulk (FR-111.2). Mounted before /{id} would be a concern for a GET, but
+	// these are distinct verbs/paths; permission is action-dependent (checked in
+	// the handler), so the route guard is only the floor every action shares.
+	r.With(auth.Require("profiles.view")).Post("/api/v1/profiles/bulk", m.bulkHandler)
+	r.With(auth.Require("profiles.view")).Get("/api/v1/profiles/bulk/{id}", m.bulkStatusHandler)
 	r.With(auth.Require("profiles.view")).Get("/api/v1/profiles/{id}", m.getHandler)
 	r.With(auth.Require("profiles.create")).Post("/api/v1/profiles", m.createHandler)
 	r.With(auth.Require("profiles.edit")).Put("/api/v1/profiles/{id}", m.updateHandler)

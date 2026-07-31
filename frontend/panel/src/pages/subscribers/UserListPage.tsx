@@ -11,8 +11,10 @@ import type { BulkFilter, Profile, Subscriber, SubscriberStatus } from '../../ap
 import { useAuth } from '../../auth/AuthContext'
 import { Button } from '../../components/Button'
 import { PageHeader } from '../../components/PageHeader'
-import { Checkbox, Select } from '../../components/form'
+import { Checkbox } from '../../components/form'
+import { FilterBar, type FilterField } from '../../components/patterns'
 import { useAsync } from '../../hooks/useAsync'
+import { useDebouncedValue } from '../../hooks/useDebouncedValue'
 import { usePaginated } from '../../hooks/usePaginated'
 import { usePersistentState } from '../../hooks/usePersistentState'
 import { BulkBar } from './BulkBar'
@@ -32,6 +34,9 @@ const ALL_COLUMNS = [
 type Column = (typeof ALL_COLUMNS)[number]
 
 interface Filters {
+  /** FR-98.1: text search — sent to the server (all subscribers), with a client
+   *  narrowing over loaded rows for instant feedback during the debounce. */
+  q: string
   status: string
   profileId: string
   ownerId: string
@@ -41,6 +46,7 @@ interface Filters {
 }
 
 const EMPTY: Filters = {
+  q: '',
   status: '',
   profileId: '',
   ownerId: '',
@@ -77,9 +83,23 @@ export function UserListPage() {
   const profiles: Profile[] = useMemo(() => profilesQ.data?.items ?? [], [profilesQ.data])
   const managers: ManagerView[] = useMemo(() => managersQ.data?.items ?? [], [managersQ.data])
 
+  // The list refetches from the server on filter change (debounced so typing in
+  // the search box doesn't fire a request per keystroke), so a search matches
+  // across ALL subscribers and paginates the matches — not just the loaded page.
+  const debouncedFilters = useDebouncedValue(filters, 300)
   const page = usePaginated<Subscriber>(
-    (cursor) => listSubscribers({ cursor, limit: 50 }),
-    'subscribers',
+    (cursor) =>
+      listSubscribers({
+        cursor,
+        limit: 50,
+        q: debouncedFilters.q.trim() || undefined,
+        status: debouncedFilters.status || undefined,
+        service_type: debouncedFilters.serviceType || undefined,
+        profile_id: debouncedFilters.profileId || undefined,
+        owner_manager_id: debouncedFilters.ownerId || undefined,
+        expiring_days: debouncedFilters.expiringDays || undefined,
+      }),
+    `subscribers:${JSON.stringify(debouncedFilters)}`,
   )
 
   const profileName = useMemo(() => {
@@ -95,12 +115,14 @@ export function UserListPage() {
 
   const bulkFilter: BulkFilter = useMemo(() => {
     const f: BulkFilter = {}
+    // Every filter the FilterBar exposes must mirror to the server-side bulk
+    // filter: a bulk action runs against THIS filter, so omitting one would
+    // apply the action to rows the operator can't see. `q` maps to the server's
+    // subscriber_fold ILIKE (same username/name match as the client filter).
+    if (filters.q) f.q = filters.q
     if (filters.status) f.status = filters.status
     if (filters.profileId) f.profile_id = filters.profileId
     if (filters.ownerId) f.owner_manager_id = filters.ownerId
-    // Must mirror the client-side filter: a bulk action runs against THIS
-    // filter server-side, so omitting it here would apply the action to every
-    // service type while the operator is looking at one.
     if (filters.serviceType) f.service_type = filters.serviceType
     if (filters.expiringDays) {
       const d = new Date()
@@ -110,10 +132,44 @@ export function UserListPage() {
     return f
   }, [filters])
 
-  const activeChips = useMemo(
-    () => buildChips(filters, profileName, ownerName, t),
-    [filters, profileName, ownerName, t],
-  )
+  // FR-98.1: the chip FilterBar's field catalogue, built from the loaded
+  // reference data. `q` (search) is handled by the bar's own search box.
+  const filterFields: FilterField[] = useMemo(() => {
+    const f: FilterField[] = [
+      {
+        key: 'status',
+        label: t('users.filterStatus'),
+        options: STATUSES.map((s) => ({ value: s, label: t(`common.status.${s}`) })),
+      },
+      {
+        key: 'serviceType',
+        label: t('users.filterServiceType'),
+        options: SERVICE_TYPES.map((v) => ({ value: v, label: t(`serviceType.${v}`) })),
+      },
+      {
+        key: 'profileId',
+        label: t('users.filterProfile'),
+        options: profiles.map((p) => ({ value: p.id, label: p.name })),
+      },
+      {
+        key: 'expiringDays',
+        label: t('users.filterExpiring'),
+        options: [
+          { value: '3', label: t('users.expiring.d3') },
+          { value: '7', label: t('users.expiring.d7') },
+          { value: '30', label: t('users.expiring.d30') },
+        ],
+      },
+    ]
+    if (managers.length > 0) {
+      f.push({
+        key: 'ownerId',
+        label: t('users.filterOwner'),
+        options: managers.map((m) => ({ value: m.id, label: m.username })),
+      })
+    }
+    return f
+  }, [t, profiles, managers])
 
   const toggleColumn = (col: Column) =>
     setColumns((prev) => {
@@ -156,6 +212,13 @@ export function UserListPage() {
               </Button>
             )}
             {can('subscribers.create') && (
+              <Link to="/import">
+                <Button variant="secondary" size="sm">
+                  {t('users.importCsv')}
+                </Button>
+              </Link>
+            )}
+            {can('subscribers.create') && (
               <Button size="sm" onClick={() => setCreateOpen(true)}>
                 {t('users.create')}
               </Button>
@@ -164,108 +227,22 @@ export function UserListPage() {
         }
       />
 
-      {/* Filters */}
-      <div className="mb-3 flex flex-wrap items-end gap-3 rounded-md border border-surface-sunken bg-surface-raised p-3">
-        <label className="text-sm">
-          <span className="mb-1 block text-xs text-ink-muted">{t('users.filterStatus')}</span>
-          <Select
-            value={filters.status}
-            onChange={(e) => setFilters({ ...filters, status: e.target.value })}
-          >
-            <option value="">{t('ui.all')}</option>
-            {STATUSES.map((s) => (
-              <option key={s} value={s}>
-                {t(`common.status.${s}`)}
-              </option>
-            ))}
-          </Select>
-        </label>
-        <label className="text-sm">
-          <span className="mb-1 block text-xs text-ink-muted">{t('users.filterServiceType')}</span>
-          <Select
-            value={filters.serviceType}
-            onChange={(e) => setFilters({ ...filters, serviceType: e.target.value })}
-          >
-            <option value="">{t('ui.all')}</option>
-            {SERVICE_TYPES.map((v) => (
-              <option key={v} value={v}>
-                {t(`serviceType.${v}`)}
-              </option>
-            ))}
-          </Select>
-        </label>
-        <label className="text-sm">
-          <span className="mb-1 block text-xs text-ink-muted">{t('users.filterProfile')}</span>
-          <Select
-            value={filters.profileId}
-            onChange={(e) => setFilters({ ...filters, profileId: e.target.value })}
-          >
-            <option value="">{t('ui.all')}</option>
-            {profiles.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </Select>
-        </label>
-        {managers.length > 0 && (
-          <label className="text-sm">
-            <span className="mb-1 block text-xs text-ink-muted">{t('users.filterOwner')}</span>
-            <Select
-              value={filters.ownerId}
-              onChange={(e) => setFilters({ ...filters, ownerId: e.target.value })}
-            >
-              <option value="">{t('ui.all')}</option>
-              {managers.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.username}
-                </option>
-              ))}
-            </Select>
-          </label>
-        )}
-        <label className="text-sm">
-          <span className="mb-1 block text-xs text-ink-muted">{t('users.filterExpiring')}</span>
-          <Select
-            value={filters.expiringDays}
-            onChange={(e) => setFilters({ ...filters, expiringDays: e.target.value })}
-          >
-            <option value="">{t('ui.any')}</option>
-            <option value="3">{t('users.expiring.d3')}</option>
-            <option value="7">{t('users.expiring.d7')}</option>
-            <option value="30">{t('users.expiring.d30')}</option>
-          </Select>
-        </label>
+      {/* FR-98.1: chip FilterBar (search + add-a-filter → removable chips)
+          replaces the old row of bare selects. Persistence + bulk parity are
+          unchanged — `filters` is still the per-manager usePersistentState. */}
+      <div className="mb-3 flex items-start gap-2">
+        <div className="min-w-0 flex-1">
+          <FilterBar
+            search={filters.q}
+            onSearchChange={(q) => setFilters((f) => ({ ...f, q }))}
+            searchPlaceholder={t('users.searchName')}
+            fields={filterFields}
+            values={filters as unknown as Record<string, string>}
+            onChange={(v) => setFilters({ ...EMPTY, ...(v as Partial<Filters>) })}
+          />
+        </div>
         <ColumnChooser columns={columns} onToggle={toggleColumn} />
       </div>
-
-      {/* Active-filter chips */}
-      {activeChips.length > 0 && (
-        <div className="mb-3 flex flex-wrap items-center gap-2">
-          {activeChips.map((chip) => (
-            <span
-              key={chip.key}
-              className="inline-flex items-center gap-1.5 rounded-full bg-brand-soft px-2.5 py-1 text-xs text-brand-strong"
-            >
-              {chip.label}
-              <button
-                type="button"
-                aria-label={t('ui.remove')}
-                onClick={() => setFilters((f) => ({ ...f, [chip.key]: '' }))}
-              >
-                <span aria-hidden="true">×</span>
-              </button>
-            </span>
-          ))}
-          <button
-            type="button"
-            className="text-xs text-ink-muted underline"
-            onClick={() => setFilters(EMPTY)}
-          >
-            {t('users.clearFilters')}
-          </button>
-        </div>
-      )}
 
       {showBulk && (
         <div className="mb-3">
@@ -416,6 +393,12 @@ function ColumnChooser({
 
 function applyFilters(items: Subscriber[], f: Filters): Subscriber[] {
   let out = items
+  if (f.q) {
+    const q = f.q.trim().toLowerCase()
+    out = out.filter(
+      (s) => s.username.toLowerCase().includes(q) || (s.name ?? '').toLowerCase().includes(q),
+    )
+  }
   if (f.status) out = out.filter((s) => s.status === f.status)
   if (f.profileId) out = out.filter((s) => s.profile_id === f.profileId)
   if (f.ownerId) out = out.filter((s) => s.owner_manager_id === f.ownerId)
@@ -426,20 +409,4 @@ function applyFilters(items: Subscriber[], f: Filters): Subscriber[] {
     out = out.filter((s) => s.expires_at !== null && new Date(s.expires_at) <= cutoff)
   }
   return out
-}
-
-function buildChips(
-  f: Filters,
-  profileName: (id: string | null) => string,
-  ownerName: (id: string | null) => string,
-  t: (k: string, v?: Record<string, string | number>) => string,
-): { key: keyof Filters; label: string }[] {
-  const chips: { key: keyof Filters; label: string }[] = []
-  if (f.status) chips.push({ key: 'status', label: t(`common.status.${f.status}`) })
-  if (f.profileId) chips.push({ key: 'profileId', label: profileName(f.profileId) })
-  if (f.ownerId) chips.push({ key: 'ownerId', label: ownerName(f.ownerId) })
-  if (f.serviceType) chips.push({ key: 'serviceType', label: t(`serviceType.${f.serviceType}`) })
-  if (f.expiringDays)
-    chips.push({ key: 'expiringDays', label: t('users.chipExpiring', { days: f.expiringDays }) })
-  return chips
 }

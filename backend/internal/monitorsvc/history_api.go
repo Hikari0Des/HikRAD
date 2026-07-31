@@ -31,9 +31,9 @@ type probeSample struct {
 }
 
 type downtimeWindow struct {
-	From    time.Time `json:"from"`
+	From    time.Time  `json:"from"`
 	To      *time.Time `json:"to"` // null = still down
-	Seconds int64     `json:"seconds"`
+	Seconds int64      `json:"seconds"`
 }
 
 type probeHistoryResponse struct {
@@ -172,8 +172,9 @@ func downtimeFromSeries(series []probeSample, end time.Time) []downtimeWindow {
 }
 
 // deviceStatus / nasStatus are thin wrappers used by the CRUD + dashboard code.
-func deviceStatus(ctx context.Context, id string) string { return statusFromProbes(ctx, "device_id", id) }
-func nasStatus(ctx context.Context, id string) string    { return statusFromProbes(ctx, "nas_id", id) }
+func deviceStatus(ctx context.Context, id string) string {
+	return statusFromProbes(ctx, "device_id", id)
+}
 
 func parseTime(v string, def time.Time) time.Time {
 	if v == "" {

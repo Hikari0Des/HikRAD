@@ -46,6 +46,7 @@ const subscriber: Subscriber = {
   mac_lock_mode: 'learn',
   learned_mac: 'AA:BB:CC:DD:EE:FF',
   static_ip: null,
+  address_list_override: null,
   session_limit_override: null,
   rate_override: null,
   price_override: null,

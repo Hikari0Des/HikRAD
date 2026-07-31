@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react'
-import { NavLink } from 'react-router-dom'
+import { NavLink, useLocation } from 'react-router-dom'
 
 import { useT } from '@hikrad/shared'
 
 import { listTickets } from '../api/paymentTickets'
 import { useAuth } from '../auth/AuthContext'
 import { brandInitial, useBranding } from '../branding'
+import { usePersistentState } from '../hooks/usePersistentState'
+import { NavIcon } from './navIcons'
 import {
   PERM_AUDIT_VIEW,
   PERM_PAYMENT_TICKETS_VERIFY,
@@ -19,7 +21,6 @@ import {
   PERM_PROFILES_VIEW,
   PERM_REPORTS_VIEW,
   PERM_SETTINGS_VIEW,
-  PERM_SUBSCRIBERS_CREATE,
   PERM_SUBSCRIBERS_VIEW,
   PERM_TOPUP,
   PERM_VOUCHERS_VIEW,
@@ -40,12 +41,12 @@ interface NavGroup {
 /** Navigation, grouped and permission-gated (the server re-checks every route). */
 const NAV_GROUPS: readonly NavGroup[] = [
   {
+    titleKey: 'nav.group.overview',
     items: [
       { key: 'nav.dashboard', to: '/' },
       { key: 'nav.subscribers', to: '/subscribers', perm: PERM_SUBSCRIBERS_VIEW },
       { key: 'nav.profiles', to: '/profiles', perm: PERM_PROFILES_VIEW },
       { key: 'nav.sessions', to: '/sessions', perm: PERM_LIVE_VIEW },
-      { key: 'nav.import', to: '/import', perm: PERM_SUBSCRIBERS_CREATE },
     ],
   },
   {
@@ -120,6 +121,19 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const { can } = useAuth()
   const pendingTickets = usePendingTicketCount(can(PERM_PAYMENT_TICKETS_VERIFY))
   const branding = useBranding()
+  const location = useLocation()
+
+  // Collapsible categories: a group is hidden until its header is pressed. The
+  // group containing the current route is expanded by default so you can always
+  // see where you are; explicit toggles are remembered per manager.
+  const [collapsed, setCollapsed] = usePersistentState<Record<string, boolean>>(
+    'sidebar.groupsCollapsed',
+    {},
+  )
+  const inGroup = (items: readonly { to: string }[]) =>
+    items.some(
+      (i) => location.pathname === i.to || (i.to !== '/' && location.pathname.startsWith(i.to)),
+    )
 
   return (
     <div className="flex h-full flex-col">
@@ -144,38 +158,63 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
         {NAV_GROUPS.map((group, gi) => {
           const visible = group.items.filter((item) => !item.perm || can(item.perm))
           if (visible.length === 0) return null
+          const key = group.titleKey ?? `g${gi}`
+          const activeGroup = inGroup(visible)
+          // Default: expanded only for the active group; a stored value wins.
+          const isCollapsed = key in collapsed ? collapsed[key] : !activeGroup
+          const showItems = !group.titleKey || !isCollapsed
           return (
             <div key={gi} className={gi > 0 ? 'mt-4' : ''}>
               {group.titleKey ? (
-                <p className="px-3 pb-1 text-xs font-semibold uppercase tracking-wide text-ink-muted/70">
-                  {t(group.titleKey)}
-                </p>
+                <button
+                  type="button"
+                  onClick={() => setCollapsed((c) => ({ ...c, [key]: !isCollapsed }))}
+                  aria-expanded={!isCollapsed}
+                  className="flex w-full items-center justify-between rounded px-3 pb-1 pt-1 text-xs font-semibold uppercase tracking-wide text-ink-muted/70 hover:text-ink-muted"
+                >
+                  <span>{t(group.titleKey)}</span>
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={2.5}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className={`h-3 w-3 transition-transform ${isCollapsed ? '' : 'rotate-90'}`}
+                    aria-hidden="true"
+                  >
+                    <path d="m9 6 6 6-6 6" />
+                  </svg>
+                </button>
               ) : null}
-              <ul className="space-y-1">
-                {visible.map((item) => (
-                  <li key={item.key}>
-                    <NavLink
-                      to={item.to}
-                      end={item.to === '/'}
-                      onClick={onNavigate}
-                      className={({ isActive }) =>
-                        `flex items-center justify-between gap-2 rounded-md px-3 py-2 text-sm ${
-                          isActive
-                            ? 'bg-brand-soft font-medium text-brand-strong'
-                            : 'text-ink hover:bg-surface-sunken'
-                        }`
-                      }
-                    >
-                      <span>{t(item.key)}</span>
-                      {item.to === '/payment-tickets' && pendingTickets > 0 ? (
-                        <span className="rounded-full bg-danger px-1.5 py-0.5 text-xs font-medium text-ink-inverse">
-                          {pendingTickets}
-                        </span>
-                      ) : null}
-                    </NavLink>
-                  </li>
-                ))}
-              </ul>
+              {showItems && (
+                <ul className="space-y-1">
+                  {visible.map((item) => (
+                    <li key={item.key}>
+                      <NavLink
+                        to={item.to}
+                        end={item.to === '/'}
+                        onClick={onNavigate}
+                        className={({ isActive }) =>
+                          `flex items-center gap-2.5 rounded-md px-3 py-2 text-sm ${
+                            isActive
+                              ? 'bg-brand-soft font-medium text-brand-strong'
+                              : 'text-ink-muted hover:bg-surface-sunken hover:text-ink'
+                          }`
+                        }
+                      >
+                        <NavIcon name={item.key} />
+                        <span className="flex-1 truncate">{t(item.key)}</span>
+                        {item.to === '/payment-tickets' && pendingTickets > 0 ? (
+                          <span className="rounded-full bg-danger px-1.5 py-0.5 text-xs font-medium text-ink-inverse">
+                            {pendingTickets}
+                          </span>
+                        ) : null}
+                      </NavLink>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
           )
         })}

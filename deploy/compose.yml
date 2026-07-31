@@ -97,6 +97,13 @@ services:
       # or --repair) backfills a real token into .env the next time it runs.
       HIKRAD_UPDATER_TOKEN: ${HIKRAD_UPDATER_TOKEN:-}
       HIKRAD_UPDATER_SOCKET: /var/run/hikrad-updater/updater.sock
+      # Instance logo storage (FR-91 upload, FR-106.3 fix). Points at the
+      # bind-mounted, install-chowned dir below; without this, BrandingDir()
+      # falls back to a relative "data/branding" that resolves to "/data/branding"
+      # under the WORKDIR-less runtime image, which uid 10001 cannot create —
+      # the "mkdir … permission denied" logo-upload bug. Same env+mount+chown
+      # shape as acct-spill.
+      HIKRAD_BRANDING_DIR: /branding
     # gid 101 is freeradius/freeradius-server:3.2.3's own internal "freerad"
     # service account (stable since the image tag is pinned, not :latest) —
     # it creates the control socket 0660 owned by that uid:gid, which
@@ -135,6 +142,11 @@ services:
       # uid, no secret in the directory itself — the shared token is the
       # real boundary; see docs/ops/known-issues.md, 2026-07-18).
       - ${HIKRAD_DATA_DIR:-./data}/updater:/var/run/hikrad-updater
+      # Disk-backed instance logo (FR-91/FR-106.3). Created + chown'd to uid
+      # 10001 by install.sh / hikrad update before compose up, so this dir is
+      # writable by the non-root api container instead of Docker auto-creating
+      # it root-owned.
+      - ${HIKRAD_DATA_DIR:-./data}/branding:/branding
     # Port 8080 stays internal to the compose network: Caddy proxies /api/*,
     # and FreeRADIUS calls POST /internal/radius/authorize directly (C4 — the
     # /internal/* routes are deliberately NOT reachable through Caddy).

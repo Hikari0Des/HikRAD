@@ -29,6 +29,20 @@ export default {
         ok: 'rgb(var(--hik-ok) / <alpha-value>)',
         warning: 'rgb(var(--hik-warning) / <alpha-value>)',
       },
+      // v3-1 FR-97.1: radius + elevation tokens (mirrors the panel). Radius keys
+      // equal Tailwind's defaults → no existing utility shifts; elevation adopts
+      // the token shadows (incl. the dark-mode fix).
+      borderRadius: {
+        sm: 'var(--hik-radius-sm)',
+        md: 'var(--hik-radius-md)',
+        lg: 'var(--hik-radius-lg)',
+        xl: 'var(--hik-radius-xl)',
+      },
+      boxShadow: {
+        sm: 'var(--hik-shadow-sm)',
+        md: 'var(--hik-shadow-md)',
+        lg: 'var(--hik-shadow-lg)',
+      },
     },
   },
   plugins: [],

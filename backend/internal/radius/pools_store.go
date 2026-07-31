@@ -7,6 +7,7 @@ package radius
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"net"
@@ -19,27 +20,52 @@ import (
 
 const poolExhaustionThreshold = 0.90
 
+// Pool ownership modes (FR-108, Decision 48). Mirrors nas_services'
+// management_mode vocabulary so the two read identically.
+const (
+	// poolModeSystem: HikRAD owns the pool — editable, deletable, pushable to a
+	// router. The column default, so every pre-v3-5 pool keeps today's behavior.
+	poolModeSystem = "system"
+	// poolModeRouter: adopted from a router — a read-only reference HikRAD
+	// never writes back.
+	poolModeRouter = "router"
+)
+
 type poolRow struct {
-	ID        string
-	Name      string
-	Ranges    []string
-	Purpose   string
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	ID   string
+	Name string
+	// ManagementMode (FR-108) is the router-ownership sync principle applied to
+	// pools (Decision 48), mirroring nas_services.management_mode:
+	//   "system" — HikRAD owns this pool: editable, deletable, pushable to a
+	//              router's /ip pool. The default, so every pre-v3-5 pool keeps
+	//              behaving exactly as it did.
+	//   "router" — adopted from a router: a READ-ONLY reference. HikRAD never
+	//              writes its ranges back, and edit/delete/push are refused.
+	ManagementMode string
+	Ranges         []string
+	// RouterRanges is the router's raw ranges string for an ADOPTED pool
+	// (e.g. "10.0.0.2-10.0.0.254"), recorded verbatim because RouterOS range
+	// syntax is not valid inet. Empty for HikRAD-owned pools.
+	RouterRanges string
+	Purpose      string
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
 }
 
 // poolView is the JSON read shape (C7-B) including utilization.
 type poolView struct {
-	ID          string    `json:"id"`
-	Name        string    `json:"name"`
-	Ranges      []string  `json:"ranges"`
-	Purpose     string    `json:"purpose"`
-	Size        int64     `json:"size"`
-	Used        int       `json:"used"`
-	UtilPercent float64   `json:"util_percent"`
-	Exhausted   bool      `json:"exhausted"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ID             string    `json:"id"`
+	Name           string    `json:"name"`
+	Ranges         []string  `json:"ranges"`
+	Purpose        string    `json:"purpose"`
+	ManagementMode string    `json:"management_mode"`
+	RouterRanges   string    `json:"router_ranges,omitempty"`
+	Size           int64     `json:"size"`
+	Used           int       `json:"used"`
+	UtilPercent    float64   `json:"util_percent"`
+	Exhausted      bool      `json:"exhausted"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
 }
 
 func (p poolRow) view(used int) poolView {
@@ -50,17 +76,18 @@ func (p poolRow) view(used int) poolView {
 	}
 	return poolView{
 		ID: p.ID, Name: p.Name, Ranges: p.Ranges, Purpose: p.Purpose,
+		ManagementMode: p.ManagementMode, RouterRanges: p.RouterRanges,
 		Size: size, Used: used, UtilPercent: util,
 		Exhausted: size > 0 && float64(used)/float64(size) >= poolExhaustionThreshold,
 		CreatedAt: p.CreatedAt.UTC(), UpdatedAt: p.UpdatedAt.UTC(),
 	}
 }
 
-const poolColumns = `id::text, name, ranges::text[], purpose, created_at, updated_at`
+const poolColumns = `id::text, name, ranges::text[], purpose, management_mode, COALESCE(router_ranges, ''), created_at, updated_at`
 
 func scanPool(row pgx.Row) (poolRow, error) {
 	var p poolRow
-	err := row.Scan(&p.ID, &p.Name, &p.Ranges, &p.Purpose, &p.CreatedAt, &p.UpdatedAt)
+	err := row.Scan(&p.ID, &p.Name, &p.Ranges, &p.Purpose, &p.ManagementMode, &p.RouterRanges, &p.CreatedAt, &p.UpdatedAt)
 	return p, err
 }
 
@@ -85,11 +112,41 @@ func getPool(ctx context.Context, db *pgxpool.Pool, id string) (poolRow, error) 
 	return scanPool(db.QueryRow(ctx, `SELECT `+poolColumns+` FROM ip_pools WHERE id = $1`, id))
 }
 
+// insertPool creates a HikRAD-owned pool. Anything created through the normal
+// CRUD surface is 'system' by definition — only adoptPool inserts a read-only
+// 'router' row (FR-108).
 func insertPool(ctx context.Context, db *pgxpool.Pool, name string, ranges []string, purpose string) (poolRow, error) {
 	return scanPool(db.QueryRow(ctx,
-		`INSERT INTO ip_pools (name, ranges, purpose) VALUES ($1, $2::inet[], $3)
+		`INSERT INTO ip_pools (name, ranges, purpose, management_mode)
+		 VALUES ($1, $2::inet[], $3, 'system')
 		 RETURNING `+poolColumns,
 		name, ranges, purpose))
+}
+
+// adoptPool records a pool that already exists on a router as a READ-ONLY
+// reference (FR-108 / Decision 48): HikRAD stores the name+ranges it observed
+// so operators can see and select it, but never writes them back. Adopting is
+// idempotent by name — re-running discovery refreshes an adopted pool's
+// observed ranges but never touches a 'system' pool the operator owns.
+func adoptPool(ctx context.Context, db *pgxpool.Pool, name, routerRanges string) (poolRow, bool, error) {
+	row, err := scanPool(db.QueryRow(ctx,
+		`INSERT INTO ip_pools (name, ranges, purpose, management_mode, router_ranges)
+		 VALUES ($1, '{}'::inet[], 'active', 'router', $2)
+		 ON CONFLICT (name) DO UPDATE
+		    SET router_ranges = EXCLUDED.router_ranges, updated_at = now()
+		  WHERE ip_pools.management_mode = 'router'
+		 RETURNING `+poolColumns,
+		name, routerRanges))
+	if errors.Is(err, pgx.ErrNoRows) {
+		// The name exists but is HikRAD-owned ('system'): the ON CONFLICT WHERE
+		// clause deliberately skipped it. Never silently convert an owned pool
+		// into a router-managed one.
+		return poolRow{}, false, nil
+	}
+	if err != nil {
+		return poolRow{}, false, err
+	}
+	return row, true, nil
 }
 
 func updatePool(ctx context.Context, db *pgxpool.Pool, id, name string, ranges []string, purpose string) (poolRow, error) {

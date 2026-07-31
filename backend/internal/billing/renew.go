@@ -257,7 +257,7 @@ func (m *Module) renewInTx(ctx context.Context, tx pgx.Tx, dbNow time.Time, p re
 	balanceDelta := int64(0)
 	if p.chargeBalance {
 		balanceDelta = -balanceAmount
-		bal, err := lockBalance(ctx, tx, p.actorManagerID, profCurrency)
+		bal, err := lockBalance(ctx, tx, p.actorManagerID)
 		if err != nil {
 			return renewResult{}, err
 		}
@@ -275,8 +275,7 @@ func (m *Module) renewInTx(ctx context.Context, tx pgx.Tx, dbNow time.Time, p re
 	// numbers instead of one number feeding both.
 	txID, err := insertLedger(ctx, tx, ledgerEntry{
 		Type:           p.ledgerType,
-		Amount:         balanceDelta,
-		Currency:       profCurrency,
+		Amount:         balanceDelta, // IQD (plans are IQD-only, FR-101.3)
 		ActorManagerID: p.actorManagerID,
 		SubscriberID:   p.subscriberID,
 		Source:         p.source,
@@ -288,7 +287,7 @@ func (m *Module) renewInTx(ctx context.Context, tx pgx.Tx, dbNow time.Time, p re
 		return renewResult{}, err
 	}
 	if p.chargeBalance {
-		if err := recomputeBalance(ctx, tx, p.actorManagerID, profCurrency); err != nil {
+		if err := recomputeBalance(ctx, tx, p.actorManagerID); err != nil {
 			return renewResult{}, err
 		}
 	}

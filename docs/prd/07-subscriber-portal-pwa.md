@@ -103,6 +103,32 @@ The subscriber-facing surface (**Noor**'s product) and two cross-cutting fronten
 - **FR-96.2** — Motion respects `prefers-reduced-motion` (transitions/animations degrade to instant or near-instant, matching the existing `.hk-quota__fill`/`.hk-spinner` CSS-only animation approach — no new animation library).
 - **FR-96.3** — Behavior-preserving by construction: this FR changes appearance and internal structure only. No endpoint, permission, data shape, or user-facing behavior changes ride along; any net-new user-visible string (e.g., a combobox empty-results message) ships trilingual in the same commit per NFR-6.1.
 
+### FR-97 (M) — v3-1: Design-system foundation (cross-cutting, panel + portal)
+
+**Master (Decision 53):** a real, documented design system built **in place** on the v2-12 control set — token layer, composed pattern library, and a written design-language doc — replacing ad-hoc Tailwind values with named, reviewable primitives. No parallel frontend, no framework change; the app stays shippable after every sub-phase.
+
+*Elaboration:*
+- **FR-97.1 — Token layer.** A named semantic token set (spacing scale, type scale, radii, elevation/shadow, plus the existing brand/surface/ink/state colors) expressed as CSS custom properties on the existing `--hik-*` base and surfaced through Tailwind's `theme.extend` — components reference token names, never raw values. Additive to `theme/tokens.css`; both `data-theme` themes carry every new token.
+- **FR-97.2 — Pattern library.** Composed components on top of the v2-12 controls: page shell (header/actions/breadcrumb slot), data table (sticky header, density, built-in empty/loading/error), **FilterBar** (search + typed removable chips — FR-98's subscriber-filter target), form-layout primitives (sections, field groups, two-column collapse) whose fields are **programmatically label-associated by construction** (closing the long-open `Field`-association gap, known-issues 2026-07-18), detail-page header, stat/tile cards, side-panel/confirmation patterns. Pure/presentational patterns live in `@hikrad/shared/ui`; patterns that compose the per-app form controls live in each app's `components/patterns/`.
+- **FR-97.3 — Design-language doc + gallery.** A written `design-language.md` (voice, density, motion respecting `prefers-reduced-motion`, when-to-use-which-pattern) and a dev-only `/design` gallery route rendering every pattern in both themes — the reviewable "does not look AI-built" surface (the human-taste checklist: no gradient-soup, no emoji-in-UI, consistent type/spacing, real product-voice empty states, all trilingual).
+
+### FR-98 (M) — v3-1: Screen-by-screen overhaul (cross-cutting, panel + portal)
+
+**Master (Decision 53):** every panel and portal screen adopts the FR-97 patterns, in a fixed batch order, behavior-preserving — no endpoint, permission, or i18n-key **semantics** change rides along without an explicitly amended contract.
+
+*Elaboration:*
+- **FR-98.1 — Subscribers first.** The subscriber list's row-of-bare-inputs filter becomes the FR-97 FilterBar: one search field + an add-a-filter menu producing removable typed chips (status/profile/owner/service/expiring), persisted per manager via the existing `usePersistentState`; the server round-trip and bulk semantics are unchanged (existing tests pass unmodified or with reviewed updates).
+- **FR-98.2 — Form-ordering pass.** Every create/edit form is re-grouped by task frequency — identity → service → billing → advanced — with rarely-used fields in a collapsed "Advanced" section; the per-form field-order spec is frozen in the phase brief before code.
+- **FR-98.3 — Batch order.** Foundation → subscribers+billing → NAS+monitoring → security/settings+account → portal (fixed in the execution plan). Each batch ends with the full frontend suite green and the app shippable.
+
+### FR-99 (S) — v3-1: Account area + dashboard-customization UX (panel)
+
+**Master (Decision 53):** a profile-centric "My account" area gathering the signed-in person's own screens, and a simplified dashboard-customization flow — both behavior-preserving (routes/permissions/server contracts unchanged; old routes redirect).
+
+*Elaboration:*
+- **FR-99.1 — Account area.** One "My account" section off the user menu gathering My security (2FA/sessions), My preferences, My payment methods, and — for admins — quick links into the administration settings that concern that person. Existing routes keep working via redirects; permission gating unchanged.
+- **FR-99.2 — Dashboard customization.** The edit-mode chip/arrow flow becomes direct manipulation — reorder (keyboard-accessible; the existing arrows remain the keyboard fallback), a single "Add widget" gallery with per-widget previews/descriptions, resize as a visible handle/toggle. The `?widgets=` API and the `dashboard_layout` preferences key are unchanged.
+
 **Acceptance (FR-94–96):**
 - **AC-94a** — Given the CI grep/lint gate, when a developer adds a bare `<select>`/`<input type="checkbox">`/`<input type="radio">` anywhere outside the component library, then CI fails.
 - **AC-94b** — Given a screen reader or keyboard-only user, when they operate any Select/Checkbox/Radio/Switch in either app, then focus order, ARIA roles, and keyboard activation match Radix's default (unregressed) behavior.
@@ -111,6 +137,11 @@ The subscriber-facing surface (**Noor**'s product) and two cross-cutting fronten
 - **AC-95b** — Given the `docs/ops/known-issues.md` 2026-07-17 layout row, when this phase's gate passes, then that row's Status is updated to reflect the fix (not deleted — append-only discipline).
 - **AC-96a** — Given `prefers-reduced-motion: reduce` is set, when any screen that previously animated a transition renders, then the motion is suppressed or reduced to a near-instant equivalent.
 - **AC-96b** — Given light and dark theme, when any screen in either app is viewed, then spacing, empty/loading states, and focus rings render consistently in both — no theme-specific visual regression.
+- **AC-97a** *(v3-1)* — Given the `/design` gallery, when it renders in light and dark, then every FR-97 pattern appears in both themes and en/ar/ku with no raw color/spacing value (tokens only); a form primitive's visible label is programmatically associated with its input (`for`/`id` or wrapping).
+- **AC-98a** *(v3-1)* — Given the subscribers FilterBar, when a manager sets filters and navigates away and back (or re-logs-in on the same device), then the chips are still applied and removable, and the bulk-action match set is unchanged from before the redesign (bulk tests pass).
+- **AC-98b** *(v3-1)* — Given any redesigned create/edit form, when it renders, then its field order matches the spec frozen in the phase brief and the Advanced section is collapsed by default.
+- **AC-99a** *(v3-1)* — Given any screen, when the user opens "My account", then My security / preferences / payment methods are reachable in ≤ 2 clicks and the pre-redesign routes still resolve (redirect).
+- **AC-99b** *(v3-1)* — Given dashboard edit mode, when a widget is added/reordered/resized, then each is ≤ 2 interactions, keyboard-operable, and the layout round-trips through `manager_preferences.dashboard_layout` unchanged (no server-contract change).
 
 ### NFR-6 (owned) — Localization (product-wide)
 **Master:** All UI strings externalized; Arabic and Kurdish Sorani with true RTL layout (mirrored navigation, charts LTR inside RTL pages); English as development baseline; numerals and currency per locale.

@@ -28,10 +28,18 @@ type uploadRequest struct {
 	Preset        string `json:"preset"`
 }
 
-// uploadHandler serves POST /api/v1/import/subscribers. Detects encoding/
-// delimiter, stores the decoded UTF-8 text + header, and — when a known
-// preset name is given — pre-fills column_map.
-func (m *Module) uploadHandler(w http.ResponseWriter, r *http.Request) {
+// uploadHandler serves POST /api/v1/import/{entity} (subscribers | profiles,
+// FR-111.3). Detects encoding/delimiter, stores the decoded UTF-8 text +
+// header, and — when a known preset name is given — pre-fills column_map. The
+// entity is bound at registration time (one closure per route) so it can never
+// be spoofed by the request body.
+func (m *Module) uploadHandler(entity string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		m.upload(w, r, entity)
+	}
+}
+
+func (m *Module) upload(w http.ResponseWriter, r *http.Request, entity string) {
 	var in uploadRequest
 	if !httpapi.Bind(w, r, &in) {
 		return
@@ -75,16 +83,16 @@ func (m *Module) uploadHandler(w http.ResponseWriter, r *http.Request) {
 	if filename == "" {
 		filename = "upload.csv"
 	}
-	id, err := insertBatch(r.Context(), m.db, filename, encoding, delim, []byte(text), headerRow, managerID(mgr))
+	id, err := insertBatch(r.Context(), m.db, entity, filename, encoding, delim, []byte(text), headerRow, managerID(mgr))
 	if err != nil {
 		m.internalError(w, "upload", err)
 		return
 	}
 
 	preset := strings.TrimSpace(in.Preset)
-	resp := map[string]any{"batch_id": id, "header": headerRow, "encoding": encoding, "status": "uploaded"}
+	resp := map[string]any{"batch_id": id, "entity": entity, "header": headerRow, "encoding": encoding, "status": "uploaded"}
 	if preset != "" {
-		if colMap := resolvePreset(preset, headerRow); colMap != nil {
+		if colMap := resolvePreset(entity, preset, headerRow); colMap != nil {
 			if err := updateColumnMap(r.Context(), m.db, id, colMap, preset); err != nil {
 				m.internalError(w, "upload preset map", err)
 				return
@@ -115,13 +123,17 @@ func (m *Module) mapHandler(w http.ResponseWriter, r *http.Request) {
 		m.internalError(w, "map load", err)
 		return
 	}
+	if !m.authorize(w, r, entityViewPerm(b.Entity)) {
+		return
+	}
 	var in mapRequest
 	if !httpapi.Bind(w, r, &in) {
 		return
 	}
+	fields := fieldsFor(b.Entity)
 	colMap := map[string]string{}
 	if in.Preset != "" {
-		if preset := resolvePreset(in.Preset, b.Header); preset != nil {
+		if preset := resolvePreset(b.Entity, in.Preset, b.Header); preset != nil {
 			for k, v := range preset {
 				colMap[k] = v
 			}
@@ -129,14 +141,14 @@ func (m *Module) mapHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	var fe []httpapi.FieldError
 	for field, src := range in.ColumnMap {
-		if !hikradFields[field] {
-			fe = append(fe, httpapi.FieldError{Field: "column_map." + field, Message: "unknown hikrad field"})
+		if !fields[field] {
+			fe = append(fe, httpapi.FieldError{Field: "column_map." + field, Message: "unknown field for this import"})
 			continue
 		}
 		colMap[field] = src
 	}
-	if colMap["username"] == "" {
-		fe = append(fe, httpapi.FieldError{Field: "column_map.username", Message: "username must be mapped"})
+	if req := requiredField(b.Entity); colMap[req] == "" {
+		fe = append(fe, httpapi.FieldError{Field: "column_map." + req, Message: req + " must be mapped"})
 	}
 	if len(fe) > 0 {
 		httpapi.Error(w, http.StatusUnprocessableEntity, "validation_failed", "request validation failed", fe...)
@@ -171,6 +183,9 @@ func (m *Module) dryRunHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		m.internalError(w, "dry-run load", err)
+		return
+	}
+	if !m.authorize(w, r, entityViewPerm(b.Entity)) {
 		return
 	}
 	if len(b.ColumnMap) == 0 {
@@ -211,6 +226,11 @@ func (m *Module) executeHandler(w http.ResponseWriter, r *http.Request) {
 		m.internalError(w, "execute load", err)
 		return
 	}
+	// Execute performs real creates: enforce the entity's create permission here
+	// (the route only authenticates). The self-dispatch re-checks it per row.
+	if !m.authorize(w, r, entityCreatePerm(b.Entity)) {
+		return
+	}
 	if b.Status != "dry_run" && b.Status != "completed" {
 		httpapi.Error(w, http.StatusUnprocessableEntity, "not_dry_run", "run dry-run before executing")
 		return
@@ -222,7 +242,7 @@ func (m *Module) executeHandler(w http.ResponseWriter, r *http.Request) {
 	authHeader := r.Header.Get("Authorization")
 	prog := m.jobs.start(id, b.RowCount)
 	_ = setBatchStatus(r.Context(), m.db, id, "executing")
-	go m.runExecute(id, authHeader, prog)
+	go m.runExecute(id, b.Entity, authHeader, prog)
 
 	httpapi.JSON(w, http.StatusAccepted, prog.snapshot())
 }
@@ -241,8 +261,11 @@ func (m *Module) batchStatusHandler(w http.ResponseWriter, r *http.Request) {
 		m.internalError(w, "status load", err)
 		return
 	}
+	if !m.authorize(w, r, entityViewPerm(b.Entity)) {
+		return
+	}
 	resp := map[string]any{
-		"batch_id": id, "status": b.Status, "filename": b.Filename, "encoding": b.Encoding,
+		"batch_id": id, "entity": b.Entity, "status": b.Status, "filename": b.Filename, "encoding": b.Encoding,
 		"header": b.Header, "column_map": b.ColumnMap, "preset": b.Preset,
 		"row_count": b.RowCount, "summary": b.Summary,
 	}

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # verify-bundle.sh — checksum + signature verification for a HikRAD release
 # bundle (FR-81.3, phase v2-5 C1/C2). Single source of truth for this check:
-# install.sh's --bundle mode, `hikrad update --bundle`, and
-# scripts/gate-v2-phase-5.sh all call this instead of re-implementing it.
+# install.sh's --bundle mode and `hikrad update --bundle` both call this
+# instead of re-implementing it.
 #
 # Usage: verify-bundle.sh <extracted-bundle-dir>
 #

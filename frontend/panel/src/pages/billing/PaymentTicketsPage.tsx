@@ -26,6 +26,7 @@ import { CopyButton } from '../../components/CopyButton'
 import { Field, Select, Textarea } from '../../components/form'
 import { Modal } from '../../components/Modal'
 import { PageHeader } from '../../components/PageHeader'
+import { Pill } from '../../components/Pill'
 import { useToast } from '../../components/Toast'
 import { useAsync } from '../../hooks/useAsync'
 
@@ -90,7 +91,7 @@ export function PaymentTicketsPage() {
       <PageHeader title={t('paymentTickets.title')} />
       <div className="mb-4 flex flex-wrap gap-4">
         <label className="block text-xs">
-          <span className="mb-1 block text-ink-muted">{t('paymentTickets.filter')}</span>
+          <span className="mb-1 block text-ink-muted">{t('paymentTickets.filter.label')}</span>
           <Select
             value={filter}
             onChange={(e) => setFilter(e.target.value as TicketState | '')}
@@ -104,7 +105,7 @@ export function PaymentTicketsPage() {
           </Select>
         </label>
         <label className="block text-xs">
-          <span className="mb-1 block text-ink-muted">{t('paymentTickets.scope')}</span>
+          <span className="mb-1 block text-ink-muted">{t('paymentTickets.scope.label')}</span>
           <Select value={scope} onChange={(e) => setScope(e.target.value as 'mine' | 'all')}>
             <option value="mine">{t('paymentTickets.scope.mine')}</option>
             <option value="all">{t('paymentTickets.scope.all')}</option>
@@ -171,9 +172,11 @@ export function PaymentTicketsPage() {
                       <button
                         type="button"
                         onClick={() => setDetailId(r.id)}
-                        className={`hover:underline ${r.state === 'approved' ? 'text-ok' : 'text-danger'}`}
+                        className="hover:opacity-80"
                       >
-                        {t(`paymentTickets.state.${r.state}`)}
+                        <Pill tone={r.state === 'approved' ? 'ok' : 'danger'}>
+                          {t(`paymentTickets.state.${r.state}`)}
+                        </Pill>
                       </button>
                     )}
                   </td>

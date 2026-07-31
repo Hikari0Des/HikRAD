@@ -115,11 +115,3 @@ func listSessions(ctx context.Context, db *pgxpool.Pool, managerID string) ([]se
 	}
 	return out, rows.Err()
 }
-
-// sessionOwner returns the manager_id owning a session, or pgx.ErrNoRows.
-func sessionOwner(ctx context.Context, db *pgxpool.Pool, sessionID string) (string, error) {
-	var owner string
-	err := db.QueryRow(ctx,
-		`SELECT manager_id::text FROM panel_sessions WHERE id = $1::uuid`, sessionID).Scan(&owner)
-	return owner, err
-}

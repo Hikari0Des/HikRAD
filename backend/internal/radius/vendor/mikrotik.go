@@ -53,9 +53,13 @@ func (mikrotikAdapter) Apply(p *radius.Packet, attrs []Attr) error {
 			if err := rfc2865.SessionTimeout_Set(p, rfc2865.SessionTimeout(secs)); err != nil {
 				return fmt.Errorf("mikrotik: set session-timeout: %w", err)
 			}
-		case IntentRedirectExpired:
-			// Adds the client to a MikroTik address-list the router's
-			// walled-garden/expired-redirect rules match on.
+		case IntentRedirectExpired, IntentAddressList:
+			// Adds the client to a MikroTik address-list. For redirect_expired
+			// this is the walled-garden list the router's expired-redirect
+			// rules match on; for address_list (FR-109) it is an operator-named
+			// list applied at a normal login. Same VSA either way — the two
+			// intents are emitted in mutually-exclusive outcome modes, so a
+			// single reply never carries both.
 			if err := mikrotik.MikrotikAddressList_SetString(p, a.Value); err != nil {
 				return fmt.Errorf("mikrotik: set address-list: %w", err)
 			}

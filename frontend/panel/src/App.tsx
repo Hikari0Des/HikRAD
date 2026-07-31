@@ -13,6 +13,7 @@ import {
   PERM_NAS_VIEW,
   PERM_POOLS_VIEW,
   PERM_PROFILES_VIEW,
+  PERM_PROFILES_CREATE,
   PERM_REPORTS_VIEW,
   PERM_SETTINGS_VIEW,
   PERM_OVERHEADS_MANAGE,
@@ -26,6 +27,7 @@ import { DashboardPage } from './pages/DashboardPage'
 import { LoginPage } from './pages/LoginPage'
 import { NotFoundPage } from './pages/NotFoundPage'
 import { RtlSmokePage } from './pages/RtlSmokePage'
+import { DesignGalleryPage } from './pages/DesignGalleryPage'
 import { CurrencyRatesPage } from './pages/billing/CurrencyRatesPage'
 import { LedgerPage } from './pages/billing/LedgerPage'
 import { MyPaymentMethodsPage } from './pages/billing/MyPaymentMethodsPage'
@@ -43,6 +45,7 @@ import { HealthPage } from './pages/monitoring/HealthPage'
 import { NasStatusPage } from './pages/monitoring/NasStatusPage'
 import { NasListPage } from './pages/nas/NasListPage'
 import { PoolsPage } from './pages/pools/PoolsPage'
+import { MyAccountPage } from './pages/MyAccountPage'
 import { MyPreferencesPage } from './pages/preferences/MyPreferencesPage'
 import { ProfilesPage } from './pages/profiles/ProfilesPage'
 import { DebugPage } from './pages/radius/DebugPage'
@@ -72,6 +75,11 @@ export function App() {
     <SetupGate>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
+        {/* Dev-only PUBLIC pattern gallery (no auth, no backend): review every
+            FR-97 pattern in both themes × 3 locales without a running stack.
+            Mounted only in `vite dev`/dev builds — never a public page in
+            production. The auth-guarded /dev/design below stays for logged-in use. */}
+        {import.meta.env.DEV && <Route path="/design" element={<DesignGalleryPage />} />}
         <Route
           element={
             <RequireAuth>
@@ -119,6 +127,10 @@ export function App() {
           />
           <Route path="reports/usage" element={guard(PERM_REPORTS_VIEW, <UsageReportPage />)} />
           <Route path="import" element={guard(PERM_SUBSCRIBERS_CREATE, <ImportWizardPage />)} />
+          <Route
+            path="import/profiles"
+            element={guard(PERM_PROFILES_CREATE, <ImportWizardPage entity="profiles" />)}
+          />
           <Route path="devices" element={guard(PERM_MONITORING_VIEW, <DevicesPage />)} />
           <Route
             path="devices/:id/status"
@@ -132,9 +144,11 @@ export function App() {
           <Route path="audit-log" element={guard(PERM_AUDIT_VIEW, <AuditLogPage />)} />
           <Route path="settings/*" element={guard(PERM_SETTINGS_VIEW, <SettingsPage />)} />
           <Route path="license" element={<LicensePage />} />
+          <Route path="me" element={<MyAccountPage />} />
           <Route path="account" element={<AccountSecurityPage />} />
           <Route path="preferences" element={<MyPreferencesPage />} />
           <Route path="dev/rtl-smoke" element={<RtlSmokePage />} />
+          <Route path="dev/design" element={<DesignGalleryPage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Routes>

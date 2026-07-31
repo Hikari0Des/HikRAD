@@ -17,7 +17,26 @@
   --hik-ink-inverse: 255 255 255;
 
   --hik-danger: 185 28 28;
+  --hik-warn: 180 83 9; /* amber-700 — enough contrast under white ink-inverse (FR-104 grace banner) */
   --hik-ok: 21 128 61;
+
+  /*
+   * v3-1 FR-97.1 design-system tokens. RADIUS values equal Tailwind's own
+   * defaults for the same key names, so overriding those keys centralizes them
+   * for future tuning WITHOUT shifting any existing rounded-* utility (zero
+   * visual change today). ELEVATION is the one deliberate refinement: the light
+   * shadows track Tailwind's, and the dark overrides (below) fix the
+   * long-standing near-invisible dark-mode shadow. Components reference these
+   * through the Tailwind radius and shadow utilities, never raw values.
+   */
+  --hik-radius-sm: 0.125rem;
+  --hik-radius-md: 0.375rem;
+  --hik-radius-lg: 0.5rem;
+  --hik-radius-xl: 0.75rem;
+
+  --hik-shadow-sm: 0 1px 2px 0 rgb(15 23 42 / 0.06);
+  --hik-shadow-md: 0 4px 6px -1px rgb(15 23 42 / 0.1), 0 2px 4px -2px rgb(15 23 42 / 0.1);
+  --hik-shadow-lg: 0 10px 15px -3px rgb(15 23 42 / 0.1), 0 4px 6px -4px rgb(15 23 42 / 0.1);
 }
 
 /*
@@ -40,5 +59,12 @@
   --hik-ink-inverse: 13 18 24;
 
   --hik-danger: 240 106 106;
+  --hik-warn: 245 176 80; /* lighter amber under dark ink-inverse (FR-104 grace banner) */
   --hik-ok: 84 205 132;
+
+  /* v3-1: deeper, softer shadows read correctly on dark surfaces. Radii are
+     theme-invariant, so only elevation is overridden here. */
+  --hik-shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.4);
+  --hik-shadow-md: 0 4px 12px -2px rgb(0 0 0 / 0.5), 0 2px 6px -2px rgb(0 0 0 / 0.4);
+  --hik-shadow-lg: 0 12px 32px -8px rgb(0 0 0 / 0.6), 0 6px 12px -6px rgb(0 0 0 / 0.45);
 }

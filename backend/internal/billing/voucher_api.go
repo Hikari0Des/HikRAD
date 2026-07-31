@@ -272,19 +272,19 @@ func (m *Module) voidBatchHandler(w http.ResponseWriter, r *http.Request) {
 	creditTx := ""
 	credit := unitPrice * int64(voided)
 	if credit > 0 && creator != nil && *creator != "" {
-		if _, err := lockBalance(ctx, tx, *creator, unitCurrency); err != nil {
+		if _, err := lockBalance(ctx, tx, *creator); err != nil {
 			m.internalError(w, "void lock", err)
 			return
 		}
 		creditTx, err = insertLedger(ctx, tx, ledgerEntry{
-			Type: "adjustment", Amount: credit, Currency: unitCurrency, ActorManagerID: *creator,
+			Type: "adjustment", Amount: credit, ActorManagerID: *creator,
 			Source: "voucher", Reference: id, Note: "voucher batch void (unused credit)",
 		})
 		if err != nil {
 			m.internalError(w, "void credit", err)
 			return
 		}
-		if err := recomputeBalance(ctx, tx, *creator, unitCurrency); err != nil {
+		if err := recomputeBalance(ctx, tx, *creator); err != nil {
 			m.internalError(w, "void recompute", err)
 			return
 		}

@@ -75,6 +75,14 @@ export function UserMenu() {
             </DropdownMenu.Item>
           ))}
           <DropdownMenu.Separator className="my-1 h-px bg-surface-sunken" />
+          {/* v3-1 FR-99.1: the account area gathers security/preferences/payment
+              methods; the direct Preferences link stays for the ≤2-click path. */}
+          <DropdownMenu.Item
+            onSelect={() => navigate('/me')}
+            className="cursor-pointer rounded px-3 py-2 text-sm outline-none data-[highlighted]:bg-brand-soft"
+          >
+            {t('user.account')}
+          </DropdownMenu.Item>
           <DropdownMenu.Item
             onSelect={() => navigate('/preferences')}
             className="cursor-pointer rounded px-3 py-2 text-sm outline-none data-[highlighted]:bg-brand-soft"

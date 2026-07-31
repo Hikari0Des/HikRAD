@@ -28,6 +28,25 @@ type licenseResponse struct {
 	Fingerprint       string     `json:"fingerprint"` // this server's current fingerprint
 	GraceStartedAt    *time.Time `json:"grace_started_at,omitempty"`
 	GraceExpiresAt    *time.Time `json:"grace_expires_at,omitempty"`
+
+	// FR-104: which fingerprint components match between the issued key and
+	// this server right now, so the UI can name what drifted for a re-issue.
+	// Nil until a license is installed and this server's fingerprint is known.
+	FingerprintMatch *fingerprintMatch `json:"fingerprint_match,omitempty"`
+
+	// FR-105: live subscriber count vs the licensed cap, so the panel can show
+	// a persistent renew/upgrade prompt in the warn band. Present only when the
+	// license carries a finite cap.
+	SubscriberCount *int `json:"subscriber_count,omitempty"`
+	OverCap         bool `json:"over_cap,omitempty"`
+	CapBlocked      bool `json:"cap_blocked,omitempty"`
+}
+
+// fingerprintMatch is the per-component drift view behind WithinTolerance.
+type fingerprintMatch struct {
+	MachineIDMatch  bool `json:"machine_id_match"`
+	MACMatch        bool `json:"mac_match"`
+	WithinTolerance bool `json:"within_tolerance"`
 }
 
 func currentFingerprintOrEmpty(log func(msg string, args ...any)) string {
@@ -59,6 +78,14 @@ func buildLicenseResponse(rec license.Record, installed bool, currentFP string) 
 	if exp := rec.GraceExpiresAt(); !exp.IsZero() {
 		resp.GraceExpiresAt = &exp
 	}
+	if currentFP != "" && rec.IssuedFingerprint != "" {
+		mid, mac := license.CompareComponents(rec.IssuedFingerprint, currentFP)
+		resp.FingerprintMatch = &fingerprintMatch{
+			MachineIDMatch:  mid,
+			MACMatch:        mac,
+			WithinTolerance: license.WithinTolerance(rec.IssuedFingerprint, currentFP),
+		}
+	}
 	return resp
 }
 
@@ -71,7 +98,21 @@ func getLicenseHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	fp := currentFingerprintOrEmpty(svc.log.Warn)
-	httpapi.JSON(w, http.StatusOK, buildLicenseResponse(rec, ok, fp))
+	resp := buildLicenseResponse(rec, ok, fp)
+	// FR-105: attach the live count vs cap so the panel can show a persistent
+	// renew/upgrade prompt. Only when the installed license has a finite cap.
+	if ok && platform.CachedLicenseMaxSubscribers() > 0 {
+		var n int
+		if err := svc.db.QueryRow(ctx, `SELECT COUNT(*) FROM subscribers`).Scan(&n); err != nil {
+			svc.log.Warn("license: subscriber count for cap status failed", "error", err)
+		} else {
+			st := platform.EvalSubscriberCap(n)
+			resp.SubscriberCount = &n
+			resp.OverCap = st.Over
+			resp.CapBlocked = st.Blocked
+		}
+	}
+	httpapi.JSON(w, http.StatusOK, resp)
 }
 
 // uploadLicenseHandler validates and installs a new license blob (FR-50.1,

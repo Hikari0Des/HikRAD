@@ -21,6 +21,12 @@ const (
 	IntentSessionTimeout  = "session_timeout"
 	IntentRedirectExpired = "redirect_expired"
 	IntentStaticIP        = "static_ip"
+	// IntentAddressList places a NORMAL login's IP into a named address-list
+	// (FR-109). It maps to the same MikroTik VSA as IntentRedirectExpired
+	// (Mikrotik-Address-List), but the two are emitted in mutually-exclusive
+	// outcome modes (normal vs expired-redirect), so a single accept never
+	// carries both.
+	IntentAddressList = "address_list"
 )
 
 // Attr is one abstract reply intent and its value.
@@ -163,6 +169,22 @@ type Adapter interface {
 	// names C7 must match exactly. Read-only: print sentences only, never
 	// add/set. Vendor-specific RouterOS paths/fields live only here (FR-17).
 	DiscoverServices(conn ROSConn) ([]DiscoveredService, error)
+	// ReadPools lists the router's IP pools (FR-108). Read-only, print only —
+	// the adopt flow's source, and how a "named in HikRAD, missing on the
+	// router" mismatch becomes visible.
+	ReadPools(conn ROSConn) ([]RouterPool, error)
+	// PPPoEPoolNames returns the set of IP-pool names the router's PPPoE service
+	// actually references (FR-108). On RouterOS a PPPoE client's address comes
+	// from the pool named by its PPP profile's remote-/local-address, so these
+	// are the only pools that belong to PPPoE — and thus the only ones the adopt
+	// flow should import (pools here are PPPoE-only; a DHCP/hotspot pool must not
+	// be swept in). Read-only, print only. Vendor RouterOS paths live only here.
+	PPPoEPoolNames(conn ROSConn) (map[string]bool, error)
+	// PlanPool produces the additive plan that reconciles the router's /ip pool
+	// with a HikRAD-OWNED pool (FR-108). Never called for a router-adopted pool
+	// — that refusal is enforced by the caller, which owns the ownership column.
+	// Plans only; the caller applies via ApplyAutoSetup after a hash match.
+	PlanPool(conn ROSConn, in PoolPushInput) (AutoSetupPlan, error)
 	// CheckHealth reports router-side configuration that will break HikRAD
 	// logins even though HikRAD itself is behaving correctly (FR-62.7). It is
 	// the answer to "RADIUS says accept and the user still can't get on" —

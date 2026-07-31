@@ -5,8 +5,12 @@
  */
 import { request } from './client'
 
+/** The import entity — which catalogue the wizard loads (FR-111.3). */
+export type ImportEntity = 'subscribers' | 'profiles'
+
 export interface UploadResult {
   batch_id: string
+  entity?: ImportEntity
   header: string[]
   encoding: string
   status: string
@@ -14,11 +18,12 @@ export interface UploadResult {
 }
 
 export function uploadImportFile(
+  entity: ImportEntity,
   filename: string,
   contentBase64: string,
   preset?: string,
 ): Promise<UploadResult> {
-  return request<UploadResult>('/import/subscribers', {
+  return request<UploadResult>(`/import/${entity}`, {
     method: 'POST',
     body: { filename, content_base64: contentBase64, preset },
   })
@@ -86,6 +91,7 @@ export interface ImportRowStatus extends ImportRowReport {
 
 export interface BatchStatus {
   batch_id: string
+  entity?: ImportEntity
   status: string
   filename: string
   encoding: string

@@ -461,3 +461,50 @@ func TestAuthorizeValidation(t *testing.T) {
 		t.Fatalf("bad service: status %d", rec.Code)
 	}
 }
+
+// TestAddressListEmittedOnNormalLogin covers FR-109: a profile/subscriber
+// address-list is emitted as the abstract address_list intent at a NORMAL
+// login. Empty ⇒ omitted entirely.
+func TestAddressListEmittedOnNormalLogin(t *testing.T) {
+	env := newTestEnv(t, "10.0.0.1")
+	v := baseView("s1", "pw")
+	v.AddressList = "vip-customers"
+	env.add("u", v)
+	resp := mustDecide(t, env, papReq("u", "pw"))
+	assertAccept(t, resp)
+	if got := attrMap(resp)[string(IntentAddressList)]; got != "vip-customers" {
+		t.Fatalf("expected address_list=vip-customers, got %q (%+v)", got, resp.Attributes)
+	}
+}
+
+func TestAddressListOmittedWhenUnset(t *testing.T) {
+	env := newTestEnv(t, "10.0.0.1")
+	env.add("u", baseView("s1", "pw"))
+	resp := mustDecide(t, env, papReq("u", "pw"))
+	assertAccept(t, resp)
+	if _, ok := attrMap(resp)[string(IntentAddressList)]; ok {
+		t.Fatalf("address_list must be omitted when unset, got %+v", resp.Attributes)
+	}
+}
+
+// TestAddressListNotEmittedForExpiredPool is the collision guard: expired
+// sessions already use Mikrotik-Address-List for the walled-garden redirect, so
+// the normal-login address_list intent must never ride along in that mode.
+func TestAddressListNotEmittedForExpiredPool(t *testing.T) {
+	env := newTestEnv(t, "10.0.0.1")
+	v := baseView("s1", "pw")
+	v.Status = "expired"
+	v.ExpiryBehavior = "expired_pool"
+	v.ExpiredPoolName = "walled"
+	v.AddressList = "vip-customers"
+	env.add("u", v)
+	resp := mustDecide(t, env, papReq("u", "pw"))
+	assertAccept(t, resp)
+	a := attrMap(resp)
+	if _, ok := a[string(IntentAddressList)]; ok {
+		t.Fatalf("address_list must not be emitted for an expired session: %+v", resp.Attributes)
+	}
+	if a[string(IntentRedirectExpired)] == "" {
+		t.Fatalf("expired redirect must still be emitted: %+v", resp.Attributes)
+	}
+}

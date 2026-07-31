@@ -117,9 +117,9 @@ func (m *Module) generateBatch(ctx context.Context, in batchInput, creatorID str
 		return "", nil, errProfileArchived
 	}
 
-	total := unitPrice * int64(in.Count)
+	total := unitPrice * int64(in.Count) // IQD (plans/vouchers are IQD-only, v3-2)
 	if creatorID != "" {
-		bal, err := lockBalance(ctx, tx, creatorID, unitCurrency)
+		bal, err := lockBalance(ctx, tx, creatorID)
 		if err != nil {
 			return "", nil, err
 		}
@@ -133,7 +133,6 @@ func (m *Module) generateBatch(ctx context.Context, in batchInput, creatorID str
 	genTx, err := insertLedger(ctx, tx, ledgerEntry{
 		Type:           "adjustment",
 		Amount:         -total,
-		Currency:       unitCurrency,
 		ActorManagerID: creatorID,
 		Source:         "voucher",
 		Note:           "voucher batch generation",
@@ -142,7 +141,7 @@ func (m *Module) generateBatch(ctx context.Context, in batchInput, creatorID str
 		return "", nil, err
 	}
 	if creatorID != "" {
-		if err := recomputeBalance(ctx, tx, creatorID, unitCurrency); err != nil {
+		if err := recomputeBalance(ctx, tx, creatorID); err != nil {
 			return "", nil, err
 		}
 	}

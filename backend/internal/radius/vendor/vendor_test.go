@@ -99,3 +99,28 @@ func TestSnippetNeedsServer(t *testing.T) {
 		t.Fatal("expected error without RADIUS server")
 	}
 }
+
+// TestMikrotikApplyAddressList covers FR-109's CoA half: the new address_list
+// intent encodes to the same Mikrotik-Address-List VSA the expired redirect
+// uses (the two are emitted in mutually-exclusive outcome modes upstream).
+func TestMikrotikApplyAddressList(t *testing.T) {
+	a := For("mikrotik")
+	p := radius.New(radius.CodeCoARequest, []byte("s"))
+	if err := a.Apply(p, []Attr{{Intent: IntentAddressList, Value: "vip-customers"}}); err != nil {
+		t.Fatal(err)
+	}
+	if got := mikrotik.MikrotikAddressList_GetString(p); got != "vip-customers" {
+		t.Fatalf("address-list = %q, want vip-customers", got)
+	}
+}
+
+func TestMikrotikApplyRedirectExpiredStillMapsAddressList(t *testing.T) {
+	a := For("mikrotik")
+	p := radius.New(radius.CodeCoARequest, []byte("s"))
+	if err := a.Apply(p, []Attr{{Intent: IntentRedirectExpired, Value: "expired"}}); err != nil {
+		t.Fatal(err)
+	}
+	if got := mikrotik.MikrotikAddressList_GetString(p); got != "expired" {
+		t.Fatalf("address-list = %q, want expired", got)
+	}
+}

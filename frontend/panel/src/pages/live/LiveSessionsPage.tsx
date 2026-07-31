@@ -13,7 +13,7 @@ import { PERM_DISCONNECT } from '../../auth/permissions'
 import { Button } from '../../components/Button'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
 import { PageHeader } from '../../components/PageHeader'
-import { Select, TextInput } from '../../components/form'
+import { FilterBar, type FilterField } from '../../components/patterns'
 import { VirtualList } from '../../components/VirtualList'
 import { useToast } from '../../components/Toast'
 import { useAsync } from '../../hooks/useAsync'
@@ -54,12 +54,48 @@ export function LiveSessionsPage() {
     service: '',
   })
   const { nasId, profileId, managerId, service } = persisted
-  const setNasId = (v: string) => setPersisted((p) => ({ ...p, nasId: v }))
-  const setProfileId = (v: string) => setPersisted((p) => ({ ...p, profileId: v }))
-  const setManagerId = (v: string) => setPersisted((p) => ({ ...p, managerId: v }))
-  const setService = (v: string) => setPersisted((p) => ({ ...p, service: v }))
   const [q, setQ] = useState('')
   const debouncedQ = useDebouncedValue(q.trim(), 300)
+
+  // #6/FR-98.1: the same chip FilterBar the Subscribers/Profiles boards use.
+  // Its values feed the SSE filterKey below unchanged, so the stream still
+  // re-subscribes (fresh snapshot) whenever a filter changes.
+  const filterFields: FilterField[] = useMemo(() => {
+    const f: FilterField[] = [
+      {
+        key: 'nasId',
+        label: t('live.col.nas'),
+        options: nasList.map((n) => ({ value: n.id, label: n.name })),
+      },
+      {
+        key: 'service',
+        label: t('live.col.service'),
+        options: [
+          { value: 'pppoe', label: t('live.service.pppoe') },
+          { value: 'hotspot', label: t('live.service.hotspot') },
+        ],
+      },
+      {
+        key: 'profileId',
+        label: t('users.filterProfile'),
+        options: profiles.map((p) => ({ value: p.id, label: p.name })),
+      },
+    ]
+    if (managers.length > 0) {
+      f.push({
+        key: 'managerId',
+        label: t('users.filterOwner'),
+        options: managers.map((m) => ({ value: m.id, label: m.username })),
+      })
+    }
+    return f
+  }, [t, nasList, profiles, managers])
+
+  const filterValues: Record<string, string> = {}
+  if (nasId) filterValues.nasId = nasId
+  if (service) filterValues.service = service
+  if (profileId) filterValues.profileId = profileId
+  if (managerId) filterValues.managerId = managerId
 
   const [sessions, setSessions] = useState<LiveSession[]>([])
   const [status, setStatus] = useState<'connecting' | 'live' | 'reconnecting'>('connecting')
@@ -121,61 +157,23 @@ export function LiveSessionsPage() {
         actions={<ConnectionBadge status={status} count={sorted.length} />}
       />
 
-      {/* Filters */}
-      <div className="mb-3 flex flex-wrap gap-2 rounded-md border border-surface-sunken bg-surface-raised p-3">
-        <TextInput
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder={t('live.searchPlaceholder')}
-          aria-label={t('live.search')}
-          className="max-w-xs"
-        />
-        <Select value={nasId} onChange={(e) => setNasId(e.target.value)} className="max-w-[10rem]">
-          <option value="">{t('live.allNas')}</option>
-          {nasList.map((n) => (
-            <option key={n.id} value={n.id}>
-              {n.name}
-            </option>
-          ))}
-        </Select>
-        {/* FR-63: filter by the session's own kind (a dual subscriber has both). */}
-        <Select
-          value={service}
-          onChange={(e) => setService(e.target.value)}
-          aria-label={t('live.col.service')}
-          className="max-w-[10rem]"
-        >
-          <option value="">{t('live.allServices')}</option>
-          <option value="pppoe">{t('live.service.pppoe')}</option>
-          <option value="hotspot">{t('live.service.hotspot')}</option>
-        </Select>
-        <Select
-          value={profileId}
-          onChange={(e) => setProfileId(e.target.value)}
-          className="max-w-[10rem]"
-        >
-          <option value="">{t('live.allProfiles')}</option>
-          {profiles.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-        </Select>
-        {managers.length > 0 && (
-          <Select
-            value={managerId}
-            onChange={(e) => setManagerId(e.target.value)}
-            className="max-w-[10rem]"
-          >
-            <option value="">{t('live.allManagers')}</option>
-            {managers.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.username}
-              </option>
-            ))}
-          </Select>
-        )}
-      </div>
+      {/* #6: chip FilterBar (search + add-a-filter → removable chips). Its values
+          drive the same SSE filterKey, so the stream re-subscribes on change. */}
+      <FilterBar
+        search={q}
+        onSearchChange={setQ}
+        searchPlaceholder={t('live.searchPlaceholder')}
+        fields={filterFields}
+        values={filterValues}
+        onChange={(v) =>
+          setPersisted({
+            nasId: v.nasId || '',
+            profileId: v.profileId || '',
+            managerId: v.managerId || '',
+            service: v.service || '',
+          })
+        }
+      />
 
       {/* Header row */}
       <div className="overflow-x-auto rounded-md border border-surface-sunken">

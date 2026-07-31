@@ -171,28 +171,99 @@ func machineID() (string, error) {
 	return "", errors.New("license: no machine-id source available")
 }
 
+// virtualIfacePrefixes name the software/tunnel interfaces the kernel exposes
+// with synthetic or all-zero MACs. They must never be chosen as the
+// fingerprint's "primary MAC": which of them exist is transient state (a VPN
+// raises gre0/erspan0/ip6tnl0, Docker raises veth*/docker0), and several sort
+// alphabetically *before* a real eth0/ens* NIC — so including them made the MAC
+// half of the fingerprint flap between the real NIC and a tunnel's
+// 00:00:00:00:00:00 every time the tunnel set changed, spuriously re-entering
+// grace mode on each flip (the exact symptom seen with an admin on VPN). See
+// docs/ops/known-issues.md 2026-07-24.
+var virtualIfacePrefixes = []string{
+	"erspan", "gre", "gretap", "ip6gre", "ip6tnl", "ip6_vti", "ip_vti", "vti",
+	"sit", "tunl", "tun", "tap", "wg", "vxlan", "bond", "dummy",
+	"docker", "veth", "br-", "virbr", "vmnet", "nlmon",
+}
+
+func macAllZero(mac net.HardwareAddr) bool {
+	for _, b := range mac {
+		if b != 0 {
+			return false
+		}
+	}
+	return true
+}
+
+// isVirtualIface reports whether an interface is a software/tunnel device that
+// must not anchor the fingerprint — an all-zero MAC or a known virtual name.
+func isVirtualIface(name string, mac net.HardwareAddr) bool {
+	if macAllZero(mac) {
+		return true
+	}
+	for _, p := range virtualIfacePrefixes {
+		if strings.HasPrefix(name, p) {
+			return true
+		}
+	}
+	return false
+}
+
 func primaryMAC() (string, error) {
 	ifaces, err := net.Interfaces()
 	if err != nil {
 		return "", err
 	}
-	var candidates []net.Interface
+	var physical, fallback []net.Interface
 	for _, i := range ifaces {
-		if i.Flags&net.FlagLoopback != 0 {
+		if i.Flags&net.FlagLoopback != 0 || len(i.HardwareAddr) == 0 {
 			continue
 		}
-		if len(i.HardwareAddr) == 0 {
-			continue
+		fallback = append(fallback, i)
+		if !isVirtualIface(i.Name, i.HardwareAddr) {
+			physical = append(physical, i)
 		}
-		candidates = append(candidates, i)
 	}
-	if len(candidates) == 0 {
+	// Prefer real NICs; only if none exist (a stripped container that has just
+	// a tunnel) fall back to any MAC-bearing interface rather than erroring —
+	// the host machine-id remains the fingerprint's stable anchor either way.
+	pick := physical
+	if len(pick) == 0 {
+		pick = fallback
+	}
+	if len(pick) == 0 {
 		return "", errors.New("license: no non-loopback interface with a MAC address")
 	}
 	// Deterministic choice: lowest interface name (eth0 before eth1, etc.) so
 	// the "primary" interface doesn't depend on kernel enumeration order.
-	sort.Slice(candidates, func(a, b int) bool { return candidates[a].Name < candidates[b].Name })
-	return candidates[0].HardwareAddr.String(), nil
+	sort.Slice(pick, func(a, b int) bool { return pick[a].Name < pick[b].Name })
+	return pick[0].HardwareAddr.String(), nil
+}
+
+// Components splits a fingerprint string into its two hashed halves
+// (machine-id hash, MAC hash). ok is false for a malformed fingerprint that
+// doesn't contain the separator. Used by the licensing UI (FR-104) to tell the
+// operator *which* component drifted when a re-issue is needed.
+func Components(fp string) (machineIDHash, macHash string, ok bool) {
+	parts := strings.SplitN(fp, componentSep, 2)
+	if len(parts) != 2 {
+		return "", "", false
+	}
+	return parts[0], parts[1], true
+}
+
+// CompareComponents reports which of the two fingerprint components match
+// between the stored (issued) and current fingerprints. A malformed input on
+// either side yields both-false. This is the per-component view behind
+// WithinTolerance (which tolerates up to one differing component), surfaced so
+// the License page can say "network card changed" vs "both changed — re-issue".
+func CompareComponents(stored, current string) (machineMatch, macMatch bool) {
+	sMid, sMac, sOK := Components(stored)
+	cMid, cMac, cOK := Components(current)
+	if !sOK || !cOK {
+		return false, false
+	}
+	return sMid == cMid, sMac == cMac
 }
 
 // WithinTolerance reports whether stored and current fingerprints are close

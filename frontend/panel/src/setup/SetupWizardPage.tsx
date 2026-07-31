@@ -19,10 +19,20 @@ import { Field, TextInput, Textarea } from '../components/form'
 import { useToast } from '../components/Toast'
 import { useAsync } from '../hooks/useAsync'
 import { NasWizardModal } from '../pages/nas/NasWizardModal'
-import { BrandingSettings } from '../pages/settings/BrandingSettings'
+import { BrandingSettings, type BrandingSettingsHandle } from '../pages/settings/BrandingSettings'
 
 type Step = 'license' | 'admin' | 'branding' | 'nas' | 'profile' | 'done'
 const STEP_ORDER: Step[] = ['license', 'admin', 'branding', 'nas', 'profile', 'done']
+
+// FR-106.1: which step Back returns to, offered only where it's safe. Omitted
+// on purpose: 'license' (first), 'branding' (its prior step 'admin' is a
+// dead-end once the admin exists — guardSetupOpen would 403 a re-submit), and
+// 'done'. So Back appears on admin→license, nas→branding, profile→nas.
+const BACK_TARGET: Partial<Record<Step, Step>> = {
+  admin: 'license',
+  nas: 'branding',
+  profile: 'nas',
+}
 
 /**
  * First-run wizard (FR-49.3, contract C4): license → admin → branding → first
@@ -39,11 +49,14 @@ export function SetupWizardPage({ onSetupComplete }: { onSetupComplete: () => vo
   const [step, setStep] = useState<Step>(
     () => (localStorage.getItem('hikrad:setup:step') as Step) || 'license',
   )
+  const brandingRef = useRef<BrandingSettingsHandle>(null)
 
   function go(next: Step) {
     setStep(next)
     localStorage.setItem('hikrad:setup:step', next)
   }
+
+  const backTarget = BACK_TARGET[step]
 
   function finish() {
     localStorage.removeItem('hikrad:setup:step')
@@ -62,6 +75,14 @@ export function SetupWizardPage({ onSetupComplete }: { onSetupComplete: () => vo
       <p className="mb-6 text-sm text-ink-muted">{t('setup.subtitle')}</p>
       <StepDots step={step} />
 
+      {backTarget ? (
+        <div className="mb-3">
+          <Button variant="ghost" size="sm" onClick={() => go(backTarget)}>
+            ← {t('ui.back')}
+          </Button>
+        </div>
+      ) : null}
+
       {step === 'license' && <LicenseStep onNext={() => go('admin')} />}
       {step === 'admin' && (
         <AdminStep
@@ -73,9 +94,18 @@ export function SetupWizardPage({ onSetupComplete }: { onSetupComplete: () => vo
       )}
       {step === 'branding' && (
         <div>
-          <BrandingSettings />
+          <BrandingSettings ref={brandingRef} hideSaveButton />
           <div className="mt-4">
-            <Button onClick={() => go('nas')}>{t('ui.next')}</Button>
+            {/* FR-106.2: persist the name/colors here — the wizard's own Next
+                must save, or nothing ever writes branding.name. */}
+            <Button
+              onClick={async () => {
+                await brandingRef.current?.save()
+                go('nas')
+              }}
+            >
+              {t('ui.next')}
+            </Button>
           </div>
         </div>
       )}

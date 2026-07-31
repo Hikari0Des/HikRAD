@@ -63,7 +63,7 @@ export function RevenueReportPage() {
       <div className="flex flex-wrap items-end justify-between gap-3">
         <DateRangeFilter range={range} />
         <label className="mb-4 text-xs print:hidden">
-          <span className="mb-1 block text-ink-muted">{t('reports.groupBy')}</span>
+          <span className="mb-1 block text-ink-muted">{t('reports.groupBy.label')}</span>
           <Select value={groupBy} onChange={(e) => setGroupBy(e.target.value)}>
             {GROUP_BYS.map((g) => (
               <option key={g} value={g}>

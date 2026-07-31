@@ -48,6 +48,13 @@ export function testNotification(
 
 export type LicenseState = 'valid' | 'grace' | 'expired_grace'
 
+/** FR-104: which fingerprint components match between the issued key and this server now. */
+export interface FingerprintMatch {
+  machine_id_match: boolean
+  mac_match: boolean
+  within_tolerance: boolean
+}
+
 export interface LicenseResponse {
   installed: boolean
   state: LicenseState | 'valid'
@@ -60,6 +67,12 @@ export interface LicenseResponse {
   fingerprint: string
   grace_started_at?: string
   grace_expires_at?: string
+  /** FR-104: per-component fingerprint drift, present once a license is installed. */
+  fingerprint_match?: FingerprintMatch
+  /** FR-105: live subscriber count vs the licensed cap (finite-cap licenses only). */
+  subscriber_count?: number
+  over_cap?: boolean
+  cap_blocked?: boolean
 }
 
 export function getLicense(): Promise<LicenseResponse> {

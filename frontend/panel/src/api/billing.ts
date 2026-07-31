@@ -110,18 +110,9 @@ export function createCurrencyRate(body: {
   return request<CurrencyRate>('/currency-rates', { method: 'POST', body })
 }
 
-export function exchangeManagerBalance(
-  id: string,
-  body: { from_currency: string; to_currency: string; amount: number; currency_rate_id: string },
-): Promise<{
-  exchange_reference: string
-  from_ledger_tx_id: string
-  to_ledger_tx_id: string
-  from_balance: number
-  to_balance: number
-}> {
-  return touchingBalance(request(`/managers/${id}/exchange`, { method: 'POST', body }))
-}
+// v3-2 (FR-100.3): exchangeManagerBalance is retired — the book is a single IQD
+// balance, so foreign amounts convert to IQD at entry (topup), never via a
+// wallet-to-wallet exchange.
 
 // --- ledger (FR-24) ---------------------------------------------------------
 

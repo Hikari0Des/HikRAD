@@ -398,6 +398,12 @@ func (e *engine) replyIntents(view AuthView, instance serviceRow, hotspot bool, 
 	} else if !hotspot {
 		add(IntentAddressPool, view.PoolName)
 	}
+
+	// FR-109: an operator-named address-list for a NORMAL/throttled login. This
+	// tail is never reached by modeExpiredPool (it returns above), so this
+	// intent never collides with the redirect's use of the same MikroTik VSA.
+	// Empty ⇒ omitted (add skips empty values).
+	add(IntentAddressList, view.AddressList)
 	return attrs
 }
 

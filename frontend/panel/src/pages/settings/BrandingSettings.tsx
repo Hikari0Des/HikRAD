@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { forwardRef, useImperativeHandle, useRef, useState } from 'react'
 
 import { LoadingState, useT } from '@hikrad/shared'
 
@@ -17,7 +17,25 @@ import { useSettingsGroup } from './useSettingsGroup'
  * rejected by this screen's own name/color save (see
  * validateServerManagedFields on the backend), so it is never part of the
  * `submit()` body below. */
-export function BrandingSettings() {
+/** Imperative handle so a host (the first-run wizard) can persist the name/colors
+ * from its own Next button — FR-106.2, fixing the branding-name-not-saved bug. */
+export interface BrandingSettingsHandle {
+  save: () => Promise<void>
+}
+
+export const BrandingSettings = forwardRef<BrandingSettingsHandle, { hideSaveButton?: boolean }>(
+  function BrandingSettings({ hideSaveButton }, ref) {
+    return <BrandingSettingsInner hideSaveButton={hideSaveButton} handleRef={ref} />
+  },
+)
+
+function BrandingSettingsInner({
+  hideSaveButton,
+  handleRef,
+}: {
+  hideSaveButton?: boolean
+  handleRef: React.ForwardedRef<BrandingSettingsHandle>
+}) {
   const t = useT()
   const { can } = useAuth()
   const { toast } = useToast()
@@ -25,6 +43,10 @@ export function BrandingSettings() {
   const g = useSettingsGroup('branding')
   const fileRef = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState(false)
+
+  // Expose save() to a host (the wizard) — invoked every render so it always
+  // closes over the latest values, never a stale snapshot.
+  useImperativeHandle(handleRef, () => ({ save: submit }))
 
   if (!g.loaded) return <LoadingState />
 
@@ -155,7 +177,7 @@ export function BrandingSettings() {
           className="h-9 w-16 rounded border border-surface-sunken"
         />
       </Field>
-      {canEdit ? (
+      {canEdit && !hideSaveButton ? (
         <Button disabled={g.saving} onClick={() => void submit()}>
           {g.saving ? t('ui.working') : t('ui.save')}
         </Button>
