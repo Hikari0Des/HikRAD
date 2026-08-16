@@ -8,7 +8,8 @@ import { useAuth } from '../../auth/AuthContext'
 import { PERM_LICENSE_MANAGE } from '../../auth/permissions'
 import { Button } from '../../components/Button'
 import { CopyButton } from '../../components/CopyButton'
-import { Field, TextInput, Textarea } from '../../components/form'
+import { TextInput, Textarea } from '../../components/form'
+import { FormField } from '../../components/patterns'
 import { PageHeader } from '../../components/PageHeader'
 import { useToast } from '../../components/Toast'
 import { useLicense } from '../../license/LicenseContext'
@@ -166,21 +167,27 @@ export function LicensePage() {
           <div className="mb-6 space-y-3 rounded-md border border-surface-sunken p-4">
             <h2 className="text-sm font-semibold">{t('license.upload.title')}</h2>
             <input type="file" accept=".json" onChange={(e) => void onFile(e)} />
-            <Field label={t('license.upload.payload')}>
-              <Textarea
-                rows={4}
-                dir="ltr"
-                value={payload}
-                onChange={(e) => setPayload(e.target.value)}
-              />
-            </Field>
-            <Field label={t('license.upload.signature')}>
-              <TextInput
-                dir="ltr"
-                value={signature}
-                onChange={(e) => setSignature(e.target.value)}
-              />
-            </Field>
+            <FormField label={t('license.upload.payload')}>
+              {(id) => (
+                <Textarea
+                  id={id}
+                  rows={4}
+                  dir="ltr"
+                  value={payload}
+                  onChange={(e) => setPayload(e.target.value)}
+                />
+              )}
+            </FormField>
+            <FormField label={t('license.upload.signature')}>
+              {(id) => (
+                <TextInput
+                  id={id}
+                  dir="ltr"
+                  value={signature}
+                  onChange={(e) => setSignature(e.target.value)}
+                />
+              )}
+            </FormField>
             <Button disabled={busy || !payload || !signature} onClick={() => void submitUpload()}>
               {busy ? t('ui.working') : t('license.upload.submit')}
             </Button>

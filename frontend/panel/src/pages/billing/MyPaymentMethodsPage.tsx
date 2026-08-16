@@ -19,7 +19,8 @@ import {
 import { useAuth } from '../../auth/AuthContext'
 import { PERM_PAYMENT_PROVIDERS_MANAGE } from '../../auth/permissions'
 import { Button } from '../../components/Button'
-import { Checkbox, Field, TextInput } from '../../components/form'
+import { Checkbox, TextInput } from '../../components/form'
+import { FormField } from '../../components/patterns'
 import { PageHeader } from '../../components/PageHeader'
 import { useToast } from '../../components/Toast'
 import { useAsync } from '../../hooks/useAsync'
@@ -292,15 +293,24 @@ function ProviderAccountCard({
         onChange={(e) => void toggle(e.target.checked)}
       />
       <div className="mt-2 grid gap-2 sm:grid-cols-2">
-        <Field
+        <FormField
           label={t('myPaymentMethods.accountDetails')}
           hint={t('myPaymentMethods.accountDetailsHint')}
         >
-          <TextInput dir="ltr" value={details} onChange={(e) => setDetails(e.target.value)} />
-        </Field>
-        <Field label={t('myPaymentMethods.instructionsOverride')}>
-          <TextInput value={instructions} onChange={(e) => setInstructions(e.target.value)} />
-        </Field>
+          {(id) => (
+            <TextInput
+              id={id}
+              dir="ltr"
+              value={details}
+              onChange={(e) => setDetails(e.target.value)}
+            />
+          )}
+        </FormField>
+        <FormField label={t('myPaymentMethods.instructionsOverride')}>
+          {(id) => (
+            <TextInput id={id} value={instructions} onChange={(e) => setInstructions(e.target.value)} />
+          )}
+        </FormField>
       </div>
       <Button
         className="mt-3"

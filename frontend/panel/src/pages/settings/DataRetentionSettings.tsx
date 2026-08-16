@@ -3,7 +3,8 @@ import { LoadingState, useT } from '@hikrad/shared'
 import { useAuth } from '../../auth/AuthContext'
 import { PERM_SETTINGS_EDIT } from '../../auth/permissions'
 import { Button } from '../../components/Button'
-import { Field, TextInput } from '../../components/form'
+import { TextInput } from '../../components/form'
+import { FormField } from '../../components/patterns'
 import { useSettingsGroup } from './useSettingsGroup'
 
 /** Data retention (FR-33): raw/rollup periods, with floor explanations. */
@@ -27,34 +28,40 @@ export function DataRetentionSettings() {
 
   return (
     <div className="max-w-md space-y-4">
-      <Field
+      <FormField
         label={t('settings.retention.rawMonths')}
         hint={t('settings.retention.rawMonthsFloor')}
         error={g.errors.raw_months}
       >
-        <TextInput
-          type="number"
-          dir="ltr"
-          min={12}
-          disabled={!canEdit}
-          value={v.raw_months ?? 12}
-          onChange={(e) => g.setField('raw_months', Number(e.target.value))}
-        />
-      </Field>
-      <Field
+        {(id) => (
+          <TextInput
+            id={id}
+            type="number"
+            dir="ltr"
+            min={12}
+            disabled={!canEdit}
+            value={v.raw_months ?? 12}
+            onChange={(e) => g.setField('raw_months', Number(e.target.value))}
+          />
+        )}
+      </FormField>
+      <FormField
         label={t('settings.retention.rollupYears')}
         hint={t('settings.retention.rollupYearsFloor')}
         error={g.errors.rollup_years}
       >
-        <TextInput
-          type="number"
-          dir="ltr"
-          min={3}
-          disabled={!canEdit}
-          value={v.rollup_years ?? 3}
-          onChange={(e) => g.setField('rollup_years', Number(e.target.value))}
-        />
-      </Field>
+        {(id) => (
+          <TextInput
+            id={id}
+            type="number"
+            dir="ltr"
+            min={3}
+            disabled={!canEdit}
+            value={v.rollup_years ?? 3}
+            onChange={(e) => g.setField('rollup_years', Number(e.target.value))}
+          />
+        )}
+      </FormField>
       {canEdit ? (
         <Button disabled={g.saving} onClick={() => void submit()}>
           {g.saving ? t('ui.working') : t('ui.save')}

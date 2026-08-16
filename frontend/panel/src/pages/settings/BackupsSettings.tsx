@@ -4,8 +4,9 @@ import { listBackups } from '../../api/setup'
 import { useAuth } from '../../auth/AuthContext'
 import { PERM_SETTINGS_EDIT } from '../../auth/permissions'
 import { Button } from '../../components/Button'
-import { Field, TextInput } from '../../components/form'
+import { TextInput } from '../../components/form'
 import { useAsync } from '../../hooks/useAsync'
+import { FormField } from '../../components/patterns'
 import { useSettingsGroup } from './useSettingsGroup'
 
 const STALE_HOURS = 30
@@ -57,38 +58,47 @@ export function BackupsSettings() {
           {t('settings.backups.never')}
         </div>
       )}
-      <Field
+      <FormField
         label={t('settings.backups.scheduleHour')}
         hint={t('settings.backups.scheduleHourHint')}
         error={g.errors.schedule_hour}
       >
-        <TextInput
-          type="number"
-          dir="ltr"
-          min={0}
-          max={23}
-          disabled={!canEdit}
-          value={v.schedule_hour ?? 3}
-          onChange={(e) => g.setField('schedule_hour', Number(e.target.value))}
-        />
-      </Field>
-      <Field label={t('settings.backups.retentionCount')} error={g.errors.retention_count}>
-        <TextInput
-          type="number"
-          dir="ltr"
-          disabled={!canEdit}
-          value={v.retention_count ?? 14}
-          onChange={(e) => g.setField('retention_count', Number(e.target.value))}
-        />
-      </Field>
-      <Field label={t('settings.backups.path')} error={g.errors.path}>
-        <TextInput
-          dir="ltr"
-          disabled={!canEdit}
-          value={v.path ?? ''}
-          onChange={(e) => g.setField('path', e.target.value)}
-        />
-      </Field>
+        {(id) => (
+          <TextInput
+            id={id}
+            type="number"
+            dir="ltr"
+            min={0}
+            max={23}
+            disabled={!canEdit}
+            value={v.schedule_hour ?? 3}
+            onChange={(e) => g.setField('schedule_hour', Number(e.target.value))}
+          />
+        )}
+      </FormField>
+      <FormField label={t('settings.backups.retentionCount')} error={g.errors.retention_count}>
+        {(id) => (
+          <TextInput
+            id={id}
+            type="number"
+            dir="ltr"
+            disabled={!canEdit}
+            value={v.retention_count ?? 14}
+            onChange={(e) => g.setField('retention_count', Number(e.target.value))}
+          />
+        )}
+      </FormField>
+      <FormField label={t('settings.backups.path')} error={g.errors.path}>
+        {(id) => (
+          <TextInput
+            id={id}
+            dir="ltr"
+            disabled={!canEdit}
+            value={v.path ?? ''}
+            onChange={(e) => g.setField('path', e.target.value)}
+          />
+        )}
+      </FormField>
       {canEdit ? (
         <Button disabled={g.saving} onClick={() => void submit()}>
           {g.saving ? t('ui.working') : t('ui.save')}
