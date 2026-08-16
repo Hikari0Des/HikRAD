@@ -10,8 +10,9 @@ import {
 } from '../../api/preferences'
 import { ApiError } from '../../api/client'
 import { Button } from '../../components/Button'
-import { Checkbox, Field, Select, TextInput } from '../../components/form'
+import { Checkbox, Select, TextInput } from '../../components/form'
 import { PageHeader } from '../../components/PageHeader'
+import { FormField } from '../../components/patterns'
 import { useToast } from '../../components/Toast'
 import { useAsync } from '../../hooks/useAsync'
 
@@ -127,63 +128,78 @@ export function MyPreferencesPage() {
       <PageHeader title={t('preferences.title')} subtitle={t('preferences.hint')} />
 
       <div className="grid gap-4 rounded-md border border-surface-sunken bg-surface-raised p-4 sm:grid-cols-2">
-        <Field label={t('preferences.language')} error={errors.language}>
-          <Select value={form.language} onChange={(e) => set('language', e.target.value)}>
-            <option value="">{t('preferences.unsetOption')}</option>
-            {LANGUAGES.map((l) => (
-              <option key={l} value={l}>
-                {t(`languages.${l}`)}
-              </option>
-            ))}
-          </Select>
-        </Field>
-        <Field label={t('preferences.theme')} error={errors.theme}>
-          <Select value={form.theme} onChange={(e) => set('theme', e.target.value)}>
-            <option value="">{t('preferences.unsetOption')}</option>
-            {THEME_PREFERENCES.map((th) => (
-              <option key={th} value={th}>
-                {t(`common.theme.${th}`)}
-              </option>
-            ))}
-          </Select>
-        </Field>
-        <Field
+        <FormField label={t('preferences.language')} error={errors.language}>
+          {(id) => (
+            <Select id={id} value={form.language} onChange={(e) => set('language', e.target.value)}>
+              <option value="">{t('preferences.unsetOption')}</option>
+              {LANGUAGES.map((l) => (
+                <option key={l} value={l}>
+                  {t(`languages.${l}`)}
+                </option>
+              ))}
+            </Select>
+          )}
+        </FormField>
+        <FormField label={t('preferences.theme')} error={errors.theme}>
+          {(id) => (
+            <Select id={id} value={form.theme} onChange={(e) => set('theme', e.target.value)}>
+              <option value="">{t('preferences.unsetOption')}</option>
+              {THEME_PREFERENCES.map((th) => (
+                <option key={th} value={th}>
+                  {t(`common.theme.${th}`)}
+                </option>
+              ))}
+            </Select>
+          )}
+        </FormField>
+        <FormField
           label={t('preferences.numerals')}
           hint={t('preferences.numeralsHint')}
           error={errors.numerals}
         >
-          <Select value={form.numerals} onChange={(e) => set('numerals', e.target.value)}>
-            <option value="">{t('preferences.unsetOption')}</option>
-            {NUMERALS.map((n) => (
-              <option key={n} value={n}>
-                {t(`preferences.numeralsValue.${n}`)}
-              </option>
-            ))}
-          </Select>
-        </Field>
-        <Field label={t('preferences.tablePageSize')} error={errors.table_page_size}>
-          <Select value={form.tablePageSize} onChange={(e) => set('tablePageSize', e.target.value)}>
-            <option value="">{t('preferences.unsetOption')}</option>
-            {TABLE_PAGE_SIZES.map((n) => (
-              <option key={n} value={n}>
-                {n}
-              </option>
-            ))}
-          </Select>
-        </Field>
+          {(id) => (
+            <Select id={id} value={form.numerals} onChange={(e) => set('numerals', e.target.value)}>
+              <option value="">{t('preferences.unsetOption')}</option>
+              {NUMERALS.map((n) => (
+                <option key={n} value={n}>
+                  {t(`preferences.numeralsValue.${n}`)}
+                </option>
+              ))}
+            </Select>
+          )}
+        </FormField>
+        <FormField label={t('preferences.tablePageSize')} error={errors.table_page_size}>
+          {(id) => (
+            <Select
+              id={id}
+              value={form.tablePageSize}
+              onChange={(e) => set('tablePageSize', e.target.value)}
+            >
+              <option value="">{t('preferences.unsetOption')}</option>
+              {TABLE_PAGE_SIZES.map((n) => (
+                <option key={n} value={n}>
+                  {n}
+                </option>
+              ))}
+            </Select>
+          )}
+        </FormField>
         <div className="sm:col-span-2">
-          <Field
+          <FormField
             label={t('preferences.landingPage')}
             hint={t('preferences.landingPageHint')}
             error={errors.landing_page}
           >
-            <TextInput
-              value={form.landingPage}
-              dir="ltr"
-              placeholder={t('preferences.landingPagePlaceholder')}
-              onChange={(e) => set('landingPage', e.target.value)}
-            />
-          </Field>
+            {(id) => (
+              <TextInput
+                id={id}
+                value={form.landingPage}
+                dir="ltr"
+                placeholder={t('preferences.landingPagePlaceholder')}
+                onChange={(e) => set('landingPage', e.target.value)}
+              />
+            )}
+          </FormField>
         </div>
       </div>
 

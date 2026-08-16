@@ -6,7 +6,8 @@ import { ApiError } from '../../api/client'
 import { useAuth } from '../../auth/AuthContext'
 import { PERM_SETTINGS_EDIT } from '../../auth/permissions'
 import { Button } from '../../components/Button'
-import { Checkbox, Field, Select, TextInput } from '../../components/form'
+import { Checkbox, Select, TextInput } from '../../components/form'
+import { FormField } from '../../components/patterns'
 import { useSettingsGroup } from './useSettingsGroup'
 
 /** Billing defaults (FR-53.1) + card-payment types/cooldown (FR-59 amendment). */
@@ -44,20 +45,23 @@ export function BillingSettings() {
 
   return (
     <div className="max-w-md space-y-4">
-      <Field
+      <FormField
         label={t('settings.billing.renewalAnchor')}
         hint={t('settings.billing.renewalAnchorHint')}
         error={g.errors.renewal_anchor}
       >
-        <Select
-          disabled={!canEdit}
-          value={v.renewal_anchor ?? 'from_expiry'}
-          onChange={(e) => g.setField('renewal_anchor', e.target.value)}
-        >
-          <option value="from_expiry">{t('settings.billing.anchor.fromExpiry')}</option>
-          <option value="from_now">{t('settings.billing.anchor.fromNow')}</option>
-        </Select>
-      </Field>
+        {(id) => (
+          <Select
+            id={id}
+            disabled={!canEdit}
+            value={v.renewal_anchor ?? 'from_expiry'}
+            onChange={(e) => g.setField('renewal_anchor', e.target.value)}
+          >
+            <option value="from_expiry">{t('settings.billing.anchor.fromExpiry')}</option>
+            <option value="from_now">{t('settings.billing.anchor.fromNow')}</option>
+          </Select>
+        )}
+      </FormField>
       <Checkbox
         label={t('settings.billing.adminBypass')}
         description={t('settings.billing.adminBypassHint')}
@@ -65,33 +69,42 @@ export function BillingSettings() {
         checked={v.admin_balance_bypass ?? false}
         onChange={(e) => g.setField('admin_balance_bypass', e.target.checked)}
       />
-      <Field label={t('settings.billing.receiptPrefix')} error={g.errors.receipt_prefix}>
-        <TextInput
-          dir="ltr"
-          disabled={!canEdit}
-          value={v.receipt_prefix ?? ''}
-          onChange={(e) => g.setField('receipt_prefix', e.target.value)}
-        />
-      </Field>
-      <Field label={t('settings.billing.voucherPrefix')} error={g.errors.voucher_prefix}>
-        <TextInput
-          dir="ltr"
-          disabled={!canEdit}
-          value={v.voucher_prefix ?? ''}
-          onChange={(e) => g.setField('voucher_prefix', e.target.value)}
-        />
-      </Field>
-      <Field label={t('settings.billing.receiptNumerals')} error={g.errors.receipt_numerals}>
-        <Select
-          disabled={!canEdit}
-          value={v.receipt_numerals ?? 'auto'}
-          onChange={(e) => g.setField('receipt_numerals', e.target.value)}
-        >
-          <option value="auto">{t('settings.billing.numerals.auto')}</option>
-          <option value="latn">{t('settings.billing.numerals.latn')}</option>
-          <option value="arab">{t('settings.billing.numerals.arab')}</option>
-        </Select>
-      </Field>
+      <FormField label={t('settings.billing.receiptPrefix')} error={g.errors.receipt_prefix}>
+        {(id) => (
+          <TextInput
+            id={id}
+            dir="ltr"
+            disabled={!canEdit}
+            value={v.receipt_prefix ?? ''}
+            onChange={(e) => g.setField('receipt_prefix', e.target.value)}
+          />
+        )}
+      </FormField>
+      <FormField label={t('settings.billing.voucherPrefix')} error={g.errors.voucher_prefix}>
+        {(id) => (
+          <TextInput
+            id={id}
+            dir="ltr"
+            disabled={!canEdit}
+            value={v.voucher_prefix ?? ''}
+            onChange={(e) => g.setField('voucher_prefix', e.target.value)}
+          />
+        )}
+      </FormField>
+      <FormField label={t('settings.billing.receiptNumerals')} error={g.errors.receipt_numerals}>
+        {(id) => (
+          <Select
+            id={id}
+            disabled={!canEdit}
+            value={v.receipt_numerals ?? 'auto'}
+            onChange={(e) => g.setField('receipt_numerals', e.target.value)}
+          >
+            <option value="auto">{t('settings.billing.numerals.auto')}</option>
+            <option value="latn">{t('settings.billing.numerals.latn')}</option>
+            <option value="arab">{t('settings.billing.numerals.arab')}</option>
+          </Select>
+        )}
+      </FormField>
       <Checkbox
         label={t('settings.billing.receiptBranding')}
         disabled={!canEdit}
@@ -184,18 +197,21 @@ function CardPaymentFields({
     <div className="mt-8 border-t border-surface-sunken pt-6">
       <h2 className="mb-3 text-sm font-semibold">{t('settings.billing.cardPayments')}</h2>
       <div className="space-y-4">
-        <Field
+        <FormField
           label={t('settings.billing.cardTypes')}
           hint={t('settings.billing.cardTypesHint')}
           error={errors.types}
         >
-          <TextInput
-            dir="ltr"
-            disabled={!canEdit}
-            value={typesText}
-            onChange={(e) => setTypesText(e.target.value)}
-          />
-        </Field>
+          {(id) => (
+            <TextInput
+              id={id}
+              dir="ltr"
+              disabled={!canEdit}
+              value={typesText}
+              onChange={(e) => setTypesText(e.target.value)}
+            />
+          )}
+        </FormField>
         {canEdit ? (
           <Button disabled={saving} onClick={() => onSubmit(typesText)}>
             {saving ? t('ui.working') : t('ui.save')}

@@ -6,7 +6,8 @@ import { testNotification, type NotificationChannel } from '../../api/setup'
 import { useAuth } from '../../auth/AuthContext'
 import { PERM_SETTINGS_EDIT } from '../../auth/permissions'
 import { Button } from '../../components/Button'
-import { Field, TextInput } from '../../components/form'
+import { TextInput } from '../../components/form'
+import { FormField } from '../../components/patterns'
 import { useToast } from '../../components/Toast'
 import { useSettingsGroup } from './useSettingsGroup'
 
@@ -47,88 +48,112 @@ export function NotificationsSettings() {
       <section>
         <h2 className="mb-3 text-sm font-semibold">{t('settings.notifications.email')}</h2>
         <div className="grid gap-3 sm:grid-cols-2">
-          <Field label={t('settings.notifications.smtpHost')}>
-            <TextInput
-              dir="ltr"
-              disabled={!canEdit}
-              value={smtp.host ?? ''}
-              onChange={(e) => g.setField('smtp', { ...smtp, host: e.target.value })}
-            />
-          </Field>
-          <Field label={t('settings.notifications.smtpPort')}>
-            <TextInput
-              type="number"
-              dir="ltr"
-              disabled={!canEdit}
-              value={smtp.port ?? ''}
-              onChange={(e) => g.setField('smtp', { ...smtp, port: Number(e.target.value) })}
-            />
-          </Field>
-          <Field label={t('settings.notifications.smtpUsername')}>
-            <TextInput
-              dir="ltr"
-              disabled={!canEdit}
-              value={smtp.username ?? ''}
-              onChange={(e) => g.setField('smtp', { ...smtp, username: e.target.value })}
-            />
-          </Field>
-          <Field label={t('settings.notifications.smtpPassword')}>
-            <TextInput
-              type="password"
-              dir="ltr"
-              disabled={!canEdit}
-              value={smtp.password ?? ''}
-              onChange={(e) => g.setField('smtp', { ...smtp, password: e.target.value })}
-            />
-          </Field>
-          <Field label={t('settings.notifications.smtpFrom')}>
-            <TextInput
-              dir="ltr"
-              disabled={!canEdit}
-              value={smtp.from ?? ''}
-              onChange={(e) => g.setField('smtp', { ...smtp, from: e.target.value })}
-            />
-          </Field>
+          <FormField label={t('settings.notifications.smtpHost')}>
+            {(id) => (
+              <TextInput
+                id={id}
+                dir="ltr"
+                disabled={!canEdit}
+                value={smtp.host ?? ''}
+                onChange={(e) => g.setField('smtp', { ...smtp, host: e.target.value })}
+              />
+            )}
+          </FormField>
+          <FormField label={t('settings.notifications.smtpPort')}>
+            {(id) => (
+              <TextInput
+                id={id}
+                type="number"
+                dir="ltr"
+                disabled={!canEdit}
+                value={smtp.port ?? ''}
+                onChange={(e) => g.setField('smtp', { ...smtp, port: Number(e.target.value) })}
+              />
+            )}
+          </FormField>
+          <FormField label={t('settings.notifications.smtpUsername')}>
+            {(id) => (
+              <TextInput
+                id={id}
+                dir="ltr"
+                disabled={!canEdit}
+                value={smtp.username ?? ''}
+                onChange={(e) => g.setField('smtp', { ...smtp, username: e.target.value })}
+              />
+            )}
+          </FormField>
+          <FormField label={t('settings.notifications.smtpPassword')}>
+            {(id) => (
+              <TextInput
+                id={id}
+                type="password"
+                dir="ltr"
+                disabled={!canEdit}
+                value={smtp.password ?? ''}
+                onChange={(e) => g.setField('smtp', { ...smtp, password: e.target.value })}
+              />
+            )}
+          </FormField>
+          <FormField label={t('settings.notifications.smtpFrom')}>
+            {(id) => (
+              <TextInput
+                id={id}
+                dir="ltr"
+                disabled={!canEdit}
+                value={smtp.from ?? ''}
+                onChange={(e) => g.setField('smtp', { ...smtp, from: e.target.value })}
+              />
+            )}
+          </FormField>
         </div>
         <TestSendRow channel="email" />
       </section>
 
       <section>
         <h2 className="mb-3 text-sm font-semibold">{t('settings.notifications.telegram')}</h2>
-        <Field label={t('settings.notifications.botToken')}>
-          <TextInput
-            dir="ltr"
-            disabled={!canEdit}
-            value={telegram.bot_token ?? ''}
-            onChange={(e) => g.setField('telegram', { ...telegram, bot_token: e.target.value })}
-          />
-        </Field>
+        <FormField label={t('settings.notifications.botToken')}>
+          {(id) => (
+            <TextInput
+              id={id}
+              dir="ltr"
+              disabled={!canEdit}
+              value={telegram.bot_token ?? ''}
+              onChange={(e) => g.setField('telegram', { ...telegram, bot_token: e.target.value })}
+            />
+          )}
+        </FormField>
         <TestSendRow channel="telegram" />
       </section>
 
       <section>
         <h2 className="mb-3 text-sm font-semibold">{t('settings.notifications.whatsapp')}</h2>
         <div className="grid gap-3 sm:grid-cols-2">
-          <Field label={t('settings.notifications.accessToken')}>
-            <TextInput
-              dir="ltr"
-              disabled={!canEdit}
-              value={whatsapp.access_token ?? ''}
-              onChange={(e) =>
-                g.setField('whatsapp', { ...whatsapp, access_token: e.target.value })
-              }
-            />
-          </Field>
-          <Field label={t('settings.notifications.phoneNumberId')}>
-            <TextInput
-              dir="ltr"
-              disabled={!canEdit}
-              value={whatsapp.phone_number_id ?? ''}
-              onChange={(e) =>
-                g.setField('whatsapp', { ...whatsapp, phone_number_id: e.target.value })
-              }
-            />
-          </Field>
+          <FormField label={t('settings.notifications.accessToken')}>
+            {(id) => (
+              <TextInput
+                id={id}
+                dir="ltr"
+                disabled={!canEdit}
+                value={whatsapp.access_token ?? ''}
+                onChange={(e) =>
+                  g.setField('whatsapp', { ...whatsapp, access_token: e.target.value })
+                }
+              />
+            )}
+          </FormField>
+          <FormField label={t('settings.notifications.phoneNumberId')}>
+            {(id) => (
+              <TextInput
+                id={id}
+                dir="ltr"
+                disabled={!canEdit}
+                value={whatsapp.phone_number_id ?? ''}
+                onChange={(e) =>
+                  g.setField('whatsapp', { ...whatsapp, phone_number_id: e.target.value })
+                }
+              />
+            )}
+          </FormField>
         </div>
         <TestSendRow channel="whatsapp" />
       </section>

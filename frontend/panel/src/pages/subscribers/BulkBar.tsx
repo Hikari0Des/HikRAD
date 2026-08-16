@@ -10,7 +10,8 @@ import { useAuth } from '../../auth/AuthContext'
 import { PERM_EXPORT } from '../../auth/permissions'
 import { Button } from '../../components/Button'
 import { Modal } from '../../components/Modal'
-import { Field, Select, TextInput } from '../../components/form'
+import { Select, TextInput } from '../../components/form'
+import { FormField } from '../../components/patterns'
 import { useToast } from '../../components/Toast'
 
 /**
@@ -270,57 +271,67 @@ function BulkPrompt({
           </div>
         )}
         {action === 'disable' && (
-          <Field label={t('bulk.disabledReason')}>
-            <TextInput value={reason} onChange={(e) => setReason(e.target.value)} />
-          </Field>
+          <FormField label={t('bulk.disabledReason')}>
+            {(id) => <TextInput id={id} value={reason} onChange={(e) => setReason(e.target.value)} />}
+          </FormField>
         )}
         {action === 'change_profile' && (
-          <Field label={t('subscriber.profile')}>
-            <Select value={profileId} onChange={(e) => setProfileId(e.target.value)}>
-              <option value="">{t('ui.choose')}</option>
-              {profiles.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </Select>
-          </Field>
+          <FormField label={t('subscriber.profile')}>
+            {(id) => (
+              <Select id={id} value={profileId} onChange={(e) => setProfileId(e.target.value)}>
+                <option value="">{t('ui.choose')}</option>
+                {profiles.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </Select>
+            )}
+          </FormField>
         )}
         {action === 'extend_expiry' && (
-          <Field label={t('bulk.days')}>
-            <TextInput
-              type="number"
-              value={days}
-              onChange={(e) => setDays(e.target.value)}
-              dir="ltr"
-            />
-          </Field>
+          <FormField label={t('bulk.days')}>
+            {(id) => (
+              <TextInput
+                id={id}
+                type="number"
+                value={days}
+                onChange={(e) => setDays(e.target.value)}
+                dir="ltr"
+              />
+            )}
+          </FormField>
         )}
         {action === 'move_owner' && (
-          <Field label={t('subscriber.owner')}>
-            <Select value={ownerId} onChange={(e) => setOwnerId(e.target.value)}>
-              <option value="">{t('ui.choose')}</option>
-              {managers.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.username}
-                </option>
-              ))}
-            </Select>
-          </Field>
+          <FormField label={t('subscriber.owner')}>
+            {(id) => (
+              <Select id={id} value={ownerId} onChange={(e) => setOwnerId(e.target.value)}>
+                <option value="">{t('ui.choose')}</option>
+                {managers.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.username}
+                  </option>
+                ))}
+              </Select>
+            )}
+          </FormField>
         )}
         {action === 'set_service_type' && (
-          <Field label={t('subscriber.serviceType')}>
-            <Select
-              value={serviceType}
-              onChange={(e) => setServiceType(e.target.value as ServiceType)}
-            >
-              {SERVICE_TYPES.map((v) => (
-                <option key={v} value={v}>
-                  {t(`serviceType.${v}`)}
-                </option>
-              ))}
-            </Select>
-          </Field>
+          <FormField label={t('subscriber.serviceType')}>
+            {(id) => (
+              <Select
+                id={id}
+                value={serviceType}
+                onChange={(e) => setServiceType(e.target.value as ServiceType)}
+              >
+                {SERVICE_TYPES.map((v) => (
+                  <option key={v} value={v}>
+                    {t(`serviceType.${v}`)}
+                  </option>
+                ))}
+              </Select>
+            )}
+          </FormField>
         )}
         <div className="flex justify-end gap-2 pt-2">
           <Button variant="ghost" onClick={onCancel}>

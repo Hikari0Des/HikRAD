@@ -7,7 +7,8 @@ import { ApiError } from '../../api/client'
 import { useAuth } from '../../auth/AuthContext'
 import { PERM_SETTINGS_EDIT } from '../../auth/permissions'
 import { Button } from '../../components/Button'
-import { Field, TextInput } from '../../components/form'
+import { TextInput } from '../../components/form'
+import { FormField } from '../../components/patterns'
 import { useToast } from '../../components/Toast'
 import { useSettingsGroup } from './useSettingsGroup'
 
@@ -104,79 +105,91 @@ function BrandingSettingsInner({
 
   return (
     <div className="max-w-md space-y-4">
-      <Field label={t('settings.branding.name')} error={g.errors.name}>
-        <TextInput
-          disabled={!canEdit}
-          value={v.name ?? ''}
-          onChange={(e) => g.setField('name', e.target.value)}
-        />
-      </Field>
-      <Field
+      <FormField label={t('settings.branding.name')} error={g.errors.name}>
+        {(id) => (
+          <TextInput
+            id={id}
+            disabled={!canEdit}
+            value={v.name ?? ''}
+            onChange={(e) => g.setField('name', e.target.value)}
+          />
+        )}
+      </FormField>
+      <FormField
         label={t('settings.branding.logo')}
         hint={t('settings.branding.logoHint')}
         error={g.errors.logo_url}
       >
-        <div className="flex items-center gap-3">
-          <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-md border border-surface-sunken bg-surface">
-            {v.logo_url ? (
-              <img
-                src={v.logo_url}
-                alt={t('settings.branding.logo')}
-                className="h-full w-full object-contain"
-              />
-            ) : (
-              <span className="text-xs text-ink-muted">{t('settings.branding.noLogo')}</span>
-            )}
-          </div>
-          {canEdit ? (
-            <>
-              <input
-                ref={fileRef}
-                type="file"
-                accept="image/png,image/svg+xml,image/jpeg"
-                className="hidden"
-                onChange={(e) => void onLogoChosen(e)}
-              />
-              <Button
-                variant="secondary"
-                size="sm"
-                disabled={uploading}
-                onClick={() => fileRef.current?.click()}
-              >
-                {uploading ? t('ui.working') : t('settings.branding.upload')}
-              </Button>
+        {(id) => (
+          <div className="flex items-center gap-3">
+            <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-md border border-surface-sunken bg-surface">
               {v.logo_url ? (
+                <img
+                  src={v.logo_url}
+                  alt={t('settings.branding.logo')}
+                  className="h-full w-full object-contain"
+                />
+              ) : (
+                <span className="text-xs text-ink-muted">{t('settings.branding.noLogo')}</span>
+              )}
+            </div>
+            {canEdit ? (
+              <>
+                <input
+                  id={id}
+                  ref={fileRef}
+                  type="file"
+                  accept="image/png,image/svg+xml,image/jpeg"
+                  className="hidden"
+                  onChange={(e) => void onLogoChosen(e)}
+                />
                 <Button
-                  variant="ghost"
+                  variant="secondary"
                   size="sm"
                   disabled={uploading}
-                  onClick={() => void onRemoveLogo()}
+                  onClick={() => fileRef.current?.click()}
                 >
-                  {t('ui.remove')}
+                  {uploading ? t('ui.working') : t('settings.branding.upload')}
                 </Button>
-              ) : null}
-            </>
-          ) : null}
-        </div>
-      </Field>
-      <Field label={t('settings.branding.primaryColor')} error={g.errors.primary_color}>
-        <input
-          type="color"
-          disabled={!canEdit}
-          value={v.primary_color ?? '#08748f'}
-          onChange={(e) => g.setField('primary_color', e.target.value)}
-          className="h-9 w-16 rounded border border-surface-sunken"
-        />
-      </Field>
-      <Field label={t('settings.branding.secondaryColor')} error={g.errors.secondary_color}>
-        <input
-          type="color"
-          disabled={!canEdit}
-          value={v.secondary_color ?? '#0f172a'}
-          onChange={(e) => g.setField('secondary_color', e.target.value)}
-          className="h-9 w-16 rounded border border-surface-sunken"
-        />
-      </Field>
+                {v.logo_url ? (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={uploading}
+                    onClick={() => void onRemoveLogo()}
+                  >
+                    {t('ui.remove')}
+                  </Button>
+                ) : null}
+              </>
+            ) : null}
+          </div>
+        )}
+      </FormField>
+      <FormField label={t('settings.branding.primaryColor')} error={g.errors.primary_color}>
+        {(id) => (
+          <input
+            id={id}
+            type="color"
+            disabled={!canEdit}
+            value={v.primary_color ?? '#08748f'}
+            onChange={(e) => g.setField('primary_color', e.target.value)}
+            className="h-9 w-16 rounded border border-surface-sunken"
+          />
+        )}
+      </FormField>
+      <FormField label={t('settings.branding.secondaryColor')} error={g.errors.secondary_color}>
+        {(id) => (
+          <input
+            id={id}
+            type="color"
+            disabled={!canEdit}
+            value={v.secondary_color ?? '#0f172a'}
+            onChange={(e) => g.setField('secondary_color', e.target.value)}
+            className="h-9 w-16 rounded border border-surface-sunken"
+          />
+        )}
+      </FormField>
       {canEdit && !hideSaveButton ? (
         <Button disabled={g.saving} onClick={() => void submit()}>
           {g.saving ? t('ui.working') : t('ui.save')}
