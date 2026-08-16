@@ -10,7 +10,7 @@ export { DIRS, INTL_LOCALE, intlLocale, isLocale, LOCALES } from './i18n/locales
 export type { Dir, Locale, Numerals } from './i18n/locales'
 
 // Formatting (NFR-6.3; formatMoney is contract C8 / FR-70.1)
-export { formatDate, formatIQD, formatMoney, formatNumber } from './format/format'
+export { formatDate, formatMoney, formatNumber } from './format/format'
 export { formatRateKbps, normalizeRatePair, parseRateKbps } from './format/rate'
 export type { CurrencyCode, FormatDateOptions, FormatOptions } from './format/format'
 export { useFormatters } from './format/useFormatters'

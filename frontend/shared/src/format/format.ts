@@ -50,15 +50,6 @@ export function formatMoney(
   }
 }
 
-/**
- * Contract C8: IQD currency formatting (IQD has no minor unit in practice).
- * Thin wrapper over formatMoney kept so every v1 call site keeps compiling —
- * byte-identical output for the same arguments (AC-70a regression lock).
- */
-export function formatIQD(amount: number, locale: Locale = 'en', opts: FormatOptions = {}): string {
-  return formatMoney(amount, 'IQD', locale, opts)
-}
-
 export interface FormatDateOptions extends FormatOptions {
   dateStyle?: Intl.DateTimeFormatOptions['dateStyle']
   timeStyle?: Intl.DateTimeFormatOptions['timeStyle']

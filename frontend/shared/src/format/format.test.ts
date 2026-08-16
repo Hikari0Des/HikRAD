@@ -1,46 +1,34 @@
 import { describe, expect, it } from 'vitest'
 
-import { formatDate, formatIQD, formatMoney, formatNumber } from './format'
+import { formatDate, formatMoney, formatNumber } from './format'
 
 const EASTERN = /[٠-٩]/
 const WESTERN = /[0-9]/
 
-describe('formatIQD', () => {
+// AC-70a regression lock (v2 phase 4, contract C8): formatMoney(amount, 'IQD', ...)
+// covers every case the old dedicated formatIQD wrapper (retired v4-0, FR-114 —
+// formatMoney fully generalized it) used to assert directly.
+describe('formatMoney (AC-70a regression lock + multi-currency)', () => {
   it('formats IQD with no minor unit in en', () => {
-    const out = formatIQD(15000, 'en')
+    const out = formatMoney(15000, 'IQD', 'en')
     expect(out).toContain('IQD')
     expect(out).toMatch(/15,000/)
   })
 
-  it('uses Eastern Arabic numerals when forced (NFR-6.3)', () => {
-    const out = formatIQD(15000, 'ar', { numerals: 'arab' })
+  it('uses Eastern Arabic numerals for IQD when forced (NFR-6.3)', () => {
+    const out = formatMoney(15000, 'IQD', 'ar', { numerals: 'arab' })
     expect(out).toMatch(EASTERN)
     expect(out).not.toMatch(WESTERN)
   })
 
-  it('uses Western numerals when forced to latn', () => {
-    const out = formatIQD(15000, 'ar', { numerals: 'latn' })
+  it('uses Western numerals for IQD when forced to latn', () => {
+    const out = formatMoney(15000, 'IQD', 'ar', { numerals: 'latn' })
     expect(out).toMatch(WESTERN)
     expect(out).not.toMatch(EASTERN)
   })
 
   it('defaults to en', () => {
-    expect(formatIQD(500)).toContain('IQD')
-  })
-})
-
-// AC-70a regression lock (v2 phase 4, contract C8): formatMoney(amount, 'IQD', ...)
-// must be byte-identical to formatIQD's output for every case above.
-describe('formatMoney (AC-70a regression lock + multi-currency)', () => {
-  it('is byte-identical to formatIQD for IQD, every existing case', () => {
-    expect(formatMoney(15000, 'IQD', 'en')).toBe(formatIQD(15000, 'en'))
-    expect(formatMoney(15000, 'IQD', 'ar', { numerals: 'arab' })).toBe(
-      formatIQD(15000, 'ar', { numerals: 'arab' }),
-    )
-    expect(formatMoney(15000, 'IQD', 'ar', { numerals: 'latn' })).toBe(
-      formatIQD(15000, 'ar', { numerals: 'latn' }),
-    )
-    expect(formatMoney(500, 'IQD')).toBe(formatIQD(500))
+    expect(formatMoney(500, 'IQD')).toContain('IQD')
   })
 
   it('formats USD with 2 minor-unit digits in en', () => {

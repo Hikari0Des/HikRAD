@@ -1,6 +1,6 @@
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
 
-import { Ltr, formatDate, formatIQD, useLocale, useT } from '@hikrad/shared'
+import { Ltr, formatDate, formatMoney, useLocale, useT } from '@hikrad/shared'
 
 import { LanguageSwitcher } from '../components/LanguageSwitcher'
 
@@ -41,7 +41,7 @@ export function RtlSmokePage() {
           <Ltr className="font-mono">ali99</Ltr>
           <Ltr className="font-mono">AA:BB:CC:11:22:33</Ltr>
           <Ltr className="font-mono">10.5.1.77</Ltr>
-          <span>{formatIQD(25000, locale)}</span>
+          <span>{formatMoney(25000, 'IQD', locale)}</span>
           <span>{formatDate(new Date('2026-01-15T12:00:00Z'), locale)}</span>
         </p>
       </div>
