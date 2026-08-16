@@ -195,6 +195,19 @@ Stack (fixed by master §8): Go backend (`hikrad-api`, `hikrad-acct`, `hikrad-mo
 - **AC-106b** — Given a fresh install **and** an upgraded pre-existing install, when a logo is uploaded in first-run or Settings, then the write succeeds (the branding dir exists, owned by uid 10001) with no `mkdir`/permission error.
 - **AC-106c** — Given any wizard step where Back is offered, when Back is pressed, then the wizard returns to the prior step without data loss or a dead-end (no admin-recreate 403).
 
+### FR-114 (M) — v4: Ground clearing
+
+**Master (Decisions 60, 68):** repository, documentation, and dead-code consolidation, run first in the v4 program because two of its items are urgent (the public canonical repo) or block every later phase (126 planning docs, an 8,000-word `CLAUDE.md`).
+
+*Elaboration:*
+- **FR-114.1** — Repository privacy (Decision 60). The canonical repo (`Hikari0Des/HikRAD`) is flipped to Private, confirmed by an anonymous clone/raw-URL failure, and every key/token reachable while it was public is rotated. This session's own environment has no `gh` CLI, no GitHub token, and no outbound access to `api.github.com` — the flip and rotation are a manual owner action; the exact runbook is recorded in `docs/history/gates/v4-0.md`, not silently marked done.
+- **FR-114.2** — Documentation consolidation (Decision 68). `docs/history.md` (one row per shipped v1/v2/v3 phase — FRs, migrations, gate link, outcome) replaces the narrative that lived in `CLAUDE.md`; every `gate-result.md` moves unchanged to `docs/history/gates/<phase-id>.md`; the 13 status-agent files and ~22 per-agent task files (describing the multi-agent model Decision 25 abandoned) are deleted; `docs/v2/`/`docs/v3/`'s remaining briefs and phase docs are deleted once folded into `docs/history.md`.
+- **FR-114.3** — `CLAUDE.md` rewrite to invariants and pointers only (target under 150 lines) — what the project is, the document hierarchy, commands, current architecture invariants, the migration-numbering rule, and a pointer to `docs/history.md`. No inline program history.
+- **FR-114.4** — `docs/ops/known-issues.md` gains a required Status (Open/Wontfix/Closed) on every row, with every Open row assigned an owning v4 phase (a row with none is a planning bug). Adds a new Open row, security severity, for the checked-in FreeRADIUS private keys under `deploy/freeradius/certs/`, owned by v4-3 (FR-127).
+- **FR-114.5** — Dead-code deletion, one commit per unit, suite green either side: the panel's remaining `Field` call sites migrated to `FormField` (closing the accessibility gap `known-issues.md` has carried since Phase 1) then the unsafe `Field` path deleted; retired-feature remnants (the e-wallet gateway surface v2-2 already retired at the route level, `allow_hotspot`/`nas.type`/`card_payments`, pre-v3-2 per-currency wallet code, `formatIQD`); `scripts/render-release-compose.sh`. `deploy/compose.yml`/`deploy/docker/`/`deploy/caddy/` are inventoried only — deletion is v4-2's (FR-119).
+
+**Acceptance:** the 9 gate items in `docs/v4/phases/phase-v4-0-ground-clearing/00-phase.md` §5, verified in `docs/history/gates/v4-0.md`.
+
 ### NFR-3 (owned) — Hardware footprint
 Runs fully on one modest server: **4 vCPU / 8 GB RAM / 200 GB SSD** for the 5k-subscriber tier. *Elaboration:* the installer enforces minimums with an override flag; Compose sets per-container memory limits so one component cannot OOM the box; image sizes and retention defaults must fit 200 GB with 3 years of rollups (sizing math verified in [03](03-lossless-accounting-live-monitoring.md) FR-33).
 
