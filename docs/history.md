@@ -77,4 +77,4 @@ alongside the phase's own `docs/history/gates/v4-N.md`.
 
 | Phase | Date | FRs | Migrations | Gate | Outcome |
 |---|---|---|---|---|---|
-| v4-0 Ground clearing | 2026-08-16 | FR-114 | none | [docs/history/gates/v4-0.md](history/gates/v4-0.md) | Repository/documentation/dead-code consolidation — this phase. |
+| v4-0 Ground clearing | 2026-08-16 | FR-114 | none | [docs/history/gates/v4-0.md](history/gates/v4-0.md) — MIXED, 6/9 items pass | Docs collapsed 140→71 files, `CLAUDE.md` rewritten 131→90 lines, known-issues fully triaged, `formatIQD`/dead e-wallet tests deleted. Repo-privacy flip + key rotation could not be performed from this session (no `gh`/token/credentialed git access) — manual owner runbook in the gate result. Field→FormField migration re-scoped (169 instances/34 files, much larger than estimated) and carried forward unassigned. |
