@@ -15,7 +15,8 @@ import { ApiError } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
 import { Button } from '../components/Button'
 import { CopyButton } from '../components/CopyButton'
-import { Field, TextInput, Textarea } from '../components/form'
+import { TextInput, Textarea } from '../components/form'
+import { FormField } from '../components/patterns'
 import { useToast } from '../components/Toast'
 import { useAsync } from '../hooks/useAsync'
 import { NasWizardModal } from '../pages/nas/NasWizardModal'
@@ -172,23 +173,39 @@ function LicenseStep({ onNext }: { onNext: () => void }) {
     <div className="space-y-4">
       <h2 className="text-lg font-semibold">{t('setup.step.license')}</h2>
       <p className="text-sm text-ink-muted">{t('setup.license.body')}</p>
-      <Field label={t('setup.license.fingerprint')}>
-        <div className="flex items-center gap-2">
-          <code dir="ltr" className="flex-1 rounded-md bg-surface-sunken px-3 py-2 text-xs">
-            {(data as LicenseResponse | undefined)?.fingerprint ?? '…'}
-          </code>
-          <CopyButton text={(data as LicenseResponse | undefined)?.fingerprint ?? ''} />
-        </div>
-      </Field>
+      <FormField label={t('setup.license.fingerprint')}>
+        {(id) => (
+          <div className="flex items-center gap-2">
+            <code
+              id={id}
+              dir="ltr"
+              className="flex-1 rounded-md bg-surface-sunken px-3 py-2 text-xs"
+            >
+              {(data as LicenseResponse | undefined)?.fingerprint ?? '…'}
+            </code>
+            <CopyButton text={(data as LicenseResponse | undefined)?.fingerprint ?? ''} />
+          </div>
+        )}
+      </FormField>
       <div>
         <input ref={fileRef} type="file" accept=".json" onChange={(e) => void onFile(e)} />
       </div>
-      <Field label={t('setup.license.payload')}>
-        <Textarea rows={4} dir="ltr" value={payload} onChange={(e) => setPayload(e.target.value)} />
-      </Field>
-      <Field label={t('setup.license.signature')}>
-        <TextInput dir="ltr" value={signature} onChange={(e) => setSignature(e.target.value)} />
-      </Field>
+      <FormField label={t('setup.license.payload')}>
+        {(id) => (
+          <Textarea
+            id={id}
+            rows={4}
+            dir="ltr"
+            value={payload}
+            onChange={(e) => setPayload(e.target.value)}
+          />
+        )}
+      </FormField>
+      <FormField label={t('setup.license.signature')}>
+        {(id) => (
+          <TextInput id={id} dir="ltr" value={signature} onChange={(e) => setSignature(e.target.value)} />
+        )}
+      </FormField>
       <p className="text-xs text-ink-muted">{t('setup.license.offlineNote')}</p>
       <div className="flex justify-between gap-2">
         <Button variant="ghost" onClick={onNext}>
@@ -237,25 +254,33 @@ function AdminStep({ onDone }: { onDone: (username: string, password: string) =>
   return (
     <div className="space-y-4">
       <h2 className="text-lg font-semibold">{t('setup.step.admin')}</h2>
-      <Field label={t('setup.admin.username')} error={errors.username}>
-        <TextInput dir="ltr" value={username} onChange={(e) => setUsername(e.target.value)} />
-      </Field>
-      <Field label={t('setup.admin.password')} error={errors.password}>
-        <TextInput
-          type="password"
-          dir="ltr"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-        />
-      </Field>
-      <Field label={t('setup.admin.confirmPassword')} error={errors.confirm}>
-        <TextInput
-          type="password"
-          dir="ltr"
-          value={confirm}
-          onChange={(e) => setConfirm(e.target.value)}
-        />
-      </Field>
+      <FormField label={t('setup.admin.username')} error={errors.username}>
+        {(id) => (
+          <TextInput id={id} dir="ltr" value={username} onChange={(e) => setUsername(e.target.value)} />
+        )}
+      </FormField>
+      <FormField label={t('setup.admin.password')} error={errors.password}>
+        {(id) => (
+          <TextInput
+            id={id}
+            type="password"
+            dir="ltr"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+        )}
+      </FormField>
+      <FormField label={t('setup.admin.confirmPassword')} error={errors.confirm}>
+        {(id) => (
+          <TextInput
+            id={id}
+            type="password"
+            dir="ltr"
+            value={confirm}
+            onChange={(e) => setConfirm(e.target.value)}
+          />
+        )}
+      </FormField>
       <Button disabled={busy || !username || password.length < 8} onClick={() => void submit()}>
         {busy ? t('ui.working') : t('ui.next')}
       </Button>
@@ -325,36 +350,45 @@ function ProfileStep({ onNext, onSkip }: { onNext: () => void; onSkip: () => voi
     <div className="space-y-4">
       <h2 className="text-lg font-semibold">{t('setup.step.profile')}</h2>
       <p className="text-sm text-ink-muted">{t('setup.profile.body')}</p>
-      <Field label={t('setup.profile.name')}>
-        <TextInput value={name} onChange={(e) => setName(e.target.value)} />
-      </Field>
+      <FormField label={t('setup.profile.name')}>
+        {(id) => <TextInput id={id} value={name} onChange={(e) => setName(e.target.value)} />}
+      </FormField>
       <div className="grid grid-cols-3 gap-2">
-        <Field label={t('setup.profile.priceIqd')}>
-          <TextInput
-            type="number"
-            dir="ltr"
-            value={price}
-            onChange={(e) => setPrice(e.target.value)}
-          />
-        </Field>
-        <Field label={t('setup.profile.durationDays')}>
-          <TextInput
-            type="number"
-            dir="ltr"
-            value={duration}
-            onChange={(e) => setDuration(e.target.value)}
-          />
-        </Field>
-        <Field label={t('setup.profile.rateKbps')} hint={t('rate.hint')}>
-          <TextInput
-            dir="ltr"
-            value={down}
-            onChange={(e) => {
-              setDown(e.target.value)
-              setUp(e.target.value)
-            }}
-          />
-        </Field>
+        <FormField label={t('setup.profile.priceIqd')}>
+          {(id) => (
+            <TextInput
+              id={id}
+              type="number"
+              dir="ltr"
+              value={price}
+              onChange={(e) => setPrice(e.target.value)}
+            />
+          )}
+        </FormField>
+        <FormField label={t('setup.profile.durationDays')}>
+          {(id) => (
+            <TextInput
+              id={id}
+              type="number"
+              dir="ltr"
+              value={duration}
+              onChange={(e) => setDuration(e.target.value)}
+            />
+          )}
+        </FormField>
+        <FormField label={t('setup.profile.rateKbps')} hint={t('rate.hint')}>
+          {(id) => (
+            <TextInput
+              id={id}
+              dir="ltr"
+              value={down}
+              onChange={(e) => {
+                setDown(e.target.value)
+                setUp(e.target.value)
+              }}
+            />
+          )}
+        </FormField>
       </div>
       <div className="flex justify-between gap-2">
         <Button variant="ghost" onClick={onSkip}>

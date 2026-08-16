@@ -8,6 +8,7 @@ import type { Nas, NasHealthFinding, NasServiceWrite, NasType, NasWrite } from '
 import { Button } from '../../components/Button'
 import { Modal } from '../../components/Modal'
 import { Checkbox, Field, Select, TextInput } from '../../components/form'
+import { FormField } from '../../components/patterns'
 import { useToast } from '../../components/Toast'
 
 const TYPES: NasType[] = ['pppoe', 'hotspot']
@@ -175,12 +176,14 @@ export function NasWizardModal({
     >
       {step === 1 ? (
         <div className="space-y-3">
-          <Field label={t('nas.name')} error={errors.name}>
-            <TextInput value={form.name} onChange={(e) => set('name', e.target.value)} />
-          </Field>
-          <Field label={t('nas.ip')} error={errors.ip}>
-            <TextInput value={form.ip} dir="ltr" onChange={(e) => set('ip', e.target.value)} />
-          </Field>
+          <FormField label={t('nas.name')} error={errors.name}>
+            {(id) => <TextInput id={id} value={form.name} onChange={(e) => set('name', e.target.value)} />}
+          </FormField>
+          <FormField label={t('nas.ip')} error={errors.ip}>
+            {(id) => (
+              <TextInput id={id} value={form.ip} dir="ltr" onChange={(e) => set('ip', e.target.value)} />
+            )}
+          </FormField>
           <ServicesEditor
             services={form.services}
             onChange={(services) => set('services', services)}
@@ -198,63 +201,76 @@ export function NasWizardModal({
         </div>
       ) : (
         <div className="space-y-3">
-          <Field
+          <FormField
             label={t('nas.secret')}
             error={errors.secret}
             hint={editing ? t('nas.secretEditHint') : t('nas.secretHint')}
           >
-            <TextInput
-              value={form.secret}
-              dir="ltr"
-              onChange={(e) => set('secret', e.target.value)}
-            />
-          </Field>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Field label={t('nas.coaPort')} error={errors.coa_port}>
+            {(id) => (
               <TextInput
-                type="number"
+                id={id}
+                value={form.secret}
                 dir="ltr"
-                value={form.coaPort}
-                onChange={(e) => set('coaPort', e.target.value)}
+                onChange={(e) => set('secret', e.target.value)}
               />
-            </Field>
-            <Field label={t('nas.rosVersion')} error={errors.ros_version}>
-              <div className="flex items-center gap-2">
-                <Select
-                  value={form.rosVersion}
-                  onChange={(e) => set('rosVersion', e.target.value)}
-                  className="min-w-0 flex-1"
-                >
-                  <option value="">{t('ui.unknown')}</option>
-                  <option value="7">7</option>
-                  <option value="6">6</option>
-                </Select>
-                {/* #1: detect the version inline when the NAS exists and has API
-                    creds (editing, or after Save & detect) — no trip to NAS
-                    management. For a brand-new NAS use "Save & detect" below. */}
-                {targetId && hasApiCreds ? (
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    disabled={probing}
-                    onClick={detectVersionClick}
+            )}
+          </FormField>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <FormField label={t('nas.coaPort')} error={errors.coa_port}>
+              {(id) => (
+                <TextInput
+                  id={id}
+                  type="number"
+                  dir="ltr"
+                  value={form.coaPort}
+                  onChange={(e) => set('coaPort', e.target.value)}
+                />
+              )}
+            </FormField>
+            <FormField label={t('nas.rosVersion')} error={errors.ros_version}>
+              {(id) => (
+                <div className="flex items-center gap-2">
+                  <Select
+                    id={id}
+                    value={form.rosVersion}
+                    onChange={(e) => set('rosVersion', e.target.value)}
+                    className="min-w-0 flex-1"
                   >
-                    {probing ? t('ui.working') : t('nas.detectVersion')}
-                  </Button>
-                ) : null}
-              </div>
-            </Field>
+                    <option value="">{t('ui.unknown')}</option>
+                    <option value="7">7</option>
+                    <option value="6">6</option>
+                  </Select>
+                  {/* #1: detect the version inline when the NAS exists and has API
+                      creds (editing, or after Save & detect) — no trip to NAS
+                      management. For a brand-new NAS use "Save & detect" below. */}
+                  {targetId && hasApiCreds ? (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      disabled={probing}
+                      onClick={detectVersionClick}
+                    >
+                      {probing ? t('ui.working') : t('nas.detectVersion')}
+                    </Button>
+                  ) : null}
+                </div>
+              )}
+            </FormField>
           </div>
-          <Field label={t('nas.location')} error={errors.location}>
-            <TextInput value={form.location} onChange={(e) => set('location', e.target.value)} />
-          </Field>
-          <Field
+          <FormField label={t('nas.location')} error={errors.location}>
+            {(id) => (
+              <TextInput id={id} value={form.location} onChange={(e) => set('location', e.target.value)} />
+            )}
+          </FormField>
+          <FormField
             label={t('nas.snmp')}
             error={errors.snmp_community}
             hint={editing ? t('nas.snmpEditHint') : t('nas.snmpHint')}
           >
-            <TextInput value={form.snmp} dir="ltr" onChange={(e) => set('snmp', e.target.value)} />
-          </Field>
+            {(id) => (
+              <TextInput id={id} value={form.snmp} dir="ltr" onChange={(e) => set('snmp', e.target.value)} />
+            )}
+          </FormField>
           <Checkbox
             label={t('nas.enabled')}
             checked={form.enabled}
@@ -266,23 +282,29 @@ export function NasWizardModal({
               {t('nas.autoSetup.credsTitle')}
             </p>
             <div className="grid gap-3 sm:grid-cols-2">
-              <Field label={t('nas.autoSetup.apiUser')} error={errors.api_user}>
-                <TextInput
-                  value={form.apiUser}
-                  dir="ltr"
-                  onChange={(e) => set('apiUser', e.target.value)}
-                />
-              </Field>
-              <Field label={t('nas.autoSetup.apiPort')} error={errors.api_port}>
-                <TextInput
-                  type="number"
-                  dir="ltr"
-                  value={form.apiPort}
-                  onChange={(e) => set('apiPort', e.target.value)}
-                />
-              </Field>
+              <FormField label={t('nas.autoSetup.apiUser')} error={errors.api_user}>
+                {(id) => (
+                  <TextInput
+                    id={id}
+                    value={form.apiUser}
+                    dir="ltr"
+                    onChange={(e) => set('apiUser', e.target.value)}
+                  />
+                )}
+              </FormField>
+              <FormField label={t('nas.autoSetup.apiPort')} error={errors.api_port}>
+                {(id) => (
+                  <TextInput
+                    id={id}
+                    type="number"
+                    dir="ltr"
+                    value={form.apiPort}
+                    onChange={(e) => set('apiPort', e.target.value)}
+                  />
+                )}
+              </FormField>
             </div>
-            <Field
+            <FormField
               label={t('nas.autoSetup.apiPassword')}
               hint={
                 editing && existing?.has_api_creds
@@ -291,14 +313,17 @@ export function NasWizardModal({
               }
               error={errors.api_password}
             >
-              <TextInput
-                type="password"
-                dir="ltr"
-                value={form.apiPassword}
-                placeholder={editing && existing?.has_api_creds ? '••••••••' : ''}
-                onChange={(e) => set('apiPassword', e.target.value)}
-              />
-            </Field>
+              {(id) => (
+                <TextInput
+                  id={id}
+                  type="password"
+                  dir="ltr"
+                  value={form.apiPassword}
+                  placeholder={editing && existing?.has_api_creds ? '••••••••' : ''}
+                  onChange={(e) => set('apiPassword', e.target.value)}
+                />
+              )}
+            </FormField>
           </div>
 
           <div className="flex flex-wrap items-center justify-between gap-2 pt-2">
