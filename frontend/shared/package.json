@@ -19,6 +19,7 @@
       "default": "./src/index.ts"
     },
     "./ui.css": "./src/ui/ui.css",
+    "./theme/tokens.css": "./src/theme/tokens.css",
     "./locales/*": "./locales/*"
   },
   "main": "src/index.ts",

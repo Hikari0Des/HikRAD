@@ -27,7 +27,39 @@ export default {
         },
         danger: 'rgb(var(--hik-danger) / <alpha-value>)',
         ok: 'rgb(var(--hik-ok) / <alpha-value>)',
-        warning: 'rgb(var(--hik-warning) / <alpha-value>)',
+        // v4-1 FR-115 D1: collapsed from the portal-only `warning` name onto
+        // the panel's `warn` — one token contract, no more silent-loss risk
+        // for anything moved between the apps or into @hikrad/shared.
+        warn: 'rgb(var(--hik-warn) / <alpha-value>)',
+        info: 'rgb(var(--hik-info) / <alpha-value>)',
+        // v4-1 FR-115 D3: a real line token — replaces the border-surface-sunken
+        // abuse (161 + 23 call sites migrated to border-border/border-border-strong).
+        border: {
+          DEFAULT: 'rgb(var(--hik-border) / <alpha-value>)',
+          strong: 'rgb(var(--hik-border-strong) / <alpha-value>)',
+        },
+        // v4-1 FR-115 D4: focus ring, state overlays, disabled, and the chart
+        // series — the roles the token set was missing entirely.
+        focus: 'rgb(var(--hik-focus) / <alpha-value>)',
+        state: {
+          hover: 'rgb(var(--hik-state-hover) / <alpha-value>)',
+          active: 'rgb(var(--hik-state-active) / <alpha-value>)',
+          selected: 'rgb(var(--hik-state-selected) / <alpha-value>)',
+        },
+        disabled: {
+          DEFAULT: 'rgb(var(--hik-disabled) / <alpha-value>)',
+          ink: 'rgb(var(--hik-disabled-ink) / <alpha-value>)',
+        },
+        chart: {
+          1: 'rgb(var(--hik-chart-1) / <alpha-value>)',
+          2: 'rgb(var(--hik-chart-2) / <alpha-value>)',
+          3: 'rgb(var(--hik-chart-3) / <alpha-value>)',
+          4: 'rgb(var(--hik-chart-4) / <alpha-value>)',
+          5: 'rgb(var(--hik-chart-5) / <alpha-value>)',
+          6: 'rgb(var(--hik-chart-6) / <alpha-value>)',
+          7: 'rgb(var(--hik-chart-7) / <alpha-value>)',
+          8: 'rgb(var(--hik-chart-8) / <alpha-value>)',
+        },
       },
       // v3-1 FR-97.1: radius + elevation tokens (mirrors the panel). Radius keys
       // equal Tailwind's defaults → no existing utility shifts; elevation adopts

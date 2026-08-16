@@ -1,65 +1,7 @@
 /*
- * ISP-brandable color tokens (RGB triplets so Tailwind can compose alpha) —
- * same token names as the panel. Later phases inject the ISP's brand color
- * from server settings (branding, FR-43); components must only ever
- * reference the token names, never raw colors.
+ * FR-115 (v4-1): tokens are defined ONCE, in @hikrad/shared. This file is an
+ * import, never a redefinition — a per-app :root block here is a lint
+ * failure (lint-tokens.sh) and a frozen-contract violation. See
+ * frontend/shared/src/theme/tokens.css for the canonical definitions.
  */
-:root {
-  --hik-brand: 8 116 143; /* teal-ish default brand */
-  --hik-brand-strong: 6 88 108;
-  --hik-brand-soft: 224 242 246;
-
-  --hik-surface: 244 246 248;
-  --hik-surface-raised: 255 255 255;
-  --hik-surface-sunken: 232 236 240;
-
-  --hik-ink: 23 32 42;
-  --hik-ink-muted: 100 112 126;
-  --hik-ink-inverse: 255 255 255;
-
-  --hik-danger: 185 28 28;
-  --hik-ok: 21 128 61;
-  /* Portal-only addition (Phase 4): scratch-card pending/expiring states need
-     a distinct amber, neither "danger" nor "ok" (task 3b/FR-59). */
-  --hik-warning: 180 116 8;
-
-  /* v3-1 FR-97.1 design-system tokens (mirrors the panel). Radius values equal
-     Tailwind's defaults for the same keys → zero shift; elevation is the
-     deliberate refinement with the dark-mode fix below. */
-  --hik-radius-sm: 0.125rem;
-  --hik-radius-md: 0.375rem;
-  --hik-radius-lg: 0.5rem;
-  --hik-radius-xl: 0.75rem;
-
-  --hik-shadow-sm: 0 1px 2px 0 rgb(15 23 42 / 0.06);
-  --hik-shadow-md: 0 4px 6px -1px rgb(15 23 42 / 0.1), 0 2px 4px -2px rgb(15 23 42 / 0.1);
-  --hik-shadow-lg: 0 10px 15px -3px rgb(15 23 42 / 0.1), 0 4px 6px -4px rgb(15 23 42 / 0.1);
-}
-
-/*
- * Dark theme (item 19) — same values as the panel's tokens.css, applied as
- * data-theme="dark" on <html> by the shared theme store (@hikrad/shared
- * initTheme/useTheme). Components stay theme-blind.
- */
-:root[data-theme='dark'] {
-  --hik-brand: 45 156 186;
-  --hik-brand-strong: 122 199 220;
-  --hik-brand-soft: 21 51 61;
-
-  --hik-surface: 16 22 29;
-  --hik-surface-raised: 25 33 43;
-  --hik-surface-sunken: 40 51 63;
-
-  --hik-ink: 226 233 240;
-  --hik-ink-muted: 148 160 174;
-  --hik-ink-inverse: 13 18 24;
-
-  --hik-danger: 240 106 106;
-  --hik-ok: 84 205 132;
-  --hik-warning: 224 171 61;
-
-  /* v3-1: dark-mode elevation fix (mirrors the panel). */
-  --hik-shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.4);
-  --hik-shadow-md: 0 4px 12px -2px rgb(0 0 0 / 0.5), 0 2px 6px -2px rgb(0 0 0 / 0.4);
-  --hik-shadow-lg: 0 12px 32px -8px rgb(0 0 0 / 0.6), 0 6px 12px -6px rgb(0 0 0 / 0.45);
-}
+@import '@hikrad/shared/theme/tokens.css';
