@@ -6,8 +6,9 @@ import { getHealth } from '../../api/monitoring'
 import { useAuth } from '../../auth/AuthContext'
 import { PERM_SETTINGS_EDIT } from '../../auth/permissions'
 import { Button } from '../../components/Button'
-import { Checkbox, Field, TextInput } from '../../components/form'
+import { Checkbox, TextInput } from '../../components/form'
 import { useAsync } from '../../hooks/useAsync'
+import { FormField } from '../../components/patterns'
 import { useSettingsGroup } from './useSettingsGroup'
 
 /** Remote access / Cloudflare tunnel (FR-57, contract C7): off by default. */
@@ -58,22 +59,25 @@ export function RemoteAccessSettings() {
         checked={v.enabled ?? false}
         onChange={(e) => g.setField('enabled', e.target.checked)}
       />
-      <Field
+      <FormField
         label={t('settings.remoteAccess.token')}
         hint={
           v.token_set ? t('settings.remoteAccess.tokenSet') : t('settings.remoteAccess.tokenHint')
         }
         error={g.errors.token}
       >
-        <TextInput
-          type="password"
-          dir="ltr"
-          disabled={!canEdit}
-          value={token}
-          placeholder={v.token_set ? '••••••••' : ''}
-          onChange={(e) => setToken(e.target.value)}
-        />
-      </Field>
+        {(id) => (
+          <TextInput
+            id={id}
+            type="password"
+            dir="ltr"
+            disabled={!canEdit}
+            value={token}
+            placeholder={v.token_set ? '••••••••' : ''}
+            onChange={(e) => setToken(e.target.value)}
+          />
+        )}
+      </FormField>
       {canEdit ? (
         <Button disabled={g.saving} onClick={() => void submit()}>
           {g.saving ? t('ui.working') : t('ui.save')}

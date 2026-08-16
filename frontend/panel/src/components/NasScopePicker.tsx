@@ -4,7 +4,8 @@ import { useT } from '@hikrad/shared'
 
 import { listNas } from '../api/nas'
 import type { Nas, NasScope } from '../api/types'
-import { Combobox, Field, type ComboboxOption } from './form'
+import { Combobox, type ComboboxOption } from './form'
+import { FormField } from './patterns'
 
 /**
  * FR-64 NAS-scope picker, shared by the subscriber and profile forms.
@@ -65,41 +66,48 @@ export function NasScopePicker({
 
   return (
     <div className="sm:col-span-2">
-      <Field label={t('nasScope.label')} hint={t('nasScope.hint')} error={scopeError}>
-        <div className="mb-2 flex flex-wrap items-center gap-1.5">
-          {scopes.length === 0 ? (
-            <span className="text-sm text-ink-muted">{t('nasScope.anyNas')}</span>
-          ) : (
-            scopes.map((s) => (
-              <span
-                key={scopeKey(s)}
-                className="flex items-center gap-1 rounded bg-surface-sunken px-2 py-0.5 text-xs"
-              >
-                {labelForScope(s, options, t)}
-                <button
-                  type="button"
-                  className="text-ink-muted hover:text-danger"
-                  aria-label={t('nasScope.remove', { name: labelForScope(s, options, t) })}
-                  onClick={() => onChange(scopes.filter((x) => scopeKey(x) !== scopeKey(s)))}
-                >
-                  ×
-                </button>
-              </span>
-            ))
-          )}
-        </div>
+      <FormField label={t('nasScope.label')} hint={t('nasScope.hint')} error={scopeError}>
+        {(id) => (
+          <>
+            <div className="mb-2 flex flex-wrap items-center gap-1.5">
+              {scopes.length === 0 ? (
+                <span className="text-sm text-ink-muted">{t('nasScope.anyNas')}</span>
+              ) : (
+                scopes.map((s) => (
+                  <span
+                    key={scopeKey(s)}
+                    className="flex items-center gap-1 rounded bg-surface-sunken px-2 py-0.5 text-xs"
+                  >
+                    {labelForScope(s, options, t)}
+                    <button
+                      type="button"
+                      className="text-ink-muted hover:text-danger"
+                      aria-label={t('nasScope.remove', { name: labelForScope(s, options, t) })}
+                      onClick={() => onChange(scopes.filter((x) => scopeKey(x) !== scopeKey(s)))}
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))
+              )}
+            </div>
 
-        <Combobox
-          options={comboboxOptions}
-          selected={selectedKeys}
-          onChange={handleComboboxChange}
-          triggerLabel={t('nasScope.add')}
-          searchPlaceholder={t('nasScope.search')}
-          noOptionsLabel={t('nasScope.noNas')}
-          noMatchLabel={t('search.noResults')}
-        />
-        {failed && <p className="mt-1 text-sm text-[--color-danger]">{t('nasScope.loadFailed')}</p>}
-      </Field>
+            <Combobox
+              id={id}
+              options={comboboxOptions}
+              selected={selectedKeys}
+              onChange={handleComboboxChange}
+              triggerLabel={t('nasScope.add')}
+              searchPlaceholder={t('nasScope.search')}
+              noOptionsLabel={t('nasScope.noNas')}
+              noMatchLabel={t('search.noResults')}
+            />
+            {failed && (
+              <p className="mt-1 text-sm text-[--color-danger]">{t('nasScope.loadFailed')}</p>
+            )}
+          </>
+        )}
+      </FormField>
     </div>
   )
 }

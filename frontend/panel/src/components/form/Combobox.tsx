@@ -32,6 +32,7 @@ export function Combobox({
   noMatchLabel,
   disabled,
   className,
+  id,
 }: {
   options: ComboboxOption[]
   selected: string[]
@@ -42,6 +43,7 @@ export function Combobox({
   noMatchLabel: string
   disabled?: boolean
   className?: string
+  id?: string
 }) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
@@ -67,6 +69,7 @@ export function Combobox({
       <RadixPopover.Trigger asChild>
         <button
           type="button"
+          id={id}
           disabled={disabled}
           aria-expanded={open}
           aria-haspopup="listbox"

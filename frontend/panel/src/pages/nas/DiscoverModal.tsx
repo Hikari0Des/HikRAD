@@ -6,7 +6,8 @@ import { discoverNas } from '../../api/nas'
 import type { DiscoveredNas } from '../../api/types'
 import { Button } from '../../components/Button'
 import { Modal } from '../../components/Modal'
-import { Field, TextInput } from '../../components/form'
+import { TextInput } from '../../components/form'
+import { FormField } from '../../components/patterns'
 import { useToast } from '../../components/Toast'
 import type { NasPrefill } from './NasWizardModal'
 
@@ -57,14 +58,17 @@ export function DiscoverModal({
     >
       <div className="flex items-end gap-2">
         <div className="flex-1">
-          <Field label={t('nas.scanCidr')} hint={t('nas.scanCidrHint')}>
-            <TextInput
-              value={scanCidr}
-              dir="ltr"
-              placeholder="192.168.88.0/24"
-              onChange={(e) => setScanCidr(e.target.value)}
-            />
-          </Field>
+          <FormField label={t('nas.scanCidr')} hint={t('nas.scanCidrHint')}>
+            {(id) => (
+              <TextInput
+                id={id}
+                value={scanCidr}
+                dir="ltr"
+                placeholder="192.168.88.0/24"
+                onChange={(e) => setScanCidr(e.target.value)}
+              />
+            )}
+          </FormField>
         </div>
         <Button disabled={scanning} onClick={scan}>
           {scanning ? t('nas.scanning') : t('nas.scan')}
