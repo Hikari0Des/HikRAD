@@ -39,7 +39,7 @@ Full walkthrough (including the RADIUS packet harness): [docs/ops/dev-setup.md](
 
 ## Production install
 
-On a clean Ubuntu 22.04/24.04 server:
+On a clean server — Ubuntu 22.04/24.04 LTS is the tested tier; most other modern Linux distributions work too (Docker + Compose are the only real requirement, `install.sh` warns rather than blocks on anything else):
 
 ```sh
 sudo ./scripts/install.sh

@@ -14,7 +14,10 @@
 #     and runtime config — no image is ever built on the customer's server.
 #
 # What it does on a clean server:
-#   1. Verifies the OS (Ubuntu 22.04/24.04) and warns (never blocks — small
+#   1. Checks the OS: Ubuntu 22.04/24.04 LTS is the tested tier and passes
+#      silently; any other Linux distro is accepted with a warning (PRD
+#      Decision 55 — HikRAD's only real OS dependency is Docker + optionally
+#      systemd, both broadly available). Also warns (never blocks — small
 #      labs/VMs are legitimate) if below the NFR-3 hardware tier.
 #   2. Installs Docker Engine + Compose plugin if missing.
 #   3. Creates /opt/hikrad/{data,backups,licenses} and generates secrets
@@ -37,7 +40,9 @@
 #
 # Test/override knobs (not for production use):
 #   HIKRAD_ROOT           install root (default /opt/hikrad)
-#   HIKRAD_SKIP_OS_CHECK  =1 skips the Ubuntu version gate
+#   HIKRAD_SKIP_OS_CHECK  =1 skips the OS check entirely (root + /etc/os-release
+#                         readable are otherwise required; non-Ubuntu already
+#                         just warns and proceeds, see step 1)
 #   HIKRAD_SKIP_DOCKER    =1 skips Docker presence/install
 #   --no-start            do everything except `docker compose up`
 #   --domain <fqdn>       configure Caddy for Let's Encrypt on this hostname
@@ -123,13 +128,26 @@ if [ "$REPAIR_ONLY" -eq 0 ]; then
     # --- 1. OS + privilege + hardware checks ---------------------------------
     if [ "${HIKRAD_SKIP_OS_CHECK:-0}" != "1" ]; then
         [ "$(id -u)" -eq 0 ] || die "must run as root (sudo ./scripts/install.sh)"
-        [ -r /etc/os-release ] || die "cannot read /etc/os-release — unsupported OS"
+        [ -r /etc/os-release ] || die "cannot read /etc/os-release — not a systemd-standard Linux; set HIKRAD_SKIP_OS_CHECK=1 to install anyway."
         # shellcheck disable=SC1091
         . /etc/os-release
-        if [ "${ID:-}" != "ubuntu" ] || { [ "${VERSION_ID:-}" != "22.04" ] && [ "${VERSION_ID:-}" != "24.04" ]; }; then
-            die "unsupported OS: ${PRETTY_NAME:-unknown}. HikRAD supports Ubuntu 22.04 / 24.04 LTS."
+
+        # PRD Decision 55: HikRAD's only real OS-level dependencies are Docker
+        # Engine + the Compose plugin (installed automatically below via
+        # get.docker.com, which itself supports every mainstream distro) and,
+        # optionally, systemd (only for the one-click-update daemon — step 4b
+        # already degrades gracefully with a warning if systemctl is absent).
+        # Ubuntu 22.04/24.04 LTS remains the only combination this release is
+        # actually QA'd against (what "the supported tier" in NFR-3/AC-49a
+        # means) — every other distro is accepted but flagged, the same
+        # "warn, never block" posture NFR-3 already applies to hardware,
+        # since small labs, VMs, and non-Ubuntu servers are legitimate
+        # deployments HikRAD just hasn't been formally gated on.
+        if [ "${ID:-}" = "ubuntu" ] && { [ "${VERSION_ID:-}" = "22.04" ] || [ "${VERSION_ID:-}" = "24.04" ]; }; then
+            log "OS check passed: $PRETTY_NAME"
+        else
+            log "WARNING: $PRETTY_NAME is not the QA'd tier (Ubuntu 22.04/24.04 LTS) — continuing anyway. Docker + (optionally) systemd are HikRAD's only real OS dependencies. Set HIKRAD_SKIP_OS_CHECK=1 to skip this check entirely."
         fi
-        log "OS check passed: $PRETTY_NAME"
 
         # NFR-3 tier: warn, never block (small labs / VMs are legitimate — this
         # IS the override; there is no separate flag to bypass a check that

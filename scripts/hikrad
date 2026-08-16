@@ -571,7 +571,13 @@ EOF
 
     log "HikRAD is uninstalled."
     log "Docker Engine was NOT removed (it may run other workloads);"
-    log "to remove it too: apt-get purge docker-ce docker-ce-cli containerd.io"
+    if command -v apt-get >/dev/null 2>&1; then
+        log "to remove it too: apt-get purge docker-ce docker-ce-cli containerd.io"
+    elif command -v dnf >/dev/null 2>&1 || command -v yum >/dev/null 2>&1; then
+        log "to remove it too: dnf remove docker-ce docker-ce-cli containerd.io (or yum on older releases)"
+    else
+        log "to remove it too, use your distro's package manager to remove docker-ce/docker-ce-cli/containerd.io"
+    fi
 }
 
 # --- factory-reset (owner request 2026-07-17) --------------------------------

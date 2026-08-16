@@ -10,7 +10,11 @@ unclear or wrong, that is a bug in this document, not in you — file it.
 
 You need:
 - A fresh Ubuntu 22.04 or 24.04 LTS server (VM or bare metal), reachable by
-  SSH, with `sudo`.
+  SSH, with `sudo`. This is the tested/QA'd tier this guide's 30-minute timing
+  was measured on; `install.sh` also accepts other modern Linux distributions
+  (Debian, RHEL-family, etc.) with a warning instead of blocking — Docker +
+  Compose are the only real OS dependency (Decision 55) — but timing and
+  every step below assume Ubuntu.
 - Recommended hardware: 4 vCPU / 8 GB RAM / 200 GB SSD (NFR-3). Smaller
   works for a lab/pilot — the installer warns, never blocks.
 - A MikroTik router (or any NAS you can point at this server) for the final
