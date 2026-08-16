@@ -76,10 +76,31 @@ commit is a descendant of all three:
       TimescaleDB, Redis, and FreeRADIUS images) — confirm with `tar -tf
       hikrad-vX.Y.Z.tar | grep images/` before publishing, not after a
       customer reports a failed offline install.
-- [ ] Repo visibility is confirmed **Private** (account-level setting, not
-      enforceable by a commit — FR-83.1). The bundle is published as a
-      GitHub Release asset on this private repo, never uploaded anywhere
-      public.
+- [ ] Repo visibility of the **canonical** repo (`Hikari0Des/HikRAD`) is
+      confirmed **Private** (account-level setting, not enforceable by a
+      commit — FR-83.1). **Found public 2026-08-16** — full source readable
+      via anonymous `git clone`/`raw.githubusercontent.com`, no auth
+      required; flip it via repo Settings → Danger Zone → Change visibility
+      → Private before cutting any real release. Do not rely on this
+      checklist alone to catch it again — nothing in CI enforces it (GitHub
+      has no API-visible signal a workflow can gate on for its own repo's
+      visibility).
+- [ ] `Hikari0Des/hikrad-releases` (the public releases-only mirror, Decision
+      56) exists, is genuinely public, and contains **zero source** — spot
+      check its file listing, it should only ever have `install.sh` at its
+      root plus whatever Release assets exist. If it doesn't exist yet,
+      `.github/workflows/release.yml`'s mirror-publish steps will warn and
+      skip (release still succeeds, just customer-facing distribution won't
+      have this version).
+- [ ] `HIKRAD_RELEASES_REPO_TOKEN` repo secret (on the canonical private
+      repo, used to publish to the mirror) is a **fine-grained PAT scoped
+      only to `Hikari0Des/hikrad-releases`** (`contents: write`) — never a
+      classic PAT or one with access to the private repo itself.
+- [ ] The bundle is published as a GitHub Release asset on **both** the
+      private canonical repo (internal record) and the public
+      `hikrad-releases` mirror (what `scripts/quick-install.sh`'s
+      `curl \| sudo bash` one-liner actually fetches) — never uploaded
+      anywhere else.
 
 ## Evidence attached to the release
 

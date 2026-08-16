@@ -168,7 +168,21 @@ services:
       interval: 10s
       timeout: 3s
       retries: 6
-      start_period: 20s
+      # A truly fresh install replays the ENTIRE migration history (595+
+      # files and counting) before hikrad-api ever opens :8080 — observed
+      # taking ~90s end to end on real hardware, against the old 20s
+      # start_period + 6*10s retry budget (~80s). `docker compose up`
+      # doesn't wait past that: it marks hikrad-api unhealthy, refuses to
+      # start freeradius/caddy/monitor (their depends_on), and exits
+      # nonzero — even though the container keeps running and self-heals
+      # moments later, since start_period only gates the CLI's own decision,
+      # not the container's actual health. `hikrad factory-reset`'s own
+      # `wait_for_api_health 180` already assumed first boot could take up
+      # to 3 minutes; the compose healthcheck itself just never matched
+      # that budget. Bumped generously — start_period only adds patience
+      # before declaring unhealthy, it never slows down an already-fast
+      # warm restart (a no-op migration check is near-instant).
+      start_period: 240s
     deploy:
       resources:
         limits:

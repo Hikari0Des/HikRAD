@@ -58,7 +58,7 @@ jobs:
           tar -xf "hikrad-${HIKRAD_VERSION}.tar" -C "$d"
           bash scripts/verify-bundle.sh "$d"
 
-      - name: Publish the bundle as a GitHub Release asset
+      - name: Publish the bundle as a GitHub Release asset (internal record, private repo)
         env:
           HIKRAD_VERSION: ${{ steps.version.outputs.version }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -67,3 +67,53 @@ jobs:
             "hikrad-${HIKRAD_VERSION}.tar" \
             --title "HikRAD $HIKRAD_VERSION" \
             --generate-notes
+
+      # PRD Decision 56 (amends FR-83.1): customer-facing distribution moves
+      # to a SEPARATE, intentionally public repo (Hikari0Des/hikrad-releases)
+      # containing zero HikRAD source — only signed bundle assets and the
+      # thin curl-installer wrapper (scripts/quick-install.sh). The source
+      # repo above stays private and ungranted to customers, unchanged.
+      # HIKRAD_RELEASES_REPO_TOKEN is a fine-grained PAT scoped ONLY to that
+      # public repo (contents:write) — deliberately unable to touch this
+      # private source repo even if it ever leaked. Both steps below no-op
+      # with a warning (never fail the release) if that one-time setup
+      # (create the repo, mint the token, add the secret) hasn't happened
+      # yet — same "degrade, don't block a rehearsal tag" posture as the
+      # release-signing-key fallback above.
+      - name: Publish the bundle to the public releases mirror (customer distribution)
+        if: ${{ secrets.HIKRAD_RELEASES_REPO_TOKEN != '' }}
+        continue-on-error: true   # never let a mirror hiccup fail the already-published internal release
+        env:
+          HIKRAD_VERSION: ${{ steps.version.outputs.version }}
+          GH_TOKEN: ${{ secrets.HIKRAD_RELEASES_REPO_TOKEN }}
+        run: |
+          gh release create "$HIKRAD_VERSION" \
+            "hikrad-${HIKRAD_VERSION}.tar" \
+            --repo "Hikari0Des/hikrad-releases" \
+            --title "HikRAD $HIKRAD_VERSION" \
+            --generate-notes
+
+      - name: Sync the curl-installer wrapper to the public releases mirror
+        if: ${{ secrets.HIKRAD_RELEASES_REPO_TOKEN != '' }}
+        continue-on-error: true   # same reasoning as the step above
+        env:
+          HIKRAD_VERSION: ${{ steps.version.outputs.version }}
+          GH_TOKEN: ${{ secrets.HIKRAD_RELEASES_REPO_TOKEN }}
+        run: |
+          d="$(mktemp -d)"
+          git clone --depth 1 "https://x-access-token:${GH_TOKEN}@github.com/Hikari0Des/hikrad-releases.git" "$d"
+          cp scripts/quick-install.sh "$d/install.sh"
+          if ! git -C "$d" diff --quiet -- install.sh; then
+            git -C "$d" config user.name "HikRAD Release Bot"
+            git -C "$d" config user.email "release-bot@users.noreply.github.com"
+            git -C "$d" add install.sh
+            git -C "$d" commit -m "Sync installer wrapper from HikRAD ${HIKRAD_VERSION}"
+            git -C "$d" push
+          else
+            echo "install.sh unchanged — nothing to sync."
+          fi
+
+      - name: Warn if the public releases mirror isn't set up yet
+        if: ${{ secrets.HIKRAD_RELEASES_REPO_TOKEN == '' }}
+        run: |
+          echo "::warning::HIKRAD_RELEASES_REPO_TOKEN secret is not set — skipped publishing to the public Hikari0Des/hikrad-releases mirror and syncing the curl-installer wrapper. The bundle is still published above as a Release asset on THIS (should be private) repo only. See docs/ops/release-checklist.md before the first real customer shipment."

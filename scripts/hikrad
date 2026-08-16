@@ -632,12 +632,12 @@ EOF
     # Recreate the bind-mount targets exactly as install.sh prepares them —
     # Docker would otherwise auto-create them root-owned, which is the
     # documented acct-spill crash-loop (see scripts/install.sh §3d/3d2).
-    mkdir -p "$d/acct-spill" "$d/radius-control" "$d/branding"
+    mkdir -p "$d/acct-spill" "$d/radius-control" "$d/branding" "$d/updater"
     chown 10002:10002 "$d/acct-spill" 2>/dev/null \
         || log "WARNING: could not chown $d/acct-spill (not root?) — hikrad-acct may crash-loop; run: chown 10002:10002 $d/acct-spill"
     chown 10001:10001 "$d/branding" 2>/dev/null \
         || log "WARNING: could not chown $d/branding (not root?) — logo upload may fail; run: chown 10001:10001 $d/branding"
-    chmod 777 "$d/radius-control"
+    chmod 777 "$d/radius-control" "$d/updater"
 
     # The generated FreeRADIUS client list reflects the (now wiped) NAS table;
     # empty it so routers from the previous life can't keep talking to us.
@@ -645,6 +645,30 @@ EOF
     if [ -f "$clients" ]; then
         : > "$clients"
         chown 10001:10001 "$clients" 2>/dev/null || true
+    fi
+
+    # Caddy's self-signed cert (deploy/compose.yml mounts $d/caddy-selfsigned
+    # read-only into the container) is generated ONLY by install.sh's step
+    # 3e, never by anything in compose itself — a wipe-by-delete factory
+    # reset removes it and nothing regenerates it, which crash-loops caddy
+    # forever on "open /etc/caddy/selfsigned/cert.pem: no such file or
+    # directory" (found live: exactly that, right after a factory-reset).
+    # Same SAN logic as install.sh's 3e, kept in sync deliberately (both are
+    # "idempotent — only regenerate if missing", so this never fights a real
+    # install's cert).
+    local cert_dir="$d/caddy-selfsigned"
+    if [ ! -f "$cert_dir/cert.pem" ] && command -v openssl >/dev/null 2>&1; then
+        log "Regenerating the self-signed TLS certificate (wiped by the reset)…"
+        mkdir -p "$cert_dir"
+        local san="DNS:localhost,IP:127.0.0.1" ip
+        for ip in $(hostname -I 2>/dev/null); do
+            san="$san,IP:$ip"
+        done
+        openssl req -x509 -nodes -newkey rsa:2048 -days 3650 \
+            -keyout "$cert_dir/key.pem" -out "$cert_dir/cert.pem" \
+            -subj "/CN=hikrad" -addext "subjectAltName=$san" >/dev/null 2>&1
+        chmod 644 "$cert_dir/cert.pem"
+        chmod 600 "$cert_dir/key.pem"
     fi
 
     log "Starting the stack (fresh database; migrations run on boot)…"

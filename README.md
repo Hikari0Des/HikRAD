@@ -39,15 +39,26 @@ Full walkthrough (including the RADIUS packet harness): [docs/ops/dev-setup.md](
 
 ## Production install
 
-On a clean server — Ubuntu 22.04/24.04 LTS is the tested tier; most other modern Linux distributions work too (Docker + Compose are the only real requirement, `install.sh` warns rather than blocks on anything else):
+**Recommended — one command**, no source access needed (fetches the latest signed release bundle from the public, source-free mirror repo — see [docs/ops/release-checklist.md](docs/ops/release-checklist.md) and PRD Decision 56):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/Hikari0Des/hikrad-releases/main/install.sh | sudo bash
+```
+
+Extra flags (`--domain`, `--no-start`, …) pass straight through, e.g.:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/Hikari0Des/hikrad-releases/main/install.sh | sudo bash -s -- --domain panel.example.isp
+```
+
+**Source-mode (internal/dev only)** — requires access to this (private) repo; builds images on the server instead of loading a signed bundle. Ubuntu 22.04/24.04 LTS is the tested tier, most other modern Linux distributions work too with a warning:
 
 ```sh
 sudo ./scripts/install.sh
 ```
 
-Installs Docker if missing, creates `/opt/hikrad/{data,backups,licenses}`, generates secrets
-into `/opt/hikrad/.env`, and starts the stack. Re-running on an installed server aborts safely
-(the update flow ships in a later phase). Daily operation requires no internet access.
+Either way: installs Docker if missing, creates `/opt/hikrad/{data,backups,licenses}`, generates secrets
+into `/opt/hikrad/.env`, and starts the stack. Re-running on an installed server offers update/repair instead of reinstalling. Daily operation requires no internet access.
 
 ## Documentation
 
