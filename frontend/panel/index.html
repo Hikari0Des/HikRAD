@@ -6,6 +6,27 @@
     <!-- lang/dir are updated at runtime by the i18n provider (contract C8) -->
     <title>HikRAD</title>
 
+    <!-- FR-117 (v4-1, D5): stamps data-theme from an EXPLICIT stored
+         light/dark preference before first paint, so that choice never
+         flashes light-then-dark (or vice versa). Must run before any CSS
+         is applied, hence: first thing in <head>, synchronous (no type
+         attribute — a module script would be deferred), no external file.
+         'system' preference is deliberately left unset here — it has no
+         localStorage entry to read, and is instead handled with zero JS by
+         the @media (prefers-color-scheme: dark) fallback block in
+         @hikrad/shared's theme/tokens.css. Key name mirrors
+         THEME_STORAGE_KEY in @hikrad/shared/src/ui/theme.ts exactly;
+         initTheme() re-applies the same value after hydration (idempotent,
+         not a race). -->
+    <script>
+      ;(function () {
+        try {
+          var t = localStorage.getItem('hikrad.theme')
+          if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t)
+        } catch (e) {}
+      })()
+    </script>
+
     <!-- PWA packaging (contract C5/FR-54), Phase-4 cross-boundary exception
          (Agent F, Agent E unstaffed — frontend/panel/src/pwa/README.md).
          BrandedManifestLink swaps the manifest href once branding loads. -->
