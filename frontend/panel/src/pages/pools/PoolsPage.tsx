@@ -85,7 +85,7 @@ export function PoolsPage() {
       {/* FR-64.3, documented here because this screen is where the pilot's "no
           more free addresses in the pool" bug was invisible: a profile's pool
           is a PPPoE pool and is never sent on a hotspot login. */}
-      <p className="mb-3 rounded-md border border-surface-sunken bg-surface-raised p-3 text-xs text-ink-muted">
+      <p className="mb-3 rounded-md border border-border bg-surface-raised p-3 text-xs text-ink-muted">
         {t('pools.serviceNote')}
       </p>
 
@@ -94,7 +94,7 @@ export function PoolsPage() {
       ) : loading ? (
         <LoadingState />
       ) : (data?.items.length ?? 0) === 0 ? (
-        <p className="rounded-md border border-dashed border-surface-sunken p-10 text-center text-sm text-ink-muted">
+        <p className="rounded-md border border-dashed border-border p-10 text-center text-sm text-ink-muted">
           {t('pools.empty')}
         </p>
       ) : (
@@ -219,7 +219,7 @@ function PoolPushModal({ pool, onClose }: { pool: Pool | null; onClose: () => vo
         </Field>
 
         {plan && (
-          <div className="rounded border border-surface-sunken p-2 text-xs">
+          <div className="rounded border border-border p-2 text-xs">
             {plan.items.length === 0 ? (
               <p className="text-ink-muted">{t('pools.push.inSync')}</p>
             ) : (

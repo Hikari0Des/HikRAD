@@ -65,16 +65,13 @@ export function DevicesPage() {
       {q.loading || !q.data ? (
         <LoadingState />
       ) : q.data.items.length === 0 ? (
-        <p className="rounded-md border border-dashed border-surface-sunken p-8 text-center text-sm text-ink-muted">
+        <p className="rounded-md border border-dashed border-border p-8 text-center text-sm text-ink-muted">
           {t('devices.empty')}
         </p>
       ) : (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {q.data.items.map((d) => (
-            <div
-              key={d.id}
-              className="rounded-md border border-surface-sunken bg-surface-raised p-4"
-            >
+            <div key={d.id} className="rounded-md border border-border bg-surface-raised p-4">
               <div className="flex items-start justify-between">
                 <div>
                   <Link

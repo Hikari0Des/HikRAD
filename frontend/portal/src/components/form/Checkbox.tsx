@@ -51,7 +51,7 @@ export function Checkbox({
       disabled={disabled}
       aria-label={rest['aria-label']}
       onCheckedChange={(state) => onChange({ target: { checked: state === true } })}
-      className={`${label ? 'mt-0.5' : ''} inline-flex h-4 w-4 shrink-0 items-center justify-center rounded border border-surface-sunken bg-surface data-[state=checked]:border-brand data-[state=checked]:bg-brand disabled:opacity-60 ${FOCUS_RING} ${className ?? ''}`}
+      className={`${label ? 'mt-0.5' : ''} inline-flex h-4 w-4 shrink-0 items-center justify-center rounded border border-border bg-surface data-[state=checked]:border-brand data-[state=checked]:bg-brand disabled:opacity-60 ${FOCUS_RING} ${className ?? ''}`}
     >
       <RadixCheckbox.Indicator className="text-ink-inverse">
         <CheckIcon />

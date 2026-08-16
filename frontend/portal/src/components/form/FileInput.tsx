@@ -45,7 +45,7 @@ export function FileInput({
           if (!disabled) onFilesSelected(e.dataTransfer.files)
         }}
         className={`flex cursor-pointer flex-col items-center justify-center gap-1 rounded-md border-2 border-dashed px-3 py-4 text-center text-sm transition-colors motion-reduce:transition-none has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-brand has-[:focus-visible]:ring-offset-1 has-[:focus-visible]:ring-offset-surface ${
-          dragOver ? 'border-brand bg-brand-soft' : 'border-surface-sunken bg-surface'
+          dragOver ? 'border-brand bg-brand-soft' : 'border-border bg-surface'
         } ${disabled ? 'cursor-not-allowed opacity-60' : ''}`}
       >
         <span className="font-medium">{label}</span>

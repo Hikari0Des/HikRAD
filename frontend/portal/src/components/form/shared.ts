@@ -7,7 +7,7 @@
  * belong in @hikrad/shared/src/ui per contract C2.
  */
 export const CONTROL =
-  'w-full rounded-md border border-surface-sunken bg-surface px-3 py-2 text-sm ' +
+  'w-full rounded-md border border-border bg-surface px-3 py-2 text-sm ' +
   'focus:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-1 ' +
   'focus-visible:ring-offset-surface disabled:opacity-60'
 
@@ -24,7 +24,7 @@ export const FOCUS_RING =
  * motion-reduce: per C8's reduced-motion rule.
  */
 export const POPOVER_CONTENT =
-  'z-50 max-h-72 overflow-y-auto rounded-md border border-surface-sunken bg-surface-raised py-1 shadow-lg ' +
+  'z-50 max-h-72 overflow-y-auto rounded-md border border-border bg-surface-raised py-1 shadow-lg ' +
   'transition-[opacity,transform] duration-150 motion-reduce:transition-none ' +
   'data-[state=closed]:opacity-0 data-[state=closed]:scale-95 ' +
   'data-[state=open]:opacity-100 data-[state=open]:scale-100'

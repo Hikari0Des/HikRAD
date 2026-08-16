@@ -37,7 +37,7 @@ export function UserMenu() {
         <DropdownMenu.Content
           align="end"
           sideOffset={6}
-          className="z-30 min-w-48 rounded-md border border-surface-sunken bg-surface-raised p-1 shadow-lg"
+          className="z-30 min-w-48 rounded-md border border-border bg-surface-raised p-1 shadow-lg"
         >
           <DropdownMenu.Label className="px-3 py-2 text-xs text-ink-muted">
             {t('user.signedInAs')} <Ltr className="font-medium text-ink">{manager.username}</Ltr>

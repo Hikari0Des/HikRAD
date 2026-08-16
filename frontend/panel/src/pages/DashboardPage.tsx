@@ -166,7 +166,7 @@ export function DashboardPage() {
           per widget, not a row of bare pills. Reorder/resize stay on the
           keyboard-accessible controls in each widget frame. */}
       {editing && availableToAdd.length > 0 && (
-        <div className="rounded-md border border-dashed border-surface-sunken p-3">
+        <div className="rounded-md border border-dashed border-border p-3">
           <p className="mb-2 text-xs font-medium text-ink-muted">{t('dashboard.addWidget')}</p>
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {availableToAdd.map((w) => (
@@ -174,7 +174,7 @@ export function DashboardPage() {
                 key={w.id}
                 type="button"
                 onClick={() => addWidget(w.id)}
-                className="flex flex-col items-start gap-0.5 rounded-md border border-surface-sunken bg-surface-raised p-3 text-start transition-shadow hover:shadow-sm"
+                className="flex flex-col items-start gap-0.5 rounded-md border border-border bg-surface-raised p-3 text-start transition-shadow hover:shadow-sm"
               >
                 <span className="flex w-full items-center justify-between gap-2 font-medium">
                   {t(`dashboard.widget.${w.id}`)}
@@ -278,7 +278,7 @@ function WidgetFrame({
   const t = useT()
   return (
     <div
-      className={`h-full rounded-lg border border-surface-sunken bg-surface-raised p-4 shadow-sm transition-shadow ${
+      className={`h-full rounded-lg border border-border bg-surface-raised p-4 shadow-sm transition-shadow ${
         dragging ? 'shadow-lg' : ''
       }`}
     >
@@ -416,7 +416,7 @@ function WidgetBody({ id, data }: { id: DashboardWidgetId; data: Dashboard | und
             <Link
               key={n.id}
               to={`/nas/${n.id}/status`}
-              className="flex items-center justify-between rounded-md border border-surface-sunken bg-surface p-3 text-sm hover:border-brand"
+              className="flex items-center justify-between rounded-md border border-border bg-surface p-3 text-sm hover:border-brand"
             >
               <span className="font-medium">{n.name}</span>
               <NasStatusDot status={n.status} latency={n.latency_ms} />

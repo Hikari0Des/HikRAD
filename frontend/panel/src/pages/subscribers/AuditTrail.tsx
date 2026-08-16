@@ -35,7 +35,7 @@ export function AuditTrail({ subscriberId }: { subscriberId: string }) {
         {page.items.map((e) => (
           <li
             key={e.id}
-            className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-surface-sunken p-3 text-sm"
+            className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border p-3 text-sm"
           >
             <span className="font-medium">
               <Ltr>{e.action}</Ltr>

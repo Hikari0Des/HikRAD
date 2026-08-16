@@ -214,7 +214,7 @@ export function NasAutoSetupModal({
                   </p>
                   <ul className="space-y-2">
                     {preview.items.map((it, i) => (
-                      <li key={i} className="rounded-md border border-surface-sunken p-2 text-sm">
+                      <li key={i} className="rounded-md border border-border p-2 text-sm">
                         <span className="me-2 rounded bg-surface-sunken px-1.5 py-0.5 text-xs">
                           {t(`nas.autoSetup.action.${it.action}`)}
                         </span>
@@ -299,7 +299,7 @@ function CurrentConfigPanel({
   if (!config) return null
   const hasAny = config.radius.length > 0 || config.hotspot_profiles.length > 0
   return (
-    <details className="rounded-md border border-surface-sunken p-3 text-xs">
+    <details className="rounded-md border border-border p-3 text-xs">
       <summary className="cursor-pointer select-none font-medium text-ink">
         {t('nas.autoSetup.currentConfigTitle')}
       </summary>
@@ -368,7 +368,7 @@ function ValuesForm({
         <span className="mb-1 block text-ink-muted">{t('nas.autoSetup.valuesRadiusServer')}</span>
         <input
           dir="ltr"
-          className="w-full rounded border border-surface-sunken bg-surface px-2 py-1 text-sm"
+          className="w-full rounded border border-border bg-surface px-2 py-1 text-sm"
           value={values.radius_server ?? ''}
           onChange={(e) => onChange({ ...values, radius_server: e.target.value || undefined })}
         />
@@ -378,7 +378,7 @@ function ValuesForm({
         <input
           type="number"
           dir="ltr"
-          className="w-full rounded border border-surface-sunken bg-surface px-2 py-1 text-sm"
+          className="w-full rounded border border-border bg-surface px-2 py-1 text-sm"
           value={values.coa_port ?? ''}
           onChange={(e) =>
             onChange({ ...values, coa_port: e.target.value ? Number(e.target.value) : undefined })
@@ -390,7 +390,7 @@ function ValuesForm({
         <input
           type="number"
           dir="ltr"
-          className="w-full rounded border border-surface-sunken bg-surface px-2 py-1 text-sm"
+          className="w-full rounded border border-border bg-surface px-2 py-1 text-sm"
           value={values.interim_secs ?? ''}
           onChange={(e) =>
             onChange({
@@ -404,7 +404,7 @@ function ValuesForm({
         <span className="mb-1 block text-ink-muted">{t('nas.autoSetup.valuesWalledGarden')}</span>
         <input
           dir="ltr"
-          className="w-full rounded border border-surface-sunken bg-surface px-2 py-1 text-sm"
+          className="w-full rounded border border-border bg-surface px-2 py-1 text-sm"
           value={(values.walled_garden ?? []).join(', ')}
           onChange={(e) =>
             onChange({

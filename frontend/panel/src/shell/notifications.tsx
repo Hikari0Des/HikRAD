@@ -98,8 +98,8 @@ export function NotificationBell() {
         ) : null}
       </button>
       {open ? (
-        <div className="absolute end-0 z-30 mt-1 max-h-96 w-80 overflow-y-auto rounded-md border border-surface-sunken bg-surface-raised shadow-lg">
-          <div className="border-b border-surface-sunken px-3 py-2 text-sm font-semibold">
+        <div className="absolute end-0 z-30 mt-1 max-h-96 w-80 overflow-y-auto rounded-md border border-border bg-surface-raised shadow-lg">
+          <div className="border-b border-border px-3 py-2 text-sm font-semibold">
             {t('notifications.title')}
           </div>
           {state.items.length === 0 ? (
@@ -107,7 +107,7 @@ export function NotificationBell() {
           ) : (
             <ul>
               {state.items.map((n) => (
-                <li key={n.id} className="border-b border-surface-sunken/60 px-3 py-2 text-sm">
+                <li key={n.id} className="border-b border-border/60 px-3 py-2 text-sm">
                   <p className="font-medium">{n.summary}</p>
                   <p className="mt-0.5 text-xs text-ink-muted">{formatDate(n.at)}</p>
                 </li>

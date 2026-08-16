@@ -66,11 +66,11 @@ export function VouchersPage() {
       ) : batches.loading || !batches.data ? (
         <LoadingState />
       ) : batches.data.items.length === 0 ? (
-        <p className="rounded-md border border-dashed border-surface-sunken p-8 text-center text-sm text-ink-muted">
+        <p className="rounded-md border border-dashed border-border p-8 text-center text-sm text-ink-muted">
           {t('vouchers.empty')}
         </p>
       ) : (
-        <div className="overflow-x-auto rounded-md border border-surface-sunken">
+        <div className="overflow-x-auto rounded-md border border-border">
           <table className="w-full min-w-[36rem] text-sm">
             <thead className="bg-surface-sunken/40 text-xs text-ink-muted">
               <tr>
@@ -84,7 +84,7 @@ export function VouchersPage() {
             </thead>
             <tbody>
               {batches.data.items.map((b) => (
-                <tr key={b.id} className="border-t border-surface-sunken/60">
+                <tr key={b.id} className="border-t border-border/60">
                   <td className="px-3 py-2">
                     <button
                       type="button"
@@ -285,7 +285,7 @@ function BatchDetailModal({ batch, onClose }: { batch: VoucherBatch | null; onCl
           {(codes.data?.items ?? []).map((c) => (
             <li
               key={c.id}
-              className="flex items-center justify-between border-b border-surface-sunken/60 py-1.5"
+              className="flex items-center justify-between border-b border-border/60 py-1.5"
             >
               <code>{c.id}</code>
               <Pill tone={VOUCHER_TONE[c.state] ?? 'muted'}>{t(`vouchers.state.${c.state}`)}</Pill>

@@ -293,7 +293,7 @@ export function NasWizardModal({
             onChange={(e) => set('enabled', e.target.checked)}
           />
 
-          <div className="border-t border-surface-sunken pt-3">
+          <div className="border-t border-border pt-3">
             <p className="mb-2 text-xs font-medium text-ink-muted">
               {t('nas.autoSetup.credsTitle')}
             </p>
@@ -516,7 +516,7 @@ function ServicesEditor({
           </div>
         ))}
         {services.map((s, i) => (
-          <div key={s.id ?? `new-${i}`} className="rounded border border-surface-sunken p-2">
+          <div key={s.id ?? `new-${i}`} className="rounded border border-border p-2">
             <div className="grid gap-2 sm:grid-cols-2">
               <Select
                 aria-label={t('nas.serviceKind')}

@@ -33,7 +33,7 @@ export function Modal({
             size === 'lg' ? 'max-w-2xl' : 'max-w-md'
           }`}
         >
-          <div className="flex items-start justify-between gap-4 border-b border-surface-sunken px-5 py-4">
+          <div className="flex items-start justify-between gap-4 border-b border-border px-5 py-4">
             <div className="min-w-0">
               <Dialog.Title className="text-base font-semibold">{title}</Dialog.Title>
               {description ? (

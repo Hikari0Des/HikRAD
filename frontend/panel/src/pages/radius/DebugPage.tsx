@@ -67,7 +67,7 @@ export function DebugPage() {
         </Button>
       </div>
 
-      <div className="overflow-x-auto rounded-md border border-surface-sunken">
+      <div className="overflow-x-auto rounded-md border border-border">
         <table className="w-full min-w-[56rem] text-sm">
           <thead className="bg-surface-sunken/40 text-xs text-ink-muted">
             <tr>
@@ -82,7 +82,7 @@ export function DebugPage() {
           </thead>
           <tbody>
             {events.map((e, i) => (
-              <tr key={i} className="border-t border-surface-sunken/60">
+              <tr key={i} className="border-t border-border/60">
                 <td className="px-3 py-1.5 whitespace-nowrap text-ink-muted">{formatDate(e.at)}</td>
                 <td className="px-3 py-1.5">
                   <Ltr>{e.username}</Ltr>

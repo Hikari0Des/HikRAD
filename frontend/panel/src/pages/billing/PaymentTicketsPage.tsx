@@ -120,7 +120,7 @@ export function PaymentTicketsPage() {
       ) : rows.length === 0 ? (
         <EmptyState title={t('paymentTickets.empty.title')} body={t('paymentTickets.empty.body')} />
       ) : (
-        <div className="overflow-x-auto rounded-md border border-surface-sunken">
+        <div className="overflow-x-auto rounded-md border border-border">
           <table className="w-full min-w-[46rem] text-sm">
             <thead className="bg-surface-sunken/40 text-start text-xs text-ink-muted">
               <tr>
@@ -143,7 +143,7 @@ export function PaymentTicketsPage() {
             </thead>
             <tbody>
               {rows.map((r) => (
-                <tr key={r.id} className="border-t border-surface-sunken/60">
+                <tr key={r.id} className="border-t border-border/60">
                   <td className="px-3 py-2">
                     <Link
                       to={`/subscribers/${r.subscriber_id}`}
@@ -301,7 +301,7 @@ function TicketDetailModal({
           </div>
 
           {ticket.method_key === 'scratch_card' ? (
-            <div className="rounded-md border border-surface-sunken p-3">
+            <div className="rounded-md border border-border p-3">
               {revealed ? (
                 <div className="flex items-center gap-2">
                   <code
@@ -345,7 +345,7 @@ function TicketDetailModal({
 
           {ticket.state === 'pending' ? (
             rejecting ? (
-              <div className="space-y-3 border-t border-surface-sunken pt-4">
+              <div className="space-y-3 border-t border-border pt-4">
                 <div className="rounded-md bg-warn/10 p-3 text-sm text-warn">
                   {t('paymentTickets.rejectConsequence')}
                 </div>
@@ -371,7 +371,7 @@ function TicketDetailModal({
                 </div>
               </div>
             ) : (
-              <div className="flex justify-end gap-2 border-t border-surface-sunken pt-4">
+              <div className="flex justify-end gap-2 border-t border-border pt-4">
                 <Button variant="danger" disabled={busy} onClick={() => setRejecting(true)}>
                   {t('paymentTickets.reject')}
                 </Button>
@@ -381,7 +381,7 @@ function TicketDetailModal({
               </div>
             )
           ) : (
-            <div className="border-t border-surface-sunken pt-4 text-sm">
+            <div className="border-t border-border pt-4 text-sm">
               <span className={ticket.state === 'approved' ? 'text-ok' : 'text-danger'}>
                 {t(`paymentTickets.state.${ticket.state}`)}
               </span>
@@ -435,7 +435,7 @@ function AttachmentThumb({
       <img
         src={url}
         alt={attachment.filename}
-        className="h-16 w-16 rounded-md border border-surface-sunken object-cover"
+        className="h-16 w-16 rounded-md border border-border object-cover"
       />
     </a>
   ) : (
@@ -443,7 +443,7 @@ function AttachmentThumb({
       href={url}
       target="_blank"
       rel="noreferrer"
-      className="flex h-16 w-16 items-center justify-center rounded-md border border-surface-sunken text-xs text-brand underline"
+      className="flex h-16 w-16 items-center justify-center rounded-md border border-border text-xs text-brand underline"
     >
       {t('paymentTickets.attachmentFile')}
     </a>

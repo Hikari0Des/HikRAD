@@ -118,7 +118,7 @@ export function SubscribersReportPage() {
       ) : isEmpty ? (
         <EmptyState title={t('reports.empty.title')} body={t('reports.empty.body')} />
       ) : isByProfile ? (
-        <div className="overflow-x-auto rounded-md border border-surface-sunken">
+        <div className="overflow-x-auto rounded-md border border-border">
           <table className="w-full text-sm">
             <thead className="bg-surface-sunken/40 text-start text-xs text-ink-muted">
               <tr>
@@ -129,7 +129,7 @@ export function SubscribersReportPage() {
             <tbody>
               {(profRows as { profile_id: string; profile_name: string; count: number }[]).map(
                 (r) => (
-                  <tr key={r.profile_id || 'none'} className="border-t border-surface-sunken/60">
+                  <tr key={r.profile_id || 'none'} className="border-t border-border/60">
                     <td className="px-3 py-2">{r.profile_name}</td>
                     <td className="px-3 py-2 text-end">{r.count}</td>
                   </tr>
@@ -139,7 +139,7 @@ export function SubscribersReportPage() {
           </table>
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-md border border-surface-sunken">
+        <div className="overflow-x-auto rounded-md border border-border">
           <table className="w-full min-w-[36rem] text-sm">
             <thead className="bg-surface-sunken/40 text-start text-xs text-ink-muted">
               <tr>
@@ -159,7 +159,7 @@ export function SubscribersReportPage() {
                   expires_at: string | null
                 }[]
               ).map((r) => (
-                <tr key={r.id} className="border-t border-surface-sunken/60">
+                <tr key={r.id} className="border-t border-border/60">
                   <td className="px-3 py-2">
                     <Link
                       to={`/subscribers/${r.id}`}

@@ -136,7 +136,7 @@ export function LoginPage() {
                 dir="ltr"
                 value={totpCode}
                 onChange={(e) => setTotpCode(e.target.value)}
-                className="w-full rounded-md border border-surface-sunken bg-surface px-3 py-2 text-sm focus:border-brand focus:outline-none"
+                className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm focus:border-brand focus:outline-none"
               />
             </div>
             {error && (
@@ -168,7 +168,7 @@ export function LoginPage() {
                 dir="ltr"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                className="w-full rounded-md border border-surface-sunken bg-surface px-3 py-2 text-sm focus:border-brand focus:outline-none"
+                className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm focus:border-brand focus:outline-none"
               />
             </div>
             <div>
@@ -184,7 +184,7 @@ export function LoginPage() {
                 dir="ltr"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full rounded-md border border-surface-sunken bg-surface px-3 py-2 text-sm focus:border-brand focus:outline-none"
+                className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm focus:border-brand focus:outline-none"
               />
             </div>
             {error && (

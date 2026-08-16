@@ -43,7 +43,7 @@ export function StatusView({
         <StatusBadgeMon status={q.data.status} />
       </div>
 
-      <div className="rounded-md border border-surface-sunken bg-surface-raised p-4">
+      <div className="rounded-md border border-border bg-surface-raised p-4">
         <h2 className="mb-2 text-sm font-semibold">{t('monitoring.latency')}</h2>
         {latencies.length < 2 ? (
           <p className="text-sm text-ink-muted">{t('monitoring.noData')}</p>
@@ -76,7 +76,7 @@ export function StatusView({
         ) : null}
       </div>
 
-      <div className="rounded-md border border-surface-sunken bg-surface-raised p-4">
+      <div className="rounded-md border border-border bg-surface-raised p-4">
         <h2 className="mb-2 text-sm font-semibold">{t('monitoring.downtimeLog')}</h2>
         {q.data.downtime.length === 0 ? (
           <p className="text-sm text-ink-muted">{t('monitoring.noDowntime')}</p>
@@ -85,7 +85,7 @@ export function StatusView({
             {q.data.downtime.map((d, i) => (
               <li
                 key={i}
-                className="flex items-center justify-between border-b border-surface-sunken/60 py-1.5"
+                className="flex items-center justify-between border-b border-border/60 py-1.5"
               >
                 <span>{formatDate(d.from)}</span>
                 <span className="text-ink-muted">

@@ -127,7 +127,7 @@ export function MyPreferencesPage() {
     <section className="space-y-6">
       <PageHeader title={t('preferences.title')} subtitle={t('preferences.hint')} />
 
-      <div className="grid gap-4 rounded-md border border-surface-sunken bg-surface-raised p-4 sm:grid-cols-2">
+      <div className="grid gap-4 rounded-md border border-border bg-surface-raised p-4 sm:grid-cols-2">
         <FormField label={t('preferences.language')} error={errors.language}>
           {(id) => (
             <Select id={id} value={form.language} onChange={(e) => set('language', e.target.value)}>
@@ -203,7 +203,7 @@ export function MyPreferencesPage() {
         </div>
       </div>
 
-      <div className="rounded-md border border-surface-sunken bg-surface-raised p-4">
+      <div className="rounded-md border border-border bg-surface-raised p-4">
         <h2 className="mb-1 text-sm font-semibold">{t('preferences.notifications')}</h2>
         <p className="mb-3 text-xs text-ink-muted">{t('preferences.notificationsHint')}</p>
         <div className="overflow-x-auto">
@@ -223,7 +223,7 @@ export function MyPreferencesPage() {
               {NOTIFICATION_KEYS.map((key) => {
                 const ch = form.notificationPrefs[key] ?? { in_app: false, push: false }
                 return (
-                  <tr key={key} className="border-t border-surface-sunken/60">
+                  <tr key={key} className="border-t border-border/60">
                     <td className="px-2 py-2">
                       {key === 'payment_tickets_all'
                         ? t('preferences.paymentTicketsAll')

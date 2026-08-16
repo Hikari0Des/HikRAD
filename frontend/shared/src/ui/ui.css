@@ -1,11 +1,13 @@
 /*
- * @hikrad/shared UI primitives — plain CSS on the panel's brand tokens
- * (--hik-*, see the consuming app's theme/tokens.css) so the primitives work
- * in any consumer regardless of its Tailwind content globs. Import once per
+ * @hikrad/shared UI primitives — plain CSS on the canonical brand tokens
+ * (--hik-*, see theme/tokens.css in this package) so the primitives work in
+ * any consumer regardless of its Tailwind content globs. Import once per
  * app:  import '@hikrad/shared/ui.css'
  *
  * Layout rule (contract C8 / NFR-6.2): CSS logical properties only — the
- * stylelint config in this package enforces it.
+ * stylelint config in this package enforces it. Frozen contract (v4-1 FR-115):
+ * raw var(--hik-*) is permitted here (this package's own CSS) but nowhere
+ * else — components elsewhere reference roles through Tailwind utilities.
  */
 
 .hk-badge {
@@ -113,7 +115,7 @@
   inline-size: 1.5rem;
   block-size: 1.5rem;
   border-radius: 9999px;
-  border: 2px solid rgb(var(--hik-surface-sunken));
+  border: 2px solid rgb(var(--hik-border));
   border-block-start-color: rgb(var(--hik-brand));
   animation: hk-spin 0.8s linear infinite;
 }
@@ -138,7 +140,7 @@
 /* Card + StatCard */
 .hk-card {
   background: rgb(var(--hik-surface-raised));
-  border: 1px solid rgb(var(--hik-surface-sunken));
+  border: 1px solid rgb(var(--hik-border));
   border-radius: var(--hik-radius-lg, 0.5rem);
   box-shadow: var(--hik-shadow-sm);
 }
@@ -182,7 +184,7 @@
 /* SectionCard */
 .hk-section {
   background: rgb(var(--hik-surface-raised));
-  border: 1px solid rgb(var(--hik-surface-sunken));
+  border: 1px solid rgb(var(--hik-border));
   border-radius: var(--hik-radius-lg, 0.5rem);
   overflow: hidden;
 }
@@ -194,7 +196,7 @@
   gap: 0.75rem;
   padding-block: 0.75rem;
   padding-inline: 1rem;
-  border-block-end: 1px solid rgb(var(--hik-surface-sunken));
+  border-block-end: 1px solid rgb(var(--hik-border));
 }
 
 .hk-section__title {
@@ -211,7 +213,7 @@
 .hk-table-wrap {
   inline-size: 100%;
   overflow-x: auto;
-  border: 1px solid rgb(var(--hik-surface-sunken));
+  border: 1px solid rgb(var(--hik-border));
   border-radius: var(--hik-radius-lg, 0.5rem);
 }
 
@@ -240,7 +242,7 @@
 .hk-table tbody td {
   padding-block: 0.5rem;
   padding-inline: 0.75rem;
-  border-block-start: 1px solid rgb(var(--hik-surface-sunken));
+  border-block-start: 1px solid rgb(var(--hik-border));
   color: rgb(var(--hik-ink));
 }
 

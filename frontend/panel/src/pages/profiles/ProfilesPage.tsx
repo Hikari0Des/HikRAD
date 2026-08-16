@@ -266,11 +266,11 @@ export function ProfilesPage() {
       ) : loading ? (
         <LoadingState />
       ) : filtered.length === 0 ? (
-        <p className="rounded-md border border-dashed border-surface-sunken p-10 text-center text-sm text-ink-muted">
+        <p className="rounded-md border border-dashed border-border p-10 text-center text-sm text-ink-muted">
           {all.length === 0 ? t('profiles.empty') : t('profiles.noneMatch')}
         </p>
       ) : (
-        <div className="overflow-x-auto rounded-md border border-surface-sunken">
+        <div className="overflow-x-auto rounded-md border border-border">
           <table className="w-full min-w-[720px] text-sm">
             <thead className="bg-surface-raised text-xs uppercase tracking-wide text-ink-muted">
               <tr>
@@ -406,7 +406,7 @@ function ProfileRow({
   const t = useT()
   const { formatNumber } = useFormatters()
   return (
-    <tr className={`border-t border-surface-sunken ${p.archived ? 'opacity-50' : ''}`}>
+    <tr className={`border-t border-border ${p.archived ? 'opacity-50' : ''}`}>
       {showBulk && (
         <td className="px-3 py-2">
           <Checkbox
@@ -917,7 +917,7 @@ function ProfileCostModal({ profile, onClose }: { profile: Profile | null; onClo
           {busy ? t('ui.working') : t('profiles.costSave')}
         </Button>
 
-        <div className="border-t border-surface-sunken pt-3">
+        <div className="border-t border-border pt-3">
           <p className="mb-2 text-xs font-medium text-ink-muted">{t('profiles.costHistory')}</p>
           {loading ? (
             <LoadingState />

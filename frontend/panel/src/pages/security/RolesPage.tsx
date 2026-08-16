@@ -69,7 +69,7 @@ export function RolesPage() {
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {rolesQ.data.items.map((r) => (
-          <div key={r.id} className="rounded-md border border-surface-sunken bg-surface-raised p-4">
+          <div key={r.id} className="rounded-md border border-border bg-surface-raised p-4">
             <div className="flex items-start justify-between">
               <div>
                 <h2 className="font-semibold">{r.name}</h2>
@@ -217,7 +217,7 @@ function RoleFormModal({
           <RoleMatrix catalog={catalog} value={perms} onChange={setPerms} disabled={readOnly} />
         </div>
         {error ? <p className="text-sm text-danger">{error}</p> : null}
-        <div className="flex justify-end gap-2 border-t border-surface-sunken pt-3">
+        <div className="flex justify-end gap-2 border-t border-border pt-3">
           <Button variant="ghost" disabled={busy} onClick={onClose}>
             {t('ui.cancel')}
           </Button>

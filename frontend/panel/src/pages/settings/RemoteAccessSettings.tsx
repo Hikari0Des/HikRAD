@@ -34,7 +34,7 @@ export function RemoteAccessSettings() {
 
   return (
     <div className="max-w-md space-y-4">
-      <div className="rounded-md border border-surface-sunken bg-surface-raised p-3 text-sm">
+      <div className="rounded-md border border-border bg-surface-raised p-3 text-sm">
         <span className="font-medium">{t('settings.remoteAccess.status')}: </span>
         {tunnelState ? (
           <span

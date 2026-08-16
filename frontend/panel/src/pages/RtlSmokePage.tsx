@@ -61,7 +61,7 @@ export function RtlSmokePage() {
             <DropdownMenu.Content
               align="start"
               sideOffset={6}
-              className="z-30 min-w-40 rounded-md border border-surface-sunken bg-surface-raised p-1 shadow-lg"
+              className="z-30 min-w-40 rounded-md border border-border bg-surface-raised p-1 shadow-lg"
             >
               <DropdownMenu.Item className="cursor-pointer rounded px-3 py-2 text-sm outline-none data-[highlighted]:bg-brand-soft">
                 {t('smoke.itemOne')}

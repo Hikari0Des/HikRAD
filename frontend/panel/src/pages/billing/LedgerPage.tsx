@@ -134,7 +134,7 @@ export function LedgerPage() {
       {page.error ? (
         <ErrorState onRetry={page.reset} />
       ) : (
-        <div className="overflow-x-auto rounded-md border border-surface-sunken">
+        <div className="overflow-x-auto rounded-md border border-border">
           <table className="w-full min-w-[40rem] text-sm">
             <thead className="bg-surface-sunken/40 text-start text-xs text-ink-muted">
               <tr>
@@ -200,7 +200,7 @@ function LedgerRow({
   const t = useT()
   const { formatDate } = useFormatters()
   return (
-    <tr className="border-t border-surface-sunken/60">
+    <tr className="border-t border-border/60">
       <td className="px-3 py-2 whitespace-nowrap">{formatDate(row.at)}</td>
       <td className="px-3 py-2">
         <span>{t(`ledger.type.${row.type}`)}</span>

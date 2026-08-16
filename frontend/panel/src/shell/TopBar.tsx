@@ -10,7 +10,7 @@ export function TopBar({ onOpenMenu }: { onOpenMenu: () => void }) {
   const t = useT()
 
   return (
-    <header className="sticky top-0 z-10 flex items-center gap-3 border-b border-surface-sunken bg-surface-raised px-3 py-2 sm:px-4">
+    <header className="sticky top-0 z-10 flex items-center gap-3 border-b border-border bg-surface-raised px-3 py-2 sm:px-4">
       <button
         type="button"
         onClick={onOpenMenu}

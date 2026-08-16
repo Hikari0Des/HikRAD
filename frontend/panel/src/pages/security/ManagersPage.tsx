@@ -64,7 +64,7 @@ export function ManagersPage() {
       {managers.loading || !managers.data ? (
         <LoadingState />
       ) : (
-        <div className="overflow-x-auto rounded-md border border-surface-sunken">
+        <div className="overflow-x-auto rounded-md border border-border">
           <table className="w-full min-w-[42rem] text-sm">
             <thead className="bg-surface-sunken/40 text-xs text-ink-muted">
               <tr>
@@ -79,7 +79,7 @@ export function ManagersPage() {
             </thead>
             <tbody>
               {managers.data.items.map((m) => (
-                <tr key={m.id} className="border-t border-surface-sunken/60">
+                <tr key={m.id} className="border-t border-border/60">
                   <td className="px-3 py-2">
                     <span className="font-medium">
                       <bdi dir="ltr">{m.username}</bdi>

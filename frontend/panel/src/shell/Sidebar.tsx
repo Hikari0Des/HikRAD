@@ -137,7 +137,7 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center gap-2 border-b border-surface-sunken px-4 py-4">
+      <div className="flex items-center gap-2 border-b border-border px-4 py-4">
         {branding.logo_url ? (
           <img
             src={branding.logo_url}
@@ -220,7 +220,7 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
         })}
       </nav>
       {import.meta.env.DEV && (
-        <div className="border-t border-surface-sunken p-2">
+        <div className="border-t border-border p-2">
           <NavLink
             to="/dev/rtl-smoke"
             onClick={onNavigate}

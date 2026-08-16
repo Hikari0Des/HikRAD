@@ -69,7 +69,7 @@ export function FilterBar({
   const anyApplied = activeChips.length > 0 || search.trim() !== ''
 
   return (
-    <div className="mb-3 rounded-md border border-surface-sunken bg-surface-raised p-3">
+    <div className="mb-3 rounded-md border border-border bg-surface-raised p-3">
       <div className="flex flex-wrap items-center gap-2">
         <TextInput
           value={search}

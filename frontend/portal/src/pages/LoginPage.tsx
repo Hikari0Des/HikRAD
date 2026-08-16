@@ -84,7 +84,7 @@ export function LoginPage() {
             dir="ltr"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
-            className="rounded-md border border-surface-sunken bg-surface px-3 py-2 text-base"
+            className="rounded-md border border-border bg-surface px-3 py-2 text-base"
           />
         </label>
 
@@ -97,7 +97,7 @@ export function LoginPage() {
             dir="ltr"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="rounded-md border border-surface-sunken bg-surface px-3 py-2 text-base"
+            className="rounded-md border border-border bg-surface px-3 py-2 text-base"
           />
         </label>
 

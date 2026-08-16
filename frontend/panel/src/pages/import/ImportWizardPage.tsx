@@ -255,7 +255,7 @@ export function ImportWizardPage({ entity = 'subscribers' }: { entity?: ImportEn
               {t('import.dryRun.download')}
             </Button>
           </div>
-          <div className="max-h-96 overflow-auto rounded-md border border-surface-sunken">
+          <div className="max-h-96 overflow-auto rounded-md border border-border">
             <table className="w-full text-sm">
               <thead className="sticky top-0 bg-surface-sunken/60 text-start text-xs text-ink-muted">
                 <tr>
@@ -268,7 +268,7 @@ export function ImportWizardPage({ entity = 'subscribers' }: { entity?: ImportEn
               </thead>
               <tbody>
                 {dryRun.rows.map((r) => (
-                  <tr key={r.row} className="border-t border-surface-sunken/60">
+                  <tr key={r.row} className="border-t border-border/60">
                     <td className="px-3 py-2">{r.row}</td>
                     <td className="px-3 py-2">
                       <span className={r.action === 'create' ? 'text-ok' : 'text-warn'}>
@@ -329,7 +329,7 @@ export function ImportWizardPage({ entity = 'subscribers' }: { entity?: ImportEn
 
       {step === 'summary' && progress && (
         <div className="max-w-md space-y-4">
-          <div className="rounded-md border border-surface-sunken bg-surface-raised p-4">
+          <div className="rounded-md border border-border bg-surface-raised p-4">
             <p className="text-sm">
               {t('import.summary.body', {
                 succeeded: progress.progress?.created ?? 0,

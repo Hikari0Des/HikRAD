@@ -122,7 +122,7 @@ function BrandingSettingsInner({
       >
         {(id) => (
           <div className="flex items-center gap-3">
-            <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-md border border-surface-sunken bg-surface">
+            <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border bg-surface">
               {v.logo_url ? (
                 <img
                   src={v.logo_url}
@@ -174,7 +174,7 @@ function BrandingSettingsInner({
             disabled={!canEdit}
             value={v.primary_color ?? '#08748f'}
             onChange={(e) => g.setField('primary_color', e.target.value)}
-            className="h-9 w-16 rounded border border-surface-sunken"
+            className="h-9 w-16 rounded border border-border"
           />
         )}
       </FormField>
@@ -186,7 +186,7 @@ function BrandingSettingsInner({
             disabled={!canEdit}
             value={v.secondary_color ?? '#0f172a'}
             onChange={(e) => g.setField('secondary_color', e.target.value)}
-            className="h-9 w-16 rounded border border-surface-sunken"
+            className="h-9 w-16 rounded border border-border"
           />
         )}
       </FormField>

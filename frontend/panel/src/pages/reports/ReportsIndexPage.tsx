@@ -36,7 +36,7 @@ export function ReportsIndexPage() {
     <section>
       <PageHeader title={t('reports.title')} subtitle={t('reports.subtitle')} />
       <div className="mb-6 grid gap-3 sm:grid-cols-2">
-        <div className="rounded-md border border-surface-sunken bg-surface-raised p-4">
+        <div className="rounded-md border border-border bg-surface-raised p-4">
           <p className="text-xs text-ink-muted">{t('reports.index.revenueThisMonth')}</p>
           <p className="text-2xl font-semibold">
             {/* IQD-scoped headline (like the dashboard tile and digest) — the
@@ -44,7 +44,7 @@ export function ReportsIndexPage() {
             {revenue.loading ? '…' : <IQDAmount amount={revenue.data?.totals.IQD ?? 0} />}
           </p>
         </div>
-        <div className="rounded-md border border-surface-sunken bg-surface-raised p-4">
+        <div className="rounded-md border border-border bg-surface-raised p-4">
           <p className="text-xs text-ink-muted">{t('reports.index.expiringSoon')}</p>
           <p className="text-2xl font-semibold">
             {expiring.loading ? '…' : (expiring.data?.total ?? 0)}
@@ -56,7 +56,7 @@ export function ReportsIndexPage() {
           <Link
             key={c.to}
             to={c.to}
-            className="rounded-md border border-surface-sunken bg-surface-raised p-4 hover:border-brand"
+            className="rounded-md border border-border bg-surface-raised p-4 hover:border-brand"
           >
             <p className="font-medium">{t(c.titleKey)}</p>
             <p className="mt-1 text-sm text-ink-muted">{t(c.descKey)}</p>

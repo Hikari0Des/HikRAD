@@ -263,7 +263,7 @@ export function UserListPage() {
       {page.error ? (
         <ErrorState onRetry={page.reset} />
       ) : (
-        <div className="overflow-x-auto rounded-md border border-surface-sunken">
+        <div className="overflow-x-auto rounded-md border border-border">
           <table className="w-full min-w-[640px] text-sm">
             <thead className="bg-surface-raised text-start text-xs uppercase tracking-wide text-ink-muted">
               <tr>
@@ -288,7 +288,7 @@ export function UserListPage() {
             </thead>
             <tbody>
               {filtered.map((s) => (
-                <tr key={s.id} className="border-t border-surface-sunken hover:bg-surface-raised">
+                <tr key={s.id} className="border-t border-border hover:bg-surface-raised">
                   {showBulk && (
                     <Td>
                       <Checkbox
@@ -376,7 +376,7 @@ function ColumnChooser({
         {t('users.columns')}
       </Button>
       {open && (
-        <div className="absolute end-0 top-full z-20 mt-1 w-44 rounded-md border border-surface-sunken bg-surface-raised p-2 shadow-lg">
+        <div className="absolute end-0 top-full z-20 mt-1 w-44 rounded-md border border-border bg-surface-raised p-2 shadow-lg">
           {ALL_COLUMNS.map((c) => (
             <Checkbox
               key={c}

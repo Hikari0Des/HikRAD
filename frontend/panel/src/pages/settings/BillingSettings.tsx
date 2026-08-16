@@ -156,7 +156,7 @@ function CardPaymentSettings() {
 
   if (pending) {
     return (
-      <div className="mt-8 border-t border-surface-sunken pt-6">
+      <div className="mt-8 border-t border-border pt-6">
         <h2 className="mb-2 text-sm font-semibold">{t('settings.billing.cardPayments')}</h2>
         <ErrorState
           title={t('settings.billing.cardPaymentsPending')}
@@ -194,7 +194,7 @@ function CardPaymentFields({
   const [typesText, setTypesText] = useState(initialTypes)
 
   return (
-    <div className="mt-8 border-t border-surface-sunken pt-6">
+    <div className="mt-8 border-t border-border pt-6">
       <h2 className="mb-3 text-sm font-semibold">{t('settings.billing.cardPayments')}</h2>
       <div className="space-y-4">
         <FormField

@@ -46,8 +46,8 @@ export function CurrencyRatesPage() {
           is a single IQD balance, so there is nothing to exchange between. Rates
           stay, now used only for entry-time conversion + display. */}
 
-      <div className="mt-6 rounded-md border border-surface-sunken">
-        <div className="flex items-center justify-between border-b border-surface-sunken p-3">
+      <div className="mt-6 rounded-md border border-border">
+        <div className="flex items-center justify-between border-b border-border p-3">
           <h2 className="text-sm font-semibold">{t('currencyRates.table.title')}</h2>
         </div>
 
@@ -87,7 +87,7 @@ export function CurrencyRatesPage() {
 function RateRow({ rate }: { rate: CurrencyRate }) {
   const { formatDate, formatNumber } = useFormatters()
   return (
-    <tr className="border-t border-surface-sunken/60">
+    <tr className="border-t border-border/60">
       <td className="px-3 py-2" dir="ltr">
         {rate.from_currency} → {rate.to_currency}
       </td>
@@ -133,7 +133,7 @@ function CreateRateForm({
         e.preventDefault()
         void submit()
       }}
-      className="grid gap-3 border-b border-surface-sunken p-3 sm:grid-cols-4 sm:items-end"
+      className="grid gap-3 border-b border-border p-3 sm:grid-cols-4 sm:items-end"
     >
       <Field label={t('currencyRates.from')} htmlFor="rate-from">
         <Select id="rate-from" value={from} onChange={(e) => setFrom(e.target.value)} required>

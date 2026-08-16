@@ -130,7 +130,7 @@ function AuditRowView({ row }: { row: AuditRow }) {
   const entity = entityMsg === entityKey ? humanise(row.entity_type) : entityMsg
 
   return (
-    <div className="rounded-md border border-surface-sunken bg-surface-raised p-3 text-sm">
+    <div className="rounded-md border border-border bg-surface-raised p-3 text-sm">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
@@ -188,7 +188,7 @@ function AuditDiff({ row }: { row: AuditRow }) {
             </thead>
             <tbody>
               {changes.map((c) => (
-                <tr key={c.field} className="border-t border-surface-sunken/60 align-top">
+                <tr key={c.field} className="border-t border-border/60 align-top">
                   <td className="py-1 pe-3 font-medium">
                     <bdi dir="ltr">{c.field}</bdi>
                   </td>

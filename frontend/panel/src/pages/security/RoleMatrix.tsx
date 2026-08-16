@@ -50,14 +50,14 @@ export function RoleMatrix({
     <div className="overflow-x-auto">
       <table className="w-full min-w-[32rem] border-collapse text-sm">
         <thead>
-          <tr className="border-b border-surface-sunken text-start text-xs text-ink-muted">
+          <tr className="border-b border-border text-start text-xs text-ink-muted">
             <th className="py-2 pe-4 text-start font-medium">{t('roles.moduleCol')}</th>
             <th className="py-2 text-start font-medium">{t('roles.permsCol')}</th>
           </tr>
         </thead>
         <tbody>
           {rows.map((row) => (
-            <tr key={row.module} className="border-b border-surface-sunken/60 align-top">
+            <tr key={row.module} className="border-b border-border/60 align-top">
               <th scope="row" className="py-2 pe-4 text-start font-medium">
                 {label(`roles.module.${row.module}`, row.module)}
               </th>

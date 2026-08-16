@@ -55,7 +55,7 @@ export function TotpEnroll({
         <div>
           <p className="text-sm font-medium">{t('totp.backupTitle')}</p>
           <p className="mt-0.5 text-xs text-ink-muted">{t('totp.backupHint')}</p>
-          <ul className="mt-2 grid grid-cols-2 gap-1 rounded-md border border-surface-sunken bg-surface p-3">
+          <ul className="mt-2 grid grid-cols-2 gap-1 rounded-md border border-border bg-surface p-3">
             {backupCodes.map((c) => (
               <li key={c}>
                 <code className="text-sm">{c}</code>
@@ -91,7 +91,7 @@ export function TotpEnroll({
         <p className="text-sm font-medium">{t('totp.manualKey')}</p>
         <p className="mt-0.5 text-xs text-ink-muted">{t('totp.manualKeyHint')}</p>
         <div className="mt-2 flex items-center gap-2">
-          <code className="grow break-all rounded-md border border-surface-sunken bg-surface px-3 py-2 text-sm">
+          <code className="grow break-all rounded-md border border-border bg-surface px-3 py-2 text-sm">
             {enroll.data.secret}
           </code>
           <CopyButton text={enroll.data.secret} />

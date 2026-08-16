@@ -93,7 +93,7 @@ export function UsageReportPage() {
       ) : rows.length === 0 ? (
         <EmptyState title={t('reports.empty.title')} body={t('reports.empty.body')} />
       ) : (
-        <div className="overflow-x-auto rounded-md border border-surface-sunken">
+        <div className="overflow-x-auto rounded-md border border-border">
           <table className="w-full text-sm">
             <thead className="bg-surface-sunken/40 text-start text-xs text-ink-muted">
               <tr>
@@ -114,7 +114,7 @@ export function UsageReportPage() {
                       up_bytes: number
                     }[]
                   ).map((r) => (
-                    <tr key={r.subscriber_id} className="border-t border-surface-sunken/60">
+                    <tr key={r.subscriber_id} className="border-t border-border/60">
                       <td className="px-3 py-2">
                         <Link
                           to={`/subscribers/${r.subscriber_id}`}
@@ -139,7 +139,7 @@ export function UsageReportPage() {
                       up_bytes: number
                     }[]
                   ).map((r) => (
-                    <tr key={r.nas_id || 'none'} className="border-t border-surface-sunken/60">
+                    <tr key={r.nas_id || 'none'} className="border-t border-border/60">
                       <td className="px-3 py-2">{r.nas_name}</td>
                       <td className="px-3 py-2 text-end">
                         {formatBytes(r.down_bytes, formatNumber)}

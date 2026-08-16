@@ -84,14 +84,14 @@ export function Combobox({
           sideOffset={4}
           className={`w-[var(--radix-popover-trigger-width)] p-0 ${POPOVER_CONTENT}`}
         >
-          <div className="border-b border-surface-sunken p-2">
+          <div className="border-b border-border p-2">
             <input
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder={searchPlaceholder}
               autoFocus
-              className="w-full rounded border border-surface-sunken bg-surface px-2 py-1 text-sm focus:outline-none"
+              className="w-full rounded border border-border bg-surface px-2 py-1 text-sm focus:outline-none"
             />
           </div>
           <div role="listbox" aria-multiselectable className="max-h-64 overflow-y-auto py-1">

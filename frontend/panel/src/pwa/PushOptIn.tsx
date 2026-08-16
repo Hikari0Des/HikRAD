@@ -68,7 +68,7 @@ export function PushOptIn() {
       type="button"
       disabled={status === 'busy'}
       onClick={status === 'on' ? disable : enable}
-      className="w-full border-t border-surface-sunken px-3 py-2 text-start text-xs text-ink-muted hover:bg-surface-sunken disabled:opacity-60"
+      className="w-full border-t border-border px-3 py-2 text-start text-xs text-ink-muted hover:bg-surface-sunken disabled:opacity-60"
     >
       {status === 'on' ? t('pwa.pushDisable') : t('pwa.pushEnable')}
     </button>

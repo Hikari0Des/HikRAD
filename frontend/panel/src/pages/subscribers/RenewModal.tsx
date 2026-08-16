@@ -144,7 +144,7 @@ export function RenewModal({
             </Select>
           </Field>
 
-          <div className="flex items-center justify-between rounded-md border border-surface-sunken bg-surface p-3">
+          <div className="flex items-center justify-between rounded-md border border-border bg-surface p-3">
             <span className="text-sm text-ink-muted">{t('renew.price')}</span>
             {previewPrice != null ? (
               <span className="text-lg font-semibold">
@@ -255,7 +255,7 @@ function RenewSuccess({
         </div>
       </dl>
 
-      <div className="flex flex-wrap gap-2 border-t border-surface-sunken pt-3">
+      <div className="flex flex-wrap gap-2 border-t border-border pt-3">
         <Button size="sm" variant="secondary" disabled={printing} onClick={() => void print('en')}>
           {t('renew.printEn')}
         </Button>

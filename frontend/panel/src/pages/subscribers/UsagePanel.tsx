@@ -18,7 +18,7 @@ export function UsagePanel({ subscriberId }: { subscriberId: string }) {
 
   return (
     <div>
-      <div className="mb-3 inline-flex overflow-hidden rounded-md border border-surface-sunken text-sm">
+      <div className="mb-3 inline-flex overflow-hidden rounded-md border border-border text-sm">
         <button
           type="button"
           onClick={() => setGranularity('daily')}

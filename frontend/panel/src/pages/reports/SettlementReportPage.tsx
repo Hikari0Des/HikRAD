@@ -155,7 +155,7 @@ function Tile({
   positive?: boolean
 }) {
   return (
-    <div className="rounded-md border border-surface-sunken bg-surface-raised p-4">
+    <div className="rounded-md border border-border bg-surface-raised p-4">
       <p className="text-xs text-ink-muted">{label}</p>
       <p className={`text-xl font-semibold ${positive ? 'text-ok' : ''}`}>
         <IQDAmount amount={amount} currency={currency} />

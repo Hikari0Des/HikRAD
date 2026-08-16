@@ -147,7 +147,7 @@ export function UserDetailPage() {
       </div>
 
       {/* Identity + override badges */}
-      <div className="mb-4 flex flex-wrap gap-x-6 gap-y-2 rounded-md border border-surface-sunken bg-surface-raised p-4 text-sm">
+      <div className="mb-4 flex flex-wrap gap-x-6 gap-y-2 rounded-md border border-border bg-surface-raised p-4 text-sm">
         <Info label={t('subscriber.name')}>{s.name ?? '—'}</Info>
         <Info label={t('subscriber.phone')}>
           {s.phone ? (
@@ -203,7 +203,7 @@ export function UserDetailPage() {
 
       {/* Tabs */}
       <div className="mt-4">
-        <div className="flex gap-1 border-b border-surface-sunken">
+        <div className="flex gap-1 border-b border-border">
           <TabButton active={tab === 'usage'} onClick={() => setTab('usage')}>
             {t('subscriber.tabUsage')}
           </TabButton>
@@ -365,7 +365,7 @@ function DisconnectOffer({
 
 function Card({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-md border border-surface-sunken bg-surface-raised p-3">
+    <div className="rounded-md border border-border bg-surface-raised p-3">
       <p className="text-xs text-ink-muted">{label}</p>
       <div className="mt-1 text-sm font-medium">{children}</div>
     </div>
@@ -383,7 +383,7 @@ function Info({ label, children }: { label: string; children: React.ReactNode })
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-md border border-surface-sunken bg-surface-raised p-4">
+    <div className="rounded-md border border-border bg-surface-raised p-4">
       <h2 className="mb-2 text-sm font-semibold">{title}</h2>
       {children}
     </div>

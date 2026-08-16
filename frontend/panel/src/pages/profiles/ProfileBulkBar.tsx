@@ -110,7 +110,7 @@ export function ProfileBulkBar({
   }
 
   return (
-    <div className="rounded-md border border-surface-sunken bg-surface-raised p-3">
+    <div className="rounded-md border border-border bg-surface-raised p-3">
       <p className="mb-2 text-xs text-ink-muted">
         {hasSelection
           ? t('bulk.scopeSelected', { count: selectedIds.length })
@@ -152,7 +152,7 @@ export function ProfileBulkBar({
       </div>
 
       {job && (
-        <div className="mt-3 rounded border border-surface-sunken p-3 text-sm">
+        <div className="mt-3 rounded border border-border p-3 text-sm">
           <div className="flex items-center justify-between">
             <span className="font-medium">{t(`profiles.bulk.action.${job.action}`)}</span>
             <span className="text-ink-muted">

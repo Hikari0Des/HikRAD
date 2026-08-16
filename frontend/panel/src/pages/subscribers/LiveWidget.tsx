@@ -64,7 +64,7 @@ export function LiveWidget({ subscriberId }: { subscriberId: string }) {
       {sessions.map((s) => (
         <div
           key={`${s.nas_id}:${s.acct_session_id}`}
-          className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-surface-sunken p-3 text-sm"
+          className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border p-3 text-sm"
         >
           <div className="min-w-0">
             <div className="flex items-center gap-2">

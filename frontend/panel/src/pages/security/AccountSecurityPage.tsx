@@ -16,13 +16,13 @@ export function AccountSecurityPage() {
     <section className="space-y-6">
       <PageHeader title={t('account.title')} />
 
-      <div className="rounded-md border border-surface-sunken bg-surface-raised p-4">
+      <div className="rounded-md border border-border bg-surface-raised p-4">
         <h2 className="mb-1 text-sm font-semibold">{t('account.twofaTitle')}</h2>
         <p className="mb-3 text-xs text-ink-muted">{t('account.twofaHint')}</p>
         <EnrolSection />
       </div>
 
-      <div className="rounded-md border border-surface-sunken bg-surface-raised p-4">
+      <div className="rounded-md border border-border bg-surface-raised p-4">
         <h2 className="mb-3 text-sm font-semibold">{t('account.sessionsTitle')}</h2>
         <SessionsList />
       </div>
@@ -70,7 +70,7 @@ function SessionsList() {
       {q.data.items.map((s) => (
         <li
           key={s.id}
-          className="flex items-center justify-between gap-3 border-b border-surface-sunken/60 py-2 text-sm"
+          className="flex items-center justify-between gap-3 border-b border-border/60 py-2 text-sm"
         >
           <div className="min-w-0">
             <p className="truncate">

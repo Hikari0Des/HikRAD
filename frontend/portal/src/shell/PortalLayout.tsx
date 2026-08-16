@@ -76,7 +76,7 @@ export function PortalLayout() {
 
       <nav
         aria-label={t('portal.nav.label')}
-        className="fixed bottom-0 inset-x-0 mx-auto flex w-full max-w-md border-t border-surface-sunken bg-surface-raised"
+        className="fixed bottom-0 inset-x-0 mx-auto flex w-full max-w-md border-t border-border bg-surface-raised"
       >
         {TABS.map((tab) => (
           <NavLink

@@ -176,9 +176,9 @@ export function LiveSessionsPage() {
       />
 
       {/* Header row */}
-      <div className="overflow-x-auto rounded-md border border-surface-sunken">
+      <div className="overflow-x-auto rounded-md border border-border">
         <div className="min-w-[900px]">
-          <div className="grid grid-cols-[1.4fr_1.2fr_1.4fr_1.2fr_1fr_1.4fr_0.8fr_auto] gap-2 border-b border-surface-sunken bg-surface-raised px-3 py-2 text-xs uppercase tracking-wide text-ink-muted">
+          <div className="grid grid-cols-[1.4fr_1.2fr_1.4fr_1.2fr_1fr_1.4fr_0.8fr_auto] gap-2 border-b border-border bg-surface-raised px-3 py-2 text-xs uppercase tracking-wide text-ink-muted">
             <span>{t('live.col.user')}</span>
             <span>{t('live.col.ip')}</span>
             <span>{t('live.col.mac')}</span>
@@ -244,7 +244,7 @@ function Row({
   const t = useT()
   return (
     <div
-      className={`grid h-[52px] grid-cols-[1.4fr_1.2fr_1.4fr_1.2fr_1fr_1.4fr_0.8fr_auto] items-center gap-2 border-b border-surface-sunken px-3 text-sm ${
+      className={`grid h-[52px] grid-cols-[1.4fr_1.2fr_1.4fr_1.2fr_1fr_1.4fr_0.8fr_auto] items-center gap-2 border-b border-border px-3 text-sm ${
         s.stale ? 'opacity-50' : ''
       }`}
       title={s.stale ? t('live.staleHint') : undefined}

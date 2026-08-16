@@ -25,7 +25,7 @@ export function AppShell() {
     <LicenseProvider>
       <NotificationProvider>
         <div className="min-h-screen">
-          <aside className="fixed inset-y-0 start-0 z-20 hidden w-64 border-e border-surface-sunken bg-surface-raised md:block">
+          <aside className="fixed inset-y-0 start-0 z-20 hidden w-64 border-e border-border bg-surface-raised md:block">
             <SidebarContent />
           </aside>
 

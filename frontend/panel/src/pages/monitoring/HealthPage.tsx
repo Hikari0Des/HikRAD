@@ -24,7 +24,7 @@ export function HealthPage() {
         <ServiceTile label={t('health.freeradius')} up={h.freeradius.up} />
       </div>
 
-      <div className="rounded-md border border-surface-sunken bg-surface-raised p-4">
+      <div className="rounded-md border border-border bg-surface-raised p-4">
         <h2 className="mb-2 text-sm font-semibold">{t('health.pipelineTitle')}</h2>
         {/* The lossless-accounting counter invariant is the core product claim. */}
         <div
@@ -44,7 +44,7 @@ export function HealthPage() {
         </dl>
       </div>
 
-      <div className="rounded-md border border-surface-sunken bg-surface-raised p-4">
+      <div className="rounded-md border border-border bg-surface-raised p-4">
         <h2 className="mb-2 text-sm font-semibold">{t('health.diskTitle')}</h2>
         <ul className="space-y-2">
           {h.disk.map((d) => (
@@ -64,7 +64,7 @@ export function HealthPage() {
 function ServiceTile({ label, up }: { label: string; up: boolean }) {
   const t = useT()
   return (
-    <div className="rounded-md border border-surface-sunken bg-surface-raised p-3">
+    <div className="rounded-md border border-border bg-surface-raised p-3">
       <p className="text-xs text-ink-muted">{label}</p>
       <p
         className={`mt-1 flex items-center gap-1.5 text-sm font-medium ${up ? 'text-ok' : 'text-danger'}`}

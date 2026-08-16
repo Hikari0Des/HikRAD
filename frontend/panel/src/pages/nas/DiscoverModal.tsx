@@ -94,7 +94,7 @@ export function DiscoverModal({
             {results.map((d) => (
               <li
                 key={d.ip}
-                className={`flex items-center justify-between gap-3 rounded-md border border-surface-sunken p-3 ${
+                className={`flex items-center justify-between gap-3 rounded-md border border-border p-3 ${
                   d.already_registered ? 'opacity-50' : ''
                 }`}
               >

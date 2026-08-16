@@ -85,10 +85,7 @@ export function RevenueReportPage() {
           {/* Per-currency totals (v2 phase 4, FR-70.2) — never blended into one figure. */}
           <div className="mb-4 flex flex-wrap gap-3">
             {Object.entries(data.totals).map(([currency, total]) => (
-              <div
-                key={currency}
-                className="rounded-md border border-surface-sunken bg-surface-raised p-4"
-              >
+              <div key={currency} className="rounded-md border border-border bg-surface-raised p-4">
                 <p className="text-xs text-ink-muted">
                   {t('reports.revenue.total')} · {currency}
                 </p>
@@ -98,7 +95,7 @@ export function RevenueReportPage() {
               </div>
             ))}
           </div>
-          <div className="overflow-x-auto rounded-md border border-surface-sunken">
+          <div className="overflow-x-auto rounded-md border border-border">
             <table className="w-full text-sm">
               <thead className="bg-surface-sunken/40 text-start text-xs text-ink-muted">
                 <tr>
@@ -111,10 +108,7 @@ export function RevenueReportPage() {
               </thead>
               <tbody>
                 {data.rows.map((row) => (
-                  <tr
-                    key={`${row.key}-${row.currency}`}
-                    className="border-t border-surface-sunken/60"
-                  >
+                  <tr key={`${row.key}-${row.currency}`} className="border-t border-border/60">
                     <td className="px-3 py-2">{row.key || t('reports.unattributed')}</td>
                     <td className="px-3 py-2 text-end">
                       <IQDAmount amount={row.amount} currency={row.currency} />

@@ -122,13 +122,13 @@ export function GlobalSearch() {
         role="combobox"
         aria-expanded={showDropdown}
         aria-controls="global-search-results"
-        className="w-full rounded-md border border-surface-sunken bg-surface px-3 py-1.5 text-sm placeholder:text-ink-muted focus:border-brand focus:outline-none"
+        className="w-full rounded-md border border-border bg-surface px-3 py-1.5 text-sm placeholder:text-ink-muted focus:border-brand focus:outline-none"
       />
       {showDropdown ? (
         <div
           id="global-search-results"
           role="listbox"
-          className="absolute inset-x-0 top-full z-30 mt-1 max-h-80 overflow-y-auto rounded-md border border-surface-sunken bg-surface-raised py-1 shadow-lg"
+          className="absolute inset-x-0 top-full z-30 mt-1 max-h-80 overflow-y-auto rounded-md border border-border bg-surface-raised py-1 shadow-lg"
         >
           {loading && hits.length === 0 ? (
             skeletons.map((i) => (

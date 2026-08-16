@@ -11,7 +11,7 @@ export function DateRangeFilter({ range }: { range: ReportRangeState }) {
   const t = useT()
   return (
     <div className="mb-4 flex flex-wrap items-center gap-2 print:hidden">
-      <div className="flex overflow-hidden rounded-md border border-surface-sunken">
+      <div className="flex overflow-hidden rounded-md border border-border">
         {PRESETS.map((p) => (
           <button
             key={p}

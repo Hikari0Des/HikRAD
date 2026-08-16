@@ -253,7 +253,7 @@ export function ServiceProvisionModal({
             ) : (
               <ul className="space-y-2">
                 {preview.items.map((it, i) => (
-                  <li key={i} className="rounded-md border border-surface-sunken p-2 text-sm">
+                  <li key={i} className="rounded-md border border-border p-2 text-sm">
                     <span className="me-2 rounded bg-surface-sunken px-1.5 py-0.5 text-xs">
                       {t(`nas.autoSetup.action.${it.action}`)}
                     </span>

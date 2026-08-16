@@ -53,7 +53,7 @@ export function RadioOption({
         id={id}
         value={value}
         disabled={disabled}
-        className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-surface-sunken bg-surface data-[state=checked]:border-brand disabled:opacity-60 ${FOCUS_RING}`}
+        className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-border bg-surface data-[state=checked]:border-brand disabled:opacity-60 ${FOCUS_RING}`}
       >
         <RadixRadioGroup.Indicator className="h-2 w-2 rounded-full bg-brand" />
       </RadixRadioGroup.Item>

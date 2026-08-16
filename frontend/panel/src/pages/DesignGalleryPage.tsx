@@ -125,13 +125,13 @@ export function DesignGalleryPage() {
 
       <SectionCard title={t('design.section.states')}>
         <div className="grid gap-3 sm:grid-cols-3">
-          <div className="rounded-md border border-surface-sunken">
+          <div className="rounded-md border border-border">
             <DataTable columns={columns} rows={[]} getRowKey={(r) => r.id} loading />
           </div>
-          <div className="rounded-md border border-surface-sunken">
+          <div className="rounded-md border border-border">
             <DataTable columns={columns} rows={[]} getRowKey={(r) => r.id} />
           </div>
-          <div className="rounded-md border border-surface-sunken">
+          <div className="rounded-md border border-border">
             <DataTable
               columns={columns}
               rows={[]}

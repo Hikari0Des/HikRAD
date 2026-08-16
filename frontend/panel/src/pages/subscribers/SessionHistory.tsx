@@ -22,7 +22,7 @@ export function SessionHistory({ subscriberId }: { subscriberId: string }) {
 
   return (
     <div>
-      <div className="overflow-x-auto rounded-md border border-surface-sunken">
+      <div className="overflow-x-auto rounded-md border border-border">
         <table className="w-full min-w-[640px] text-sm">
           <thead className="bg-surface-raised text-xs uppercase tracking-wide text-ink-muted">
             <tr>
@@ -36,7 +36,7 @@ export function SessionHistory({ subscriberId }: { subscriberId: string }) {
           </thead>
           <tbody>
             {page.items.map((s) => (
-              <tr key={s.id} className="border-t border-surface-sunken">
+              <tr key={s.id} className="border-t border-border">
                 <td className="whitespace-nowrap px-3 py-2">
                   {s.started_at ? formatDate(s.started_at) : '—'}
                 </td>

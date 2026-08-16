@@ -54,7 +54,7 @@ export function SnippetModal({
       title={t('nas.snippetTitle', { name: nas.name })}
       description={t('nas.snippetHint')}
     >
-      <div className="mb-3 inline-flex overflow-hidden rounded-md border border-surface-sunken text-sm">
+      <div className="mb-3 inline-flex overflow-hidden rounded-md border border-border text-sm">
         <button
           type="button"
           onClick={() => setRos('7')}

@@ -107,7 +107,7 @@ export function AllowlistModal({
           >
             {t('allowlist.add')}
           </Button>
-          <div className="flex justify-end gap-2 border-t border-surface-sunken pt-3">
+          <div className="flex justify-end gap-2 border-t border-border pt-3">
             <Button variant="ghost" disabled={busy} onClick={onClose}>
               {t('ui.cancel')}
             </Button>

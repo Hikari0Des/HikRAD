@@ -147,7 +147,7 @@ export function NasListPage() {
       ) : loading ? (
         <LoadingState />
       ) : (data?.items.length ?? 0) === 0 ? (
-        <div className="rounded-md border border-dashed border-surface-sunken bg-surface-raised p-10 text-center">
+        <div className="rounded-md border border-dashed border-border bg-surface-raised p-10 text-center">
           <p className="font-medium">{t('nas.emptyTitle')}</p>
           <p className="mt-1 text-sm text-ink-muted">{t('nas.emptyBody')}</p>
           {canCreate && (

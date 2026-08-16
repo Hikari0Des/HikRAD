@@ -155,7 +155,7 @@ function ScopeSection({
 
   return (
     <div className="space-y-4">
-      <div className="rounded-md border border-surface-sunken p-4">
+      <div className="rounded-md border border-border p-4">
         <h2 className="mb-3 text-sm font-semibold">{t('myPaymentMethods.builtinTitle')}</h2>
         <div className="space-y-2">
           {BUILTIN_METHODS.map((key) => (
@@ -277,7 +277,7 @@ function ProviderAccountCard({
   }
 
   return (
-    <div className="rounded-md border border-surface-sunken p-4">
+    <div className="rounded-md border border-border p-4">
       <div className="mb-3 flex items-center justify-between">
         <span className="font-medium">{provider.name}</span>
         {enabled && !account ? (

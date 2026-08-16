@@ -40,11 +40,11 @@ export function MarginReportPage() {
       ) : loading ? (
         <LoadingState />
       ) : (data?.rows.length ?? 0) === 0 ? (
-        <p className="rounded-md border border-dashed border-surface-sunken p-8 text-center text-sm text-ink-muted">
+        <p className="rounded-md border border-dashed border-border p-8 text-center text-sm text-ink-muted">
           {t('reports.empty.title')}
         </p>
       ) : (
-        <div className="overflow-x-auto rounded-md border border-surface-sunken">
+        <div className="overflow-x-auto rounded-md border border-border">
           <table className="w-full text-sm">
             <thead className="bg-surface-sunken/40 text-start text-xs text-ink-muted">
               <tr>
@@ -66,10 +66,7 @@ export function MarginReportPage() {
             </thead>
             <tbody>
               {(data?.rows ?? []).map((row) => (
-                <tr
-                  key={`${row.profile_id}-${row.currency}`}
-                  className="border-t border-surface-sunken/60"
-                >
+                <tr key={`${row.profile_id}-${row.currency}`} className="border-t border-border/60">
                   <td className="px-3 py-2">{row.profile_name}</td>
                   <td className="px-3 py-2 text-end">
                     <IQDAmount amount={row.revenue} currency={row.currency} />
@@ -108,7 +105,7 @@ export function MarginReportPage() {
       {(sites?.rows.length ?? 0) > 0 ? (
         <div className="mt-6">
           <h2 className="mb-2 text-sm font-semibold">{t('reports.margin.sites.title')}</h2>
-          <div className="overflow-x-auto rounded-md border border-surface-sunken">
+          <div className="overflow-x-auto rounded-md border border-border">
             <table className="w-full text-sm">
               <thead className="bg-surface-sunken/40 text-start text-xs text-ink-muted">
                 <tr>
@@ -129,10 +126,7 @@ export function MarginReportPage() {
               </thead>
               <tbody>
                 {(sites?.rows ?? []).map((row) => (
-                  <tr
-                    key={`${row.nas_id}-${row.currency}`}
-                    className="border-t border-surface-sunken/60"
-                  >
+                  <tr key={`${row.nas_id}-${row.currency}`} className="border-t border-border/60">
                     <td className="px-3 py-2">{row.nas_name}</td>
                     <td className="px-3 py-2 text-end">
                       <IQDAmount amount={row.revenue} currency={row.currency} />

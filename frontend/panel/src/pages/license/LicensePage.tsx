@@ -106,7 +106,7 @@ export function LicensePage() {
         </div>
       ) : null}
 
-      <div className="mb-6 space-y-2 rounded-md border border-surface-sunken bg-surface-raised p-4">
+      <div className="mb-6 space-y-2 rounded-md border border-border bg-surface-raised p-4">
         {/* Status banner: green when valid, amber with a countdown while in
             grace, red once grace has expired — so the state and (for grace)
             how long is left read at a glance, not just the word "valid". */}
@@ -164,7 +164,7 @@ export function LicensePage() {
 
       {canManage ? (
         <>
-          <div className="mb-6 space-y-3 rounded-md border border-surface-sunken p-4">
+          <div className="mb-6 space-y-3 rounded-md border border-border p-4">
             <h2 className="text-sm font-semibold">{t('license.upload.title')}</h2>
             <input type="file" accept=".json" onChange={(e) => void onFile(e)} />
             <FormField label={t('license.upload.payload')}>
@@ -193,7 +193,7 @@ export function LicensePage() {
             </Button>
           </div>
 
-          <div className="rounded-md border border-surface-sunken p-4">
+          <div className="rounded-md border border-border p-4">
             <h2 className="mb-2 text-sm font-semibold">{t('license.requestBlob.title')}</h2>
             <p className="mb-3 text-sm text-ink-muted">{t('license.requestBlob.body')}</p>
             <Button variant="secondary" onClick={() => void downloadRequestBlob()}>

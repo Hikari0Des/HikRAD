@@ -115,7 +115,7 @@ export function BulkBar({
   }
 
   return (
-    <div className="rounded-md border border-surface-sunken bg-surface-raised p-3">
+    <div className="rounded-md border border-border bg-surface-raised p-3">
       {/* Always say what the buttons will hit. "Disable" over 3 ticked rows and
           "Disable" over every expired subscriber are one click apart. */}
       <p className="mb-2 text-xs text-ink-muted">
@@ -161,7 +161,7 @@ export function BulkBar({
       </div>
 
       {job && (
-        <div className="mt-3 rounded border border-surface-sunken p-3 text-sm">
+        <div className="mt-3 rounded border border-border p-3 text-sm">
           <div className="flex items-center justify-between">
             <span className="font-medium">{t(`bulk.action.${job.action}`)}</span>
             <span className="text-ink-muted">

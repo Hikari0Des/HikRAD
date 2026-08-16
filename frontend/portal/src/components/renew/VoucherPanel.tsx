@@ -79,7 +79,7 @@ export function VoucherPanel({ onRedeemed }: { onRedeemed?: () => void }) {
           placeholder={t('portal.renew.voucher.placeholder')}
           value={code}
           onChange={(e) => setCode(e.target.value.toUpperCase())}
-          className="rounded-md border border-surface-sunken bg-surface px-3 py-2 font-mono text-base tracking-wide"
+          className="rounded-md border border-border bg-surface px-3 py-2 font-mono text-base tracking-wide"
         />
       </label>
       {/* Kept outside the <label> so the input's accessible name stays just

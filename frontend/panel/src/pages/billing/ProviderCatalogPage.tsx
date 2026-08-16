@@ -33,7 +33,7 @@ export function ProviderCatalogPage() {
     <section>
       <PageHeader title={t('paymentProviders.title')} subtitle={t('paymentProviders.subtitle')} />
 
-      <div className="rounded-md border border-surface-sunken">
+      <div className="rounded-md border border-border">
         {canManage ? <CreateProviderForm onCreated={reload} /> : null}
 
         {error ? (
@@ -82,7 +82,7 @@ function CreateProviderForm({ onCreated }: { onCreated: () => void }) {
         e.preventDefault()
         void submit()
       }}
-      className="grid gap-3 border-b border-surface-sunken p-3 sm:grid-cols-3 sm:items-end"
+      className="grid gap-3 border-b border-border p-3 sm:grid-cols-3 sm:items-end"
     >
       <Field label={t('paymentProviders.name')} htmlFor="provider-name">
         <TextInput

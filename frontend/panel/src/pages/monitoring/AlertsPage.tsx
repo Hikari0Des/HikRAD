@@ -65,7 +65,7 @@ export function AlertsPage() {
         }
       />
 
-      <div className="mb-4 flex gap-1 border-b border-surface-sunken">
+      <div className="mb-4 flex gap-1 border-b border-border">
         <TabBtn active={tab === 'rules'} onClick={() => setTab('rules')}>
           {t('alerts.tabRules')}
         </TabBtn>
@@ -80,7 +80,7 @@ export function AlertsPage() {
         ) : rules.loading || !rules.data ? (
           <LoadingState />
         ) : rules.data.items.length === 0 ? (
-          <p className="rounded-md border border-dashed border-surface-sunken p-8 text-center text-sm text-ink-muted">
+          <p className="rounded-md border border-dashed border-border p-8 text-center text-sm text-ink-muted">
             {t('alerts.empty')}
           </p>
         ) : (
@@ -88,7 +88,7 @@ export function AlertsPage() {
             {rules.data.items.map((r) => (
               <li
                 key={r.id}
-                className="flex items-center justify-between rounded-md border border-surface-sunken bg-surface-raised p-3 text-sm"
+                className="flex items-center justify-between rounded-md border border-border bg-surface-raised p-3 text-sm"
               >
                 <div>
                   <p className="font-medium">{r.name}</p>
@@ -145,10 +145,7 @@ function EventsList() {
   return (
     <ul className="space-y-2">
       {q.data.items.map((e) => (
-        <li
-          key={e.id}
-          className="rounded-md border border-surface-sunken bg-surface-raised p-3 text-sm"
-        >
+        <li key={e.id} className="rounded-md border border-border bg-surface-raised p-3 text-sm">
           <div className="flex items-center justify-between">
             <span className="font-medium">{e.summary || t(`alerts.type.${e.type}`)}</span>
             <span className="text-xs text-ink-muted">{formatDate(e.at)}</span>
@@ -385,7 +382,7 @@ function RuleFormModal({
           onChange={(e) => setEnabled(e.target.checked)}
         />
         {error ? <p className="text-sm text-danger">{error}</p> : null}
-        <div className="flex justify-end gap-2 border-t border-surface-sunken pt-3">
+        <div className="flex justify-end gap-2 border-t border-border pt-3">
           <Button variant="ghost" disabled={busy} onClick={onClose}>
             {t('ui.cancel')}
           </Button>
