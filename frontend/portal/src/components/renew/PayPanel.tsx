@@ -96,7 +96,7 @@ function ScratchCardForm({ onSubmitted }: { onSubmitted?: () => void }) {
     return (
       <div
         role="status"
-        className="flex flex-col gap-2 rounded-xl border border-warning bg-warning/10 p-4 text-sm"
+        className="flex flex-col gap-2 rounded-xl border border-warn bg-warn/10 p-4 text-sm"
       >
         <p className="font-semibold">{t('portal.renew.card.pendingTitle')}</p>
         <p className="text-ink-muted">
@@ -150,7 +150,7 @@ function ScratchCardForm({ onSubmitted }: { onSubmitted?: () => void }) {
           value={cardType}
           onChange={(e) => setCardType(e.target.value)}
           placeholder={t('portal.renew.card.typePlaceholder')}
-          className="rounded-md border border-surface-sunken bg-surface px-3 py-2 text-base"
+          className="rounded-md border border-border bg-surface px-3 py-2 text-base"
         />
       </label>
       <label htmlFor="card-code" className="flex flex-col gap-1 text-sm">
@@ -160,7 +160,7 @@ function ScratchCardForm({ onSubmitted }: { onSubmitted?: () => void }) {
           dir="ltr"
           value={code}
           onChange={(e) => setCode(e.target.value)}
-          className="rounded-md border border-surface-sunken bg-surface px-3 py-2 font-mono text-base"
+          className="rounded-md border border-border bg-surface px-3 py-2 font-mono text-base"
         />
       </label>
       {error ? (
@@ -198,7 +198,7 @@ function ProviderTransferForm({
     return (
       <div
         role="status"
-        className="flex flex-col gap-2 rounded-xl border border-warning bg-warning/10 p-4 text-sm"
+        className="flex flex-col gap-2 rounded-xl border border-warn bg-warn/10 p-4 text-sm"
       >
         <p className="font-semibold">{t('portal.renew.pay.submittedTitle')}</p>
         <p className="text-ink-muted">{t('portal.renew.pay.submittedBody')}</p>
@@ -264,7 +264,7 @@ function ProviderTransferForm({
           id="transfer-reference"
           value={reference}
           onChange={(e) => setReference(e.target.value)}
-          className="rounded-md border border-surface-sunken bg-surface px-3 py-2 text-base"
+          className="rounded-md border border-border bg-surface px-3 py-2 text-base"
         />
       </label>
       <label htmlFor="transfer-note" className="flex flex-col gap-1 text-sm">
@@ -274,7 +274,7 @@ function ProviderTransferForm({
           value={note}
           onChange={(e) => setNote(e.target.value)}
           rows={2}
-          className="rounded-md border border-surface-sunken bg-surface px-3 py-2 text-base"
+          className="rounded-md border border-border bg-surface px-3 py-2 text-base"
         />
       </label>
       <label htmlFor="transfer-attachments" className="flex flex-col gap-1 text-sm">

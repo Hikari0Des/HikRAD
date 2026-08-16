@@ -93,9 +93,9 @@ export function SettingsPage() {
           />
         </Field>
 
-        <hr className="border-surface-sunken" />
+        <hr className="border-border" />
 
-        <p role="alert" className="rounded-md bg-warning/10 p-3 text-xs text-ink">
+        <p role="alert" className="rounded-md bg-warn/10 p-3 text-xs text-ink">
           {t('portal.settings.passwordWarning')}
         </p>
 

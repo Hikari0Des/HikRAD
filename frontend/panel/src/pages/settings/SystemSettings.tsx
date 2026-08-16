@@ -47,7 +47,7 @@ export function SystemSettings() {
 
   return (
     <div className="max-w-2xl space-y-6">
-      <section className="rounded-lg border border-surface-sunken bg-surface-raised p-4">
+      <section className="rounded-lg border border-border bg-surface-raised p-4">
         <h3 className="font-semibold">{t('settings.system.versionTitle')}</h3>
         <dl className="mt-3 space-y-1 text-sm">
           <div className="flex justify-between gap-2">
@@ -76,7 +76,7 @@ export function SystemSettings() {
         ) : null}
       </section>
 
-      <section className="rounded-lg border border-surface-sunken bg-surface-raised p-4">
+      <section className="rounded-lg border border-border bg-surface-raised p-4">
         <h3 className="font-semibold">{t('settings.system.updateTitle')}</h3>
         <p className="mt-2 text-sm text-ink-muted">{t('settings.system.updateIntro')}</p>
         <ol className="mt-3 list-decimal space-y-3 ps-5 text-sm">
@@ -225,7 +225,7 @@ function OneClickUpdateSection({
   const updating = stage !== null && outcome === null
 
   return (
-    <section className="rounded-lg border border-surface-sunken bg-surface-raised p-4">
+    <section className="rounded-lg border border-border bg-surface-raised p-4">
       <h3 className="font-semibold">{t('settings.system.oneClick.title')}</h3>
       <p className="mt-2 text-sm text-ink-muted">{t('settings.system.oneClick.intro')}</p>
 
@@ -269,7 +269,7 @@ function OneClickUpdateSection({
           role="status"
           className={
             'mt-3 rounded-md p-2 text-sm ' +
-            (outcome.kind === 'done' ? 'bg-success/10 text-success' : 'bg-danger/10 text-danger')
+            (outcome.kind === 'done' ? 'bg-ok/10 text-ok' : 'bg-danger/10 text-danger')
           }
         >
           {outcome.kind === 'done'

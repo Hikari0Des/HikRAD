@@ -43,7 +43,7 @@ export function HomePage() {
         {latestTicket?.state === 'pending' && latestTicket.trial_granted ? (
           <div
             role="status"
-            className="flex flex-col gap-1 rounded-xl border border-warning bg-warning/10 p-4 text-sm"
+            className="flex flex-col gap-1 rounded-xl border border-warn bg-warn/10 p-4 text-sm"
           >
             <p className="font-semibold">{t('portal.home.cardPendingTitle')}</p>
             <p className="text-ink-muted">
