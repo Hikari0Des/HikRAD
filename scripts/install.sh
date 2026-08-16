@@ -272,6 +272,23 @@ chown 10002:10002 "$HIKRAD_ROOT/data/acct-spill"
 mkdir -p "$HIKRAD_ROOT/data/branding"
 chown 10001:10001 "$HIKRAD_ROOT/data/branding"
 
+# --- 3d0b. release layout sanity check (runs on fresh install AND repair) ---
+# From here on, every step below reads real files out of $RELEASE_DIR — fail
+# loudly and specifically here rather than letting the first such step (the
+# clients-generated.conf chown just below) blow up with a bare "No such file
+# or directory" that gives no hint why. The concrete way this goes wrong: a
+# release *bundle* was extracted and install.sh run directly against it
+# without --bundle. Bundle mode's own extraction (3a above) verifies+stages
+# into $HIKRAD_ROOT/release itself, so this can only be hit by running
+# straight from an extracted bundle tree (source-mode fallback then assumes a
+# deploy/ subdirectory a bundle never has — its compose.yml/freeradius/caddy
+# sit at the tar's root) — or, on a repair, an install.meta left over from
+# that exact mistake, which is why the wrong RELEASE_DIR persists across
+# every re-run of the installer's own menu.
+if [ ! -f "$RELEASE_DIR/compose.yml" ]; then
+    die "expected release layout not found at $RELEASE_DIR (compose.yml missing) — refusing to continue. If you're installing from a signed release bundle, pass --bundle: sudo ./scripts/install.sh --bundle /path/to/hikrad-vX.Y.Z.tar (do not run install.sh directly from inside an extracted bundle — its compose.yml/freeradius/caddy live at the tar's root, not under a deploy/ subdirectory). If this is an existing install, check $HIKRAD_ROOT/install.meta's HIKRAD_COMPOSE_FILE — it may point at a path that no longer exists."
+fi
+
 # --- 3d1. clients-generated.conf ownership (idempotent; also runs on repair) -
 # hikrad-api runs as a fixed non-root uid (10001, deploy/docker/api.Dockerfile)
 # and regenerates this file on every NAS create/update/delete (FR-13.2). A
