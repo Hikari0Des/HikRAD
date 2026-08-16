@@ -21,6 +21,7 @@ import { ConfirmDialog } from '../../components/ConfirmDialog'
 import { Modal } from '../../components/Modal'
 import { PageHeader } from '../../components/PageHeader'
 import { Field, Select, Textarea, TextInput } from '../../components/form'
+import { FormField } from '../../components/patterns'
 import { useToast } from '../../components/Toast'
 import { useAsync } from '../../hooks/useAsync'
 
@@ -469,27 +470,32 @@ function PoolFormModal({
       title={editing ? t('pools.editTitle') : t('pools.createTitle')}
     >
       <div className="space-y-3">
-        <Field label={t('pools.name')} error={errors.name}>
-          <TextInput value={name} onChange={(e) => setName(e.target.value)} />
-        </Field>
-        <Field label={t('pools.purposeLabel')} hint={t('pools.purposeHint')}>
-          <Select value={purpose} onChange={(e) => setPurpose(e.target.value as PoolPurpose)}>
-            {PURPOSES.map((p) => (
-              <option key={p} value={p}>
-                {t(`pools.purpose.${p}`)}
-              </option>
-            ))}
-          </Select>
-        </Field>
-        <Field label={t('pools.ranges')} error={errors.ranges} hint={t('pools.rangesHint')}>
-          <Textarea
-            rows={3}
-            dir="ltr"
-            value={ranges}
-            onChange={(e) => setRanges(e.target.value)}
-            placeholder="10.10.0.0/16&#10;192.168.5.10"
-          />
-        </Field>
+        <FormField label={t('pools.name')} error={errors.name}>
+          {(id) => <TextInput id={id} value={name} onChange={(e) => setName(e.target.value)} />}
+        </FormField>
+        <FormField label={t('pools.purposeLabel')} hint={t('pools.purposeHint')}>
+          {(id) => (
+            <Select id={id} value={purpose} onChange={(e) => setPurpose(e.target.value as PoolPurpose)}>
+              {PURPOSES.map((p) => (
+                <option key={p} value={p}>
+                  {t(`pools.purpose.${p}`)}
+                </option>
+              ))}
+            </Select>
+          )}
+        </FormField>
+        <FormField label={t('pools.ranges')} error={errors.ranges} hint={t('pools.rangesHint')}>
+          {(id) => (
+            <Textarea
+              id={id}
+              rows={3}
+              dir="ltr"
+              value={ranges}
+              onChange={(e) => setRanges(e.target.value)}
+              placeholder="10.10.0.0/16&#10;192.168.5.10"
+            />
+          )}
+        </FormField>
         <div className="flex justify-end gap-2 pt-2">
           <Button variant="ghost" disabled={busy} onClick={() => onOpenChange(false)}>
             {t('ui.cancel')}

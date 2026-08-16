@@ -49,7 +49,7 @@ import { Pill } from '../../components/Pill'
 import { useToast } from '../../components/Toast'
 import { useAsync } from '../../hooks/useAsync'
 import { usePersistentState } from '../../hooks/usePersistentState'
-import { FormSection } from '../../components/patterns'
+import { FormField, FormSection } from '../../components/patterns'
 import { formatKbps } from '../../lib/units'
 import { ProfileBulkBar } from './ProfileBulkBar'
 
@@ -549,125 +549,154 @@ function ProfileFormModal({
           service & limits → advanced (collapsed unless it already has values). */}
       <div className="space-y-5">
         <FormSection title={t('profiles.section.identity')}>
-          <Field label={t('profiles.name')} error={errors.name}>
-            <TextInput value={f.name} onChange={(e) => set('name', e.target.value)} />
-          </Field>
+          <FormField label={t('profiles.name')} error={errors.name}>
+            {(id) => <TextInput id={id} value={f.name} onChange={(e) => set('name', e.target.value)} />}
+          </FormField>
           {/* v3-2 (FR-101.3): plans are IQD-only — no currency selector; price is IQD. */}
-          <Field label={t('profiles.price')} error={errors.price}>
-            <TextInput
-              type="number"
-              dir="ltr"
-              value={f.price}
-              onChange={(e) => set('price', e.target.value)}
-            />
-          </Field>
-          <Field label={t('profiles.durationDays')} error={errors.duration_days}>
-            <TextInput
-              type="number"
-              dir="ltr"
-              value={f.duration}
-              onChange={(e) => set('duration', e.target.value)}
-            />
-          </Field>
+          <FormField label={t('profiles.price')} error={errors.price}>
+            {(id) => (
+              <TextInput
+                id={id}
+                type="number"
+                dir="ltr"
+                value={f.price}
+                onChange={(e) => set('price', e.target.value)}
+              />
+            )}
+          </FormField>
+          <FormField label={t('profiles.durationDays')} error={errors.duration_days}>
+            {(id) => (
+              <TextInput
+                id={id}
+                type="number"
+                dir="ltr"
+                value={f.duration}
+                onChange={(e) => set('duration', e.target.value)}
+              />
+            )}
+          </FormField>
         </FormSection>
 
         <FormSection title={t('profiles.section.service')}>
-          <Field label={t('profiles.rateDown')} error={errors.rate_down_kbps} hint={t('rate.hint')}>
-            <RateInput value={f.rateDown} onChange={(v) => set('rateDown', v)} />
-          </Field>
-          <Field label={t('profiles.rateUp')} error={errors.rate_up_kbps}>
-            <RateInput value={f.rateUp} onChange={(v) => set('rateUp', v)} />
-          </Field>
-          <Field label={t('profiles.sessionLimit')} error={errors.session_limit_default}>
-            <TextInput
-              type="number"
-              dir="ltr"
-              value={f.sessionLimit}
-              onChange={(e) => set('sessionLimit', e.target.value)}
-            />
-          </Field>
-          <Field label={t('profiles.quotaModeLabel')}>
-            <Select
-              value={f.quotaMode}
-              onChange={(e) => set('quotaMode', e.target.value as QuotaMode)}
-            >
-              {QUOTA_MODES.map((m) => (
-                <option key={m} value={m}>
-                  {t(`profiles.quotaMode.${m}`)}
-                </option>
-              ))}
-            </Select>
-          </Field>
+          <FormField label={t('profiles.rateDown')} error={errors.rate_down_kbps} hint={t('rate.hint')}>
+            {(id) => <RateInput id={id} value={f.rateDown} onChange={(v) => set('rateDown', v)} />}
+          </FormField>
+          <FormField label={t('profiles.rateUp')} error={errors.rate_up_kbps}>
+            {(id) => <RateInput id={id} value={f.rateUp} onChange={(v) => set('rateUp', v)} />}
+          </FormField>
+          <FormField label={t('profiles.sessionLimit')} error={errors.session_limit_default}>
+            {(id) => (
+              <TextInput
+                id={id}
+                type="number"
+                dir="ltr"
+                value={f.sessionLimit}
+                onChange={(e) => set('sessionLimit', e.target.value)}
+              />
+            )}
+          </FormField>
+          <FormField label={t('profiles.quotaModeLabel')}>
+            {(id) => (
+              <Select
+                id={id}
+                value={f.quotaMode}
+                onChange={(e) => set('quotaMode', e.target.value as QuotaMode)}
+              >
+                {QUOTA_MODES.map((m) => (
+                  <option key={m} value={m}>
+                    {t(`profiles.quotaMode.${m}`)}
+                  </option>
+                ))}
+              </Select>
+            )}
+          </FormField>
           {f.quotaMode === 'total' && (
-            <Field
+            <FormField
               label={t('profiles.quotaTotal')}
               error={errors.quota_total_bytes}
               hint={t('profiles.bytesHint')}
             >
-              <TextInput
-                type="number"
-                dir="ltr"
-                value={f.quotaTotal}
-                onChange={(e) => set('quotaTotal', e.target.value)}
-              />
-            </Field>
+              {(id) => (
+                <TextInput
+                  id={id}
+                  type="number"
+                  dir="ltr"
+                  value={f.quotaTotal}
+                  onChange={(e) => set('quotaTotal', e.target.value)}
+                />
+              )}
+            </FormField>
           )}
           {f.quotaMode === 'split' && (
             <>
-              <Field
+              <FormField
                 label={t('profiles.quotaDown')}
                 error={errors.quota_down_bytes}
                 hint={t('profiles.bytesHint')}
               >
-                <TextInput
-                  type="number"
-                  dir="ltr"
-                  value={f.quotaDown}
-                  onChange={(e) => set('quotaDown', e.target.value)}
-                />
-              </Field>
-              <Field label={t('profiles.quotaUp')}>
-                <TextInput
-                  type="number"
-                  dir="ltr"
-                  value={f.quotaUp}
-                  onChange={(e) => set('quotaUp', e.target.value)}
-                />
-              </Field>
+                {(id) => (
+                  <TextInput
+                    id={id}
+                    type="number"
+                    dir="ltr"
+                    value={f.quotaDown}
+                    onChange={(e) => set('quotaDown', e.target.value)}
+                  />
+                )}
+              </FormField>
+              <FormField label={t('profiles.quotaUp')}>
+                {(id) => (
+                  <TextInput
+                    id={id}
+                    type="number"
+                    dir="ltr"
+                    value={f.quotaUp}
+                    onChange={(e) => set('quotaUp', e.target.value)}
+                  />
+                )}
+              </FormField>
             </>
           )}
-          <Field label={t('profiles.expiryBehavior')}>
-            <Select
-              value={f.expiryBehavior}
-              onChange={(e) => set('expiryBehavior', e.target.value as ExpiryBehavior)}
-            >
-              {EXPIRY.map((b) => (
-                <option key={b} value={b}>
-                  {t(`profiles.expiry.${b}`)}
-                </option>
-              ))}
-            </Select>
-          </Field>
-          <Field label={t('profiles.quotaBehavior')}>
-            <Select
-              value={f.quotaBehavior}
-              onChange={(e) => set('quotaBehavior', e.target.value as QuotaBehavior)}
-            >
-              {QUOTA_BEH.map((b) => (
-                <option key={b} value={b}>
-                  {t(`profiles.quotaBeh.${b}`)}
-                </option>
-              ))}
-            </Select>
-          </Field>
+          <FormField label={t('profiles.expiryBehavior')}>
+            {(id) => (
+              <Select
+                id={id}
+                value={f.expiryBehavior}
+                onChange={(e) => set('expiryBehavior', e.target.value as ExpiryBehavior)}
+              >
+                {EXPIRY.map((b) => (
+                  <option key={b} value={b}>
+                    {t(`profiles.expiry.${b}`)}
+                  </option>
+                ))}
+              </Select>
+            )}
+          </FormField>
+          <FormField label={t('profiles.quotaBehavior')}>
+            {(id) => (
+              <Select
+                id={id}
+                value={f.quotaBehavior}
+                onChange={(e) => set('quotaBehavior', e.target.value as QuotaBehavior)}
+              >
+                {QUOTA_BEH.map((b) => (
+                  <option key={b} value={b}>
+                    {t(`profiles.quotaBeh.${b}`)}
+                  </option>
+                ))}
+              </Select>
+            )}
+          </FormField>
           {f.quotaBehavior === 'throttle' && (
-            <Field
+            <FormField
               label={t('profiles.throttleRate')}
               error={errors.throttle_rate}
               hint={t('profiles.throttleHint')}
             >
-              <RateInput pair value={f.throttleRate} onChange={(v) => set('throttleRate', v)} />
-            </Field>
+              {(id) => (
+                <RateInput id={id} pair value={f.throttleRate} onChange={(v) => set('throttleRate', v)} />
+              )}
+            </FormField>
           )}
         </FormSection>
 
@@ -676,12 +705,12 @@ function ProfileFormModal({
           advanced
           defaultOpen={advancedHasValues}
         >
-          <Field label={t('profiles.hotspotRateDown')} hint={t('profiles.hotspotHint')}>
-            <RateInput value={f.hotspotDown} onChange={(v) => set('hotspotDown', v)} />
-          </Field>
-          <Field label={t('profiles.hotspotRateUp')}>
-            <RateInput value={f.hotspotUp} onChange={(v) => set('hotspotUp', v)} />
-          </Field>
+          <FormField label={t('profiles.hotspotRateDown')} hint={t('profiles.hotspotHint')}>
+            {(id) => <RateInput id={id} value={f.hotspotDown} onChange={(v) => set('hotspotDown', v)} />}
+          </FormField>
+          <FormField label={t('profiles.hotspotRateUp')}>
+            {(id) => <RateInput id={id} value={f.hotspotUp} onChange={(v) => set('hotspotUp', v)} />}
+          </FormField>
           {/* FR-64: every subscriber on this profile inherits this scope, unless
               their own is set (subscriber-over-profile). */}
           <NasScopePicker

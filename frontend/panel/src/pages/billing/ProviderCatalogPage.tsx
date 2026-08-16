@@ -12,6 +12,7 @@ import { useAuth } from '../../auth/AuthContext'
 import { PERM_PAYMENT_PROVIDERS_MANAGE } from '../../auth/permissions'
 import { Button } from '../../components/Button'
 import { Checkbox, Field, Textarea, TextInput } from '../../components/form'
+import { FormField } from '../../components/patterns'
 import { PageHeader } from '../../components/PageHeader'
 import { useToast } from '../../components/Toast'
 import { useAsync } from '../../hooks/useAsync'
@@ -162,12 +163,19 @@ function ProviderRow({
 
   return (
     <li className="space-y-3 p-3">
-      <Field label={t('paymentProviders.name')}>
-        <TextInput value={name} onChange={(e) => setName(e.target.value)} />
-      </Field>
-      <Field label={t('paymentProviders.instructions')}>
-        <Textarea rows={2} value={instructions} onChange={(e) => setInstructions(e.target.value)} />
-      </Field>
+      <FormField label={t('paymentProviders.name')}>
+        {(id) => <TextInput id={id} value={name} onChange={(e) => setName(e.target.value)} />}
+      </FormField>
+      <FormField label={t('paymentProviders.instructions')}>
+        {(id) => (
+          <Textarea
+            id={id}
+            rows={2}
+            value={instructions}
+            onChange={(e) => setInstructions(e.target.value)}
+          />
+        )}
+      </FormField>
       <Checkbox
         label={t('paymentProviders.enabled')}
         checked={enabled}
