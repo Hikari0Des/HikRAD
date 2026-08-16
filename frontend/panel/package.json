@@ -15,7 +15,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "lint": "eslint . && prettier --check . && stylelint \"src/**/*.css\" && sh ../../scripts/lint-no-native-controls.sh panel",
+    "lint": "eslint . && prettier --check . && stylelint \"src/**/*.css\" && sh ../../scripts/lint-no-native-controls.sh panel && sh ../../scripts/lint-no-raw-palette.sh panel && sh ../../scripts/lint-tokens.sh panel",
     "format": "prettier --write .",
     "test": "vitest run",
     "test:watch": "vitest"
