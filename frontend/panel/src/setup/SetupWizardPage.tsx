@@ -203,7 +203,12 @@ function LicenseStep({ onNext }: { onNext: () => void }) {
       </FormField>
       <FormField label={t('setup.license.signature')}>
         {(id) => (
-          <TextInput id={id} dir="ltr" value={signature} onChange={(e) => setSignature(e.target.value)} />
+          <TextInput
+            id={id}
+            dir="ltr"
+            value={signature}
+            onChange={(e) => setSignature(e.target.value)}
+          />
         )}
       </FormField>
       <p className="text-xs text-ink-muted">{t('setup.license.offlineNote')}</p>
@@ -256,7 +261,12 @@ function AdminStep({ onDone }: { onDone: (username: string, password: string) =>
       <h2 className="text-lg font-semibold">{t('setup.step.admin')}</h2>
       <FormField label={t('setup.admin.username')} error={errors.username}>
         {(id) => (
-          <TextInput id={id} dir="ltr" value={username} onChange={(e) => setUsername(e.target.value)} />
+          <TextInput
+            id={id}
+            dir="ltr"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+          />
         )}
       </FormField>
       <FormField label={t('setup.admin.password')} error={errors.password}>

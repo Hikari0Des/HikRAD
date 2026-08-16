@@ -475,7 +475,11 @@ function PoolFormModal({
         </FormField>
         <FormField label={t('pools.purposeLabel')} hint={t('pools.purposeHint')}>
           {(id) => (
-            <Select id={id} value={purpose} onChange={(e) => setPurpose(e.target.value as PoolPurpose)}>
+            <Select
+              id={id}
+              value={purpose}
+              onChange={(e) => setPurpose(e.target.value as PoolPurpose)}
+            >
               {PURPOSES.map((p) => (
                 <option key={p} value={p}>
                   {t(`pools.purpose.${p}`)}

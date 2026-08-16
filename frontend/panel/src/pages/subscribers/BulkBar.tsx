@@ -272,7 +272,9 @@ function BulkPrompt({
         )}
         {action === 'disable' && (
           <FormField label={t('bulk.disabledReason')}>
-            {(id) => <TextInput id={id} value={reason} onChange={(e) => setReason(e.target.value)} />}
+            {(id) => (
+              <TextInput id={id} value={reason} onChange={(e) => setReason(e.target.value)} />
+            )}
           </FormField>
         )}
         {action === 'change_profile' && (

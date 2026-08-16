@@ -308,7 +308,11 @@ function ProviderAccountCard({
         </FormField>
         <FormField label={t('myPaymentMethods.instructionsOverride')}>
           {(id) => (
-            <TextInput id={id} value={instructions} onChange={(e) => setInstructions(e.target.value)} />
+            <TextInput
+              id={id}
+              value={instructions}
+              onChange={(e) => setInstructions(e.target.value)}
+            />
           )}
         </FormField>
       </div>

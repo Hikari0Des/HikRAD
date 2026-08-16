@@ -550,7 +550,9 @@ function ProfileFormModal({
       <div className="space-y-5">
         <FormSection title={t('profiles.section.identity')}>
           <FormField label={t('profiles.name')} error={errors.name}>
-            {(id) => <TextInput id={id} value={f.name} onChange={(e) => set('name', e.target.value)} />}
+            {(id) => (
+              <TextInput id={id} value={f.name} onChange={(e) => set('name', e.target.value)} />
+            )}
           </FormField>
           {/* v3-2 (FR-101.3): plans are IQD-only — no currency selector; price is IQD. */}
           <FormField label={t('profiles.price')} error={errors.price}>
@@ -578,7 +580,11 @@ function ProfileFormModal({
         </FormSection>
 
         <FormSection title={t('profiles.section.service')}>
-          <FormField label={t('profiles.rateDown')} error={errors.rate_down_kbps} hint={t('rate.hint')}>
+          <FormField
+            label={t('profiles.rateDown')}
+            error={errors.rate_down_kbps}
+            hint={t('rate.hint')}
+          >
             {(id) => <RateInput id={id} value={f.rateDown} onChange={(v) => set('rateDown', v)} />}
           </FormField>
           <FormField label={t('profiles.rateUp')} error={errors.rate_up_kbps}>
@@ -694,7 +700,12 @@ function ProfileFormModal({
               hint={t('profiles.throttleHint')}
             >
               {(id) => (
-                <RateInput id={id} pair value={f.throttleRate} onChange={(v) => set('throttleRate', v)} />
+                <RateInput
+                  id={id}
+                  pair
+                  value={f.throttleRate}
+                  onChange={(v) => set('throttleRate', v)}
+                />
               )}
             </FormField>
           )}
@@ -706,10 +717,14 @@ function ProfileFormModal({
           defaultOpen={advancedHasValues}
         >
           <FormField label={t('profiles.hotspotRateDown')} hint={t('profiles.hotspotHint')}>
-            {(id) => <RateInput id={id} value={f.hotspotDown} onChange={(v) => set('hotspotDown', v)} />}
+            {(id) => (
+              <RateInput id={id} value={f.hotspotDown} onChange={(v) => set('hotspotDown', v)} />
+            )}
           </FormField>
           <FormField label={t('profiles.hotspotRateUp')}>
-            {(id) => <RateInput id={id} value={f.hotspotUp} onChange={(v) => set('hotspotUp', v)} />}
+            {(id) => (
+              <RateInput id={id} value={f.hotspotUp} onChange={(v) => set('hotspotUp', v)} />
+            )}
           </FormField>
           {/* FR-64: every subscriber on this profile inherits this scope, unless
               their own is set (subscriber-over-profile). */}

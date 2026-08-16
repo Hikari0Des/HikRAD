@@ -177,11 +177,18 @@ export function NasWizardModal({
       {step === 1 ? (
         <div className="space-y-3">
           <FormField label={t('nas.name')} error={errors.name}>
-            {(id) => <TextInput id={id} value={form.name} onChange={(e) => set('name', e.target.value)} />}
+            {(id) => (
+              <TextInput id={id} value={form.name} onChange={(e) => set('name', e.target.value)} />
+            )}
           </FormField>
           <FormField label={t('nas.ip')} error={errors.ip}>
             {(id) => (
-              <TextInput id={id} value={form.ip} dir="ltr" onChange={(e) => set('ip', e.target.value)} />
+              <TextInput
+                id={id}
+                value={form.ip}
+                dir="ltr"
+                onChange={(e) => set('ip', e.target.value)}
+              />
             )}
           </FormField>
           <ServicesEditor
@@ -259,7 +266,11 @@ export function NasWizardModal({
           </div>
           <FormField label={t('nas.location')} error={errors.location}>
             {(id) => (
-              <TextInput id={id} value={form.location} onChange={(e) => set('location', e.target.value)} />
+              <TextInput
+                id={id}
+                value={form.location}
+                onChange={(e) => set('location', e.target.value)}
+              />
             )}
           </FormField>
           <FormField
@@ -268,7 +279,12 @@ export function NasWizardModal({
             hint={editing ? t('nas.snmpEditHint') : t('nas.snmpHint')}
           >
             {(id) => (
-              <TextInput id={id} value={form.snmp} dir="ltr" onChange={(e) => set('snmp', e.target.value)} />
+              <TextInput
+                id={id}
+                value={form.snmp}
+                dir="ltr"
+                onChange={(e) => set('snmp', e.target.value)}
+              />
             )}
           </FormField>
           <Checkbox
