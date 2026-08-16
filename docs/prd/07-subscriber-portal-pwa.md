@@ -129,6 +129,40 @@ The subscriber-facing surface (**Noor**'s product) and two cross-cutting fronten
 - **FR-99.1 — Account area.** One "My account" section off the user menu gathering My security (2FA/sessions), My preferences, My payment methods, and — for admins — quick links into the administration settings that concern that person. Existing routes keep working via redirects; permission gating unchanged.
 - **FR-99.2 — Dashboard customization.** The edit-mode chip/arrow flow becomes direct manipulation — reorder (keyboard-accessible; the existing arrows remain the keyboard fallback), a single "Add widget" gallery with per-widget previews/descriptions, resize as a visible handle/toggle. The `?widgets=` API and the `dashboard_layout` preferences key are unchanged.
 
+### FR-115 (M) — v4-1: Unified token contract (cross-cutting, panel + portal)
+
+**Master:** one canonical `--hik-*` token set, defined once in `@hikrad/shared/src/theme/tokens.css` and imported (never redefined) by both apps, extending FR-97.1's token layer with the roles it never got: a real border/line color, focus ring, state-overlay layers, a fourth semantic color, disabled styling, and a categorical chart palette.
+
+*Elaboration:*
+- **FR-115.1 — Divergence collapse.** The panel's `--hik-warn` and the portal's `--hik-warning` (same role, two names, since FR-97.1 shipped per-app) collapse onto `warn` everywhere; any call site using the retired name is fixed in the same commit.
+- **FR-115.2 — Missing roles.** `border`/`border-strong` (replacing the `border-surface-sunken`-as-a-line-color anti-pattern at every call site), `focus`, `state-hover`/`state-active`/`state-selected` (translucent overlays, never solid fills), `info` (previously faked with `brand`), `disabled`/`disabled-ink`, and `chart-1`…`chart-8` (CVD-safe categorical series).
+- **FR-115.3 — Frozen radius/shadow.** FR-97.1's radius values continue to equal Tailwind's own scale (no existing `rounded-*` utility shifts); only the elevation/shadow and color roles are in scope here.
+
+### FR-116 (M) — v4-1: Correctness and contrast gates (cross-cutting, panel + portal)
+
+**Master:** CI-fatal verification that the FR-115 token contract is actually followed, closing the exact silent-failure mode ("undefined color utility renders nothing, no build error") that let the FR-115.1 divergence and its sibling bugs ship unnoticed.
+
+*Elaboration:*
+- **FR-116.1 — Undefined-token gate.** Every `--hik-*` reference and every color-bearing Tailwind utility in either app's source is checked against that app's real built CSS (not a naming-pattern guess) — an utility that compiles to no rule fails CI.
+- **FR-116.2 — Raw-palette gate.** Any raw Tailwind default-palette utility (`bg-red-500` and the like) outside the token layer fails CI, locking in the zero-raw-usage state FR-97.1 established.
+- **FR-116.3 — Contrast gate.** Every foreground/background pairing the design-language doc declares legal is asserted at WCAG AA (4.5:1 text, 3:1 UI-component), computed programmatically from the token values in both themes — never a screenshot or a manual judgment call.
+
+### FR-117 (S) — v4-1: No-flash theme boot (cross-cutting, panel + portal)
+
+**Master:** the `system` theme preference (item 19/FR-97.1's dark-mode work) resolves before first paint in every case, not just after the JS bundle hydrates.
+
+*Elaboration:*
+- **FR-117.1** — An explicit stored `light`/`dark` preference is applied by a synchronous pre-hydration inline script in both `index.html`s, before any stylesheet loads.
+- **FR-117.2** — The `system` preference (no stored value) is resolved with zero JS by a `@media (prefers-color-scheme: dark)` fallback block in `tokens.css`, guarded so an explicit `data-theme="light"` override still wins on a dark OS.
+
+**Acceptance (FR-115–117):**
+- **AC-115a** — Given a fresh clone, when `grep -rn '^\s*--hik-' frontend --include=*.css` runs, then exactly one file (`@hikrad/shared/src/theme/tokens.css`) matches.
+- **AC-115b** — Given the codebase, when searched for `--hik-warning` or a Tailwind `warning` color key, then zero matches exist in either app.
+- **AC-116a** — Given a deliberately introduced undefined utility (e.g. `bg-nonexistent`) in either app's source, when `lint-tokens.sh` runs, then it fails with a named violation; reverting the change makes it pass again.
+- **AC-116b** — Given `contrast.test.ts`, when it runs, then every declared legal pairing clears its WCAG threshold in light, dark, and the `prefers-color-scheme` fallback (the fallback additionally asserted identical to the dark block).
+- **AC-117a** — Given the OS set to dark with no stored theme preference, when either app hard-reloads, then the first painted frame is dark (no light-then-dark flash).
+- **AC-117b** — Given an explicit stored preference opposite the OS setting, when either app hard-reloads, then the first painted frame matches the stored preference, not the OS.
+
 **Acceptance (FR-94–96):**
 - **AC-94a** — Given the CI grep/lint gate, when a developer adds a bare `<select>`/`<input type="checkbox">`/`<input type="radio">` anywhere outside the component library, then CI fails.
 - **AC-94b** — Given a screen reader or keyboard-only user, when they operate any Select/Checkbox/Radio/Switch in either app, then focus order, ARIA roles, and keyboard activation match Radix's default (unregressed) behavior.
