@@ -20,14 +20,15 @@
 #	$Id: 97ba9ef972539af80dcaf84090b55d991095a93e $
 #
 ######################################################################
-# HikRAD (Phase 5, FR-13.2/AC-13a): enabled so hikrad-api can issue a plain
-# "reload" over this socket after regenerating clients-generated.conf on a
-# NAS create/update/delete — see internal/radius/clients.go's
-# reloadFreeRADIUS. The socket lives in a bind mount shared ONLY between the
-# hikrad-api and freeradius containers (deploy/compose.yml), never published
-# or reachable from outside that pair, so leaving uid/gid unset (peercred
-# still applies, just with no allowlist) matches that isolation boundary
-# rather than actually granting the whole host account access.
+# HikRAD (FR-13.2/AC-13a): enabled so hikrad-api can issue a plain "reload"
+# over this socket after regenerating clients-generated.conf on a NAS
+# create/update/delete — see internal/radius/clients.go's reloadFreeRADIUS.
+# The socket lives in /var/lib/hikrad/radius-control (v4-2's `run_dir`
+# retarget, scripts/install.sh), a directory shared ONLY between the
+# hikrad-api and hikrad-radius-worker processes on this host, never
+# reachable from the network, so leaving uid/gid unset (peercred still
+# applies, just with no allowlist) matches that isolation boundary rather
+# than actually granting the whole host account access.
 listen {
 	#
 	#  Listen on the control socket.

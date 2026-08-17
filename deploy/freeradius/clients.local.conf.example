@@ -1,17 +1,15 @@
 # Example clients.local.conf: a single-NAS override for a harness or real
-# MikroTik reachable outside Docker's bridge ranges (see clients.conf's
-# docker_bridge_dev entry for the common case, which needs no override).
+# MikroTik reachable from somewhere other than localhost (clients.conf's
+# `client localhost` entry already covers the packet harness/CI running on
+# the same host as FreeRADIUS — v4-2's native install, no container NAT to
+# work around — so this override is only needed for a NAS on the LAN).
 #
 # Copy this file to clients.local.conf (an empty clients.local.conf ships
 # by default; overwrite it locally) and set TEST_NAS_IP to the harness/NAS's
-# real source address. Note this env var must also reach the freeradius
-# container: compose.yml's freeradius service does not pass through
-# arbitrary host env vars today, so add
-# `environment: ["TEST_NAS_IP=${TEST_NAS_IP}"]` to that service (deploy/
-# compose.yml, Agent 1's file) the one time this override is needed. Without
-# that, skip this file entirely — clients.conf's docker_bridge_dev entry
-# already covers every source address Docker's own bridge networks use,
-# which is enough for the packet harness and CI.
+# real source address before starting hikrad-radius-worker, e.g.:
+#   TEST_NAS_IP=192.168.1.50 systemctl start hikrad-radius-worker
+# or add `Environment=TEST_NAS_IP=192.168.1.50` to a systemd drop-in for
+# that unit.
 client test_nas {
 	ipaddr = $ENV{TEST_NAS_IP}
 	secret = testing123

@@ -14,7 +14,14 @@
 # and are never encoded onto the wire, so leaving them in reply is harmless.
 exec hikrad_authorize {
 	wait = yes
-	program = "/etc/raddb/scripts/authorize.pl"
+	# ${confdir}, not a hardcoded /etc/raddb: that path only ever existed
+	# under the old Docker image's own mount convention. install.sh points
+	# raddbdir (and so confdir) at /etc/hikrad/freeradius on a native
+	# install; the RouterOS image retargets it too (deploy/routeros). A
+	# hardcoded /etc/raddb here made EVERY authorize call fail with "No
+	# such file or directory" on a real native install — found live, the
+	# actual root cause behind the packet-harness gate failing end to end.
+	program = "${confdir}/scripts/authorize.pl"
 	input_pairs = request
 	output_pairs = reply
 	# 2s hard bound (agent-2 task file edge case: "rlm_rest timeout must be

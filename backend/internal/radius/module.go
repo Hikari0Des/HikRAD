@@ -53,8 +53,14 @@ func (Module) Register(r chi.Router, d httpapi.Deps) {
 	go m.startTODSweeps(context.Background())
 
 	// Internal-only authorize route (C4): served on :8080, never proxied by
-	// Caddy.
+	// nginx.
 	r.Post("/internal/radius/authorize", m.authorizeHandler())
+
+	// Internal-only dynamic-client lookup (FR-118, v4-2, gate item 9): called
+	// by deploy/freeradius/scripts/dynamic-client.pl from the dynamic-clients
+	// virtual server so a NAS added through the panel authenticates with zero
+	// FreeRADIUS restart. Same unproxied trust boundary as authorize above.
+	r.Post("/internal/radius/dynamic-client", m.dynamicClientHandler())
 
 	// NAS registry (C7-B). Mutations require the elevated permissions only
 	// admins hold this phase; every mutation is audited (C2).

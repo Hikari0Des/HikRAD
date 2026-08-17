@@ -13,13 +13,17 @@ package radius
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"net"
+	"net/http"
 	"os"
 	"strings"
 	"time"
 
+	"github.com/hikrad/hikrad/internal/httpapi"
 	"github.com/hikrad/hikrad/internal/platform/crypto"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -56,7 +60,13 @@ func generateClientsConf(ctx context.Context, db *pgxpool.Pool) (string, error) 
 		fmt.Fprintf(&b, "client nas_%s {\n", strings.ReplaceAll(n.ID, "-", "_"))
 		fmt.Fprintf(&b, "\tipaddr = %s\n", n.IP)
 		fmt.Fprintf(&b, "\tsecret = %s\n", quoteSecret(string(secret)))
-		fmt.Fprintf(&b, "\tshortname = %s\n", n.Name)
+		// Quoted: an unquoted value is parsed as a single token, so any NAS
+		// name containing a space ("Demo NAS", "Building A Router" — a very
+		// normal thing to name a router) broke FreeRADIUS's config parser
+		// outright ("Expected comma after 'Demo': NAS") and took the whole
+		// server down, not just that one client. Found live installing
+		// v4-2's native installer against the checked-in demo NAS name.
+		fmt.Fprintf(&b, "\tshortname = %s\n", quoteSecret(n.Name))
 		b.WriteString("\trequire_message_authenticator = no\n")
 		b.WriteString("}\n\n")
 	}
@@ -125,4 +135,75 @@ func (m *module) reloadFreeRADIUS() {
 	}
 	resp, _ := r.ReadString('\n')
 	m.log.Info("radius: clients file regenerated; FreeRADIUS reload sent", "response", strings.TrimSpace(resp))
+}
+
+// --- dynamic clients (FR-118, v4-2): zero-restart NAS registration ---------
+//
+// clients-generated.conf above is FreeRADIUS's boot-time/reload-time client
+// list — correct, but a *reload* it triggers is documented (confirmed live
+// against 3.2.3) to NOT actually re-read clients.conf; only a full process
+// restart does. v4-2's
+// native install replaces the old "restart FreeRADIUS on every NAS change"
+// posture with FreeRADIUS's own dynamic-clients mechanism (raddb/
+// sites-available/dynamic-clients): a broad discovery client range triggers
+// this lookup, on the wire, the first time a packet arrives from a source IP
+// FreeRADIUS doesn't already know, and the result is cached in memory
+// (deploy/freeradius/clients.conf's `lifetime`) — no reload, no restart,
+// ever, for a NAS the operator adds through the panel (gate item 9).
+//
+// clients-generated.conf is kept alongside this, unchanged, as a harmless
+// belt-and-suspenders boot-time list (also what a plain `radmin -e "list
+// clients"` shows without waiting for first traffic).
+
+// dynamicClientRequest/Response are this internal-only endpoint's contract,
+// consumed by deploy/freeradius/scripts/dynamic-client.pl (never by anything
+// outside FreeRADIUS's own process on this host — same trust boundary as
+// POST /internal/radius/authorize, unproxied, C4).
+type dynamicClientRequest struct {
+	NasIP string `json:"nas_ip" validate:"required"`
+}
+
+type dynamicClientResponse struct {
+	Found              bool   `json:"found"`
+	IP                 string `json:"ip,omitempty"`
+	Secret             string `json:"secret,omitempty"`
+	Shortname          string `json:"shortname,omitempty"`
+	RequireMessageAuth bool   `json:"require_message_authenticator"`
+}
+
+func (m *module) dynamicClientHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req dynamicClientRequest
+		if !httpapi.Bind(w, r, &req) {
+			return
+		}
+		n, err := getEnabledNASByIP(r.Context(), m.db, req.NasIP)
+		if errors.Is(err, pgx.ErrNoRows) {
+			httpapi.JSON(w, http.StatusOK, dynamicClientResponse{Found: false})
+			return
+		}
+		if err != nil {
+			m.log.Error("radius: dynamic-client lookup failed", "error", err, "nas_ip", req.NasIP)
+			httpapi.Error(w, http.StatusInternalServerError, "internal", "internal server error")
+			return
+		}
+		secret, err := decryptToString(n.SecretEnc)
+		if err != nil {
+			m.log.Error("radius: dynamic-client secret decrypt failed", "error", err, "nas_id", n.ID)
+			httpapi.Error(w, http.StatusInternalServerError, "internal", "internal server error")
+			return
+		}
+		httpapi.JSON(w, http.StatusOK, dynamicClientResponse{
+			Found: true, IP: n.IP, Secret: secret, Shortname: n.Name,
+			RequireMessageAuth: false, // MikroTik compatibility, matches generateClientsConf above
+		})
+	}
+}
+
+// getEnabledNASByIP is dynamicClientHandler's own lookup — deliberately not
+// nasRegistry.lookup (that cache only carries id/vendor for the authorize
+// path's known-NAS check, not the secret this endpoint exists to reveal).
+func getEnabledNASByIP(ctx context.Context, db *pgxpool.Pool, ip string) (nasRow, error) {
+	return scanNAS(db.QueryRow(ctx,
+		`SELECT `+nasColumns+` FROM nas WHERE ip = $1::inet AND enabled`, ip))
 }

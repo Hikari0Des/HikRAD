@@ -11,7 +11,7 @@
 # prints nothing, it only signals success/failure via its exit code.
 exec hikrad_accounting {
 	wait = yes
-	program = "/etc/raddb/scripts/accounting.pl"
+	program = "${confdir}/scripts/accounting.pl"
 	input_pairs = request
 	# 3s bound; a slow/hung hikrad-acct becomes a retransmit, never a hang.
 	timeout = 4

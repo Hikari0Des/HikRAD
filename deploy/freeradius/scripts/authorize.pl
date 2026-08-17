@@ -32,7 +32,21 @@ use warnings;
 use HTTP::Tiny;
 use JSON::PP qw(encode_json decode_json);
 
-my $API_URL = $ENV{HIKRAD_AUTHORIZE_URL} || 'http://hikrad-api:8080/internal/radius/authorize';
+
+# HIKRAD_AUTHORIZE_URL is NOT actually settable via the systemd unit's own
+# Environment= (found live, the real root cause behind the packet-harness
+# gate hanging for ~10s per request then failing): rlm_exec's input_pairs
+# mode builds a FRESH environment for the child containing only the mapped
+# request attributes — it does not inherit the parent radiusd process's own
+# environment at all, so any systemd `Environment=` line here is silently
+# never seen. The default below is therefore the value that actually
+# matters on every real install; it is native loopback, not the old Docker
+# service hostname ("hikrad-api", unresolvable natively — the ~10s hang was
+# DNS resolution failing before HTTP::Tiny's own 2s socket timeout ever got
+# a chance to apply, since that timeout does not bound the resolver call).
+# $ENV{HIKRAD_AUTHORIZE_URL} is kept as an override for anyone invoking this
+# script directly (outside rlm_exec) where a real environment does exist.
+my $API_URL = $ENV{HIKRAD_AUTHORIZE_URL} || 'http://127.0.0.1:8080/internal/radius/authorize';
 
 sub unwrap {
     my $v = shift;
@@ -42,12 +56,29 @@ sub unwrap {
     return $v;
 }
 
-my $username = unwrap($ENV{USER_NAME});
-my $password = unwrap($ENV{USER_PASSWORD});
-my $chap_challenge = unwrap($ENV{CHAP_CHALLENGE});
-my $chap_response  = unwrap($ENV{CHAP_PASSWORD});
-my $nas_ip   = unwrap($ENV{NAS_IP_ADDRESS}) || unwrap($ENV{NAS_IPV6_ADDRESS});
-my $calling  = unwrap($ENV{CALLING_STATION_ID});
+# envattr(HyphenName, UNDERSCORE_NAME): rlm_exec's input_pairs env-var
+# naming is NOT what every FreeRADIUS 3.2.x build actually does — this
+# module's own original comment ("name upper-cased, '-' -> '_'") was
+# confirmed against 3.2.3, but 3.2.7 (Debian trixie's freeradius package,
+# found live installing v4-2's native installer for real) sets the
+# environment variable to the attribute's OWN literal name instead
+# ("User-Name", not "USER_NAME") — Perl's %ENV has no restriction on hyphens
+# in a key, so this went completely undetected by anything short of a real
+# end-to-end run. Check both forms so this script works across FreeRADIUS
+# builds without needing to know which convention the one installed here uses.
+sub envattr {
+    my ($hyphen, $underscore) = @_;
+    return $ENV{$hyphen} if defined $ENV{$hyphen};
+    return $ENV{$underscore} if defined $ENV{$underscore};
+    return undef;
+}
+
+my $username = unwrap(envattr('User-Name', 'USER_NAME'));
+my $password = unwrap(envattr('User-Password', 'USER_PASSWORD'));
+my $chap_challenge = unwrap(envattr('CHAP-Challenge', 'CHAP_CHALLENGE'));
+my $chap_response  = unwrap(envattr('CHAP-Password', 'CHAP_PASSWORD'));
+my $nas_ip   = unwrap(envattr('NAS-IP-Address', 'NAS_IP_ADDRESS')) || unwrap(envattr('NAS-IPv6-Address', 'NAS_IPV6_ADDRESS'));
+my $calling  = unwrap(envattr('Calling-Station-Id', 'CALLING_STATION_ID'));
 
 # Service-instance identification (FR-62 / contract C7): forwarded RAW and
 # uninterpreted. Which of a NAS's hotspot/PPPoE service instances a request
@@ -55,16 +86,16 @@ my $calling  = unwrap($ENV{CALLING_STATION_ID});
 # knows how a given vendor encodes it (e.g. MikroTik puts the hotspot server
 # name in Called-Station-Id). This script's job here is to forward, not to
 # interpret — keep it that way, or instance identity stops being vendor-neutral.
-my $called        = unwrap($ENV{CALLED_STATION_ID});
-my $nas_port_type = unwrap($ENV{NAS_PORT_TYPE});
-my $nas_port_id   = unwrap($ENV{NAS_PORT_ID});
+my $called        = unwrap(envattr('Called-Station-Id', 'CALLED_STATION_ID'));
+my $nas_port_type = unwrap(envattr('NAS-Port-Type', 'NAS_PORT_TYPE'));
+my $nas_port_id   = unwrap(envattr('NAS-Port-Id', 'NAS_PORT_ID'));
 
 # Service discrimination (FR-58): MikroTik Hotspot logins arrive as
 # Service-Type = Login-User, PPPoE as Framed-User. This stays the COARSE hint
 # only — the backend supersedes it with the resolved instance's own service.
 # Match case-insensitively since rlm_exec may render the value as the enum name
 # or a raw number.
-my $service_type = unwrap($ENV{SERVICE_TYPE});
+my $service_type = unwrap(envattr('Service-Type', 'SERVICE_TYPE'));
 my $service = ($service_type =~ /login/i) ? "hotspot" : "pppoe";
 
 sub emit_reject {
