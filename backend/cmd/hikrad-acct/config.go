@@ -39,7 +39,14 @@ func loadConfig() (config, error) {
 
 	cfg.Addr = os.Getenv("HIKRAD_ACCT_ADDR")
 	if cfg.Addr == "" {
-		cfg.Addr = ":8082"
+		// 127.0.0.1, not ":8082"/0.0.0.0 (v4-2, FR-118) — same reasoning as
+		// hikrad-api's own loopback bind (cmd/hikrad-api/main.go): under
+		// Docker this port was never published to the host at all
+		// (`expose: "8082"`, reachable only from FreeRADIUS's own
+		// container); natively there is no network-namespace isolation to
+		// lean on, and the only legitimate caller is FreeRADIUS's
+		// accounting.pl exec script running on this same host.
+		cfg.Addr = "127.0.0.1:8082"
 	}
 	// Default matches the compose volume mount (deploy/compose.yml hikrad-acct
 	// block mounts the spill volume at /spill).
