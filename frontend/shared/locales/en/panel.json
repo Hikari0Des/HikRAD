@@ -1782,6 +1782,16 @@
     "graceRemaining": "{n} day(s) remaining",
     "entitledVersion": "Entitled version",
     "keyId": "Key ID",
+    "serial": "Serial",
+    "expiresAt": "Expires",
+    "supportUntil": "Support until",
+    "entitlements": "Entitlements",
+    "entitlement": {
+      "white_label": "White-label",
+      "self_service": "Self-service",
+      "api_access": "API access",
+      "gateways": "Payment gateways"
+    },
     "fingerprint": "Machine fingerprint",
     "fingerprintDrift": {
       "machineId": "This server's machine ID changed since the license was issued. This alone stays within tolerance — a re-issue is only needed if the network card also changes.",
@@ -1793,7 +1803,9 @@
     "uploaded": "License installed.",
     "invalidJson": "Invalid JSON. Check the license file or the payload/signature fields.",
     "upload": {
-      "title": "Install a license",
+      "title": "Import license",
+      "body": "Choose the license file the vendor sent back for this activation request.",
+      "manualEntry": "Manual entry (paste payload/signature) — CI or fallback use",
       "payload": "Payload",
       "signature": "Signature",
       "submit": "Install license"

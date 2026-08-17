@@ -55,6 +55,9 @@ export interface FingerprintMatch {
   within_tolerance: boolean
 }
 
+/** FR-122 entitlement names, checked by string — never assume this list is exhaustive. */
+export type Entitlement = 'white_label' | 'self_service' | 'api_access' | 'gateways'
+
 export interface LicenseResponse {
   installed: boolean
   state: LicenseState | 'valid'
@@ -67,6 +70,13 @@ export interface LicenseResponse {
   fingerprint: string
   grace_started_at?: string
   grace_expires_at?: string
+  /** FR-122/FR-125: payload schema version installed (1 or 2). */
+  version?: number
+  /** FR-122: resolved entitlement set — v2 explicit, or the v1-tier-derived fallback. */
+  entitlements?: Entitlement[]
+  expires_at?: string
+  support_until?: string
+  serial?: string
   /** FR-104: per-component fingerprint drift, present once a license is installed. */
   fingerprint_match?: FingerprintMatch
   /** FR-105: live subscriber count vs the licensed cap (finite-cap licenses only). */

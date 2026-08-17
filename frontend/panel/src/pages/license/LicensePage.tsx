@@ -2,7 +2,7 @@ import { useState } from 'react'
 
 import { useFormatters, useT } from '@hikrad/shared'
 
-import { requestLicenseBlob, uploadLicense } from '../../api/setup'
+import { requestLicenseBlob, uploadLicense, type Entitlement } from '../../api/setup'
 import { ApiError } from '../../api/client'
 import { useAuth } from '../../auth/AuthContext'
 import { PERM_LICENSE_MANAGE } from '../../auth/permissions'
@@ -145,8 +145,30 @@ export function LicensePage() {
           <Row label={t('license.entitledVersion')} value={license.entitled_version} />
         ) : null}
         {license?.key_id ? <Row label={t('license.keyId')} value={license.key_id} /> : null}
+        {license?.serial ? <Row label={t('license.serial')} value={license.serial} /> : null}
         {license?.grace_expires_at ? (
           <Row label={t('license.graceExpires')} value={formatDate(license.grace_expires_at)} />
+        ) : null}
+        {license?.expires_at ? (
+          <Row label={t('license.expiresAt')} value={formatDate(license.expires_at)} />
+        ) : null}
+        {license?.support_until ? (
+          <Row label={t('license.supportUntil')} value={formatDate(license.support_until)} />
+        ) : null}
+        {license?.entitlements?.length ? (
+          <div>
+            <span className="text-sm text-ink-muted">{t('license.entitlements')}</span>
+            <div className="mt-1 flex flex-wrap gap-1.5">
+              {license.entitlements.map((e: Entitlement) => (
+                <span
+                  key={e}
+                  className="rounded-full bg-surface-sunken px-2.5 py-0.5 text-xs font-medium text-ink"
+                >
+                  {t(`license.entitlement.${e}`)}
+                </span>
+              ))}
+            </div>
+          </div>
         ) : null}
         <div>
           <span className="text-sm text-ink-muted">{t('license.fingerprint')}</span>
@@ -164,40 +186,52 @@ export function LicensePage() {
 
       {canManage ? (
         <>
-          <div className="mb-6 space-y-3 rounded-md border border-border p-4">
-            <h2 className="text-sm font-semibold">{t('license.upload.title')}</h2>
-            <input type="file" accept=".json" onChange={(e) => void onFile(e)} />
-            <FormField label={t('license.upload.payload')}>
-              {(id) => (
-                <Textarea
-                  id={id}
-                  rows={4}
-                  dir="ltr"
-                  value={payload}
-                  onChange={(e) => setPayload(e.target.value)}
-                />
-              )}
-            </FormField>
-            <FormField label={t('license.upload.signature')}>
-              {(id) => (
-                <TextInput
-                  id={id}
-                  dir="ltr"
-                  value={signature}
-                  onChange={(e) => setSignature(e.target.value)}
-                />
-              )}
-            </FormField>
-            <Button disabled={busy || !payload || !signature} onClick={() => void submitUpload()}>
-              {busy ? t('ui.working') : t('license.upload.submit')}
-            </Button>
-          </div>
-
-          <div className="rounded-md border border-border p-4">
+          {/* FR-123/FR-125: export-request and import-license are the two
+              first-class actions of the file exchange — buttons, not
+              documentation. Manual payload/signature entry (the CI/fallback
+              path) is a disclosure below, not the primary form. */}
+          <div className="mb-6 rounded-md border border-border p-4">
             <h2 className="mb-2 text-sm font-semibold">{t('license.requestBlob.title')}</h2>
             <p className="mb-3 text-sm text-ink-muted">{t('license.requestBlob.body')}</p>
             <Button variant="secondary" onClick={() => void downloadRequestBlob()}>
               {t('license.requestBlob.download')}
+            </Button>
+          </div>
+
+          <div className="mb-6 space-y-3 rounded-md border border-border p-4">
+            <h2 className="text-sm font-semibold">{t('license.upload.title')}</h2>
+            <p className="text-sm text-ink-muted">{t('license.upload.body')}</p>
+            <input type="file" accept=".json" onChange={(e) => void onFile(e)} />
+            <details className="text-sm">
+              <summary className="cursor-pointer text-ink-muted">
+                {t('license.upload.manualEntry')}
+              </summary>
+              <div className="mt-3 space-y-3">
+                <FormField label={t('license.upload.payload')}>
+                  {(id) => (
+                    <Textarea
+                      id={id}
+                      rows={4}
+                      dir="ltr"
+                      value={payload}
+                      onChange={(e) => setPayload(e.target.value)}
+                    />
+                  )}
+                </FormField>
+                <FormField label={t('license.upload.signature')}>
+                  {(id) => (
+                    <TextInput
+                      id={id}
+                      dir="ltr"
+                      value={signature}
+                      onChange={(e) => setSignature(e.target.value)}
+                    />
+                  )}
+                </FormField>
+              </div>
+            </details>
+            <Button disabled={busy || !payload || !signature} onClick={() => void submitUpload()}>
+              {busy ? t('ui.working') : t('license.upload.submit')}
             </Button>
           </div>
         </>

@@ -29,6 +29,19 @@ type licenseResponse struct {
 	GraceStartedAt    *time.Time `json:"grace_started_at,omitempty"`
 	GraceExpiresAt    *time.Time `json:"grace_expires_at,omitempty"`
 
+	// FR-122/FR-125: payload schema version actually installed (1 or 2), the
+	// resolved entitlement set (v2 explicit, or the v1-tier-derived fallback
+	// — never the raw payload field verbatim for a v1 blob, so the panel
+	// never has to know the difference), calendar expiry/support window, and
+	// serial. Entitlements is built the same way platform.LicenseHasEntitlement
+	// resolves it — the display never has a second, potentially-diverging
+	// notion of what's granted.
+	Version      int        `json:"version,omitempty"`
+	Entitlements []string   `json:"entitlements,omitempty"`
+	ExpiresAt    *time.Time `json:"expires_at,omitempty"`
+	SupportUntil *time.Time `json:"support_until,omitempty"`
+	Serial       string     `json:"serial,omitempty"`
+
 	// FR-104: which fingerprint components match between the issued key and
 	// this server right now, so the UI can name what drifted for a re-issue.
 	// Nil until a license is installed and this server's fingerprint is known.
@@ -78,6 +91,15 @@ func buildLicenseResponse(rec license.Record, installed bool, currentFP string) 
 	if exp := rec.GraceExpiresAt(); !exp.IsZero() {
 		resp.GraceExpiresAt = &exp
 	}
+	resp.Version = rec.Payload.EffectiveVersion()
+	for _, name := range license.KnownEntitlements {
+		if rec.Payload.HasEntitlement(name) {
+			resp.Entitlements = append(resp.Entitlements, name)
+		}
+	}
+	resp.ExpiresAt = rec.Payload.ExpiresAt
+	resp.SupportUntil = rec.Payload.SupportUntil
+	resp.Serial = rec.Payload.Serial
 	if currentFP != "" && rec.IssuedFingerprint != "" {
 		mid, mac := license.CompareComponents(rec.IssuedFingerprint, currentFP)
 		resp.FingerprintMatch = &fingerprintMatch{
