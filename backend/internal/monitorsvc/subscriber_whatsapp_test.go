@@ -14,7 +14,22 @@ import (
 	"testing"
 
 	"github.com/hikrad/hikrad/internal/platform"
+	"github.com/hikrad/hikrad/internal/platform/crypto"
 )
+
+// FR-127: notifications.whatsapp/smtp/telegram now store their credential
+// payload encrypted (platform.SetEncrypted/GetEncrypted), so any test in
+// this package that seeds one of those keys needs a configured crypto
+// service. Configuring it once here in an init() (rather than per-test)
+// keeps every test in the package deterministic regardless of run order,
+// matching crypto.Configure's own "preferred in main/tests" guidance.
+func init() {
+	key := make([]byte, 32)
+	for i := range key {
+		key[i] = byte(i + 11)
+	}
+	_ = crypto.Configure(key)
+}
 
 type fakeSettings struct {
 	mu sync.Mutex
@@ -94,7 +109,7 @@ func TestDeliverSubscriberWhatsApp_RequestCaptureFake(t *testing.T) {
 	defer func() { graphAPIBase = origBase }()
 
 	settings := newFakeSettings()
-	if err := settings.Set(context.Background(), "notifications.whatsapp", whatsAppConfig{Token: "test-token", PhoneID: "12345"}); err != nil {
+	if err := platform.SetEncrypted(context.Background(), settings, "notifications.whatsapp", whatsAppConfig{Token: "test-token", PhoneID: "12345"}); err != nil {
 		t.Fatal(err)
 	}
 	if err := settings.Set(context.Background(), subscriberTemplatesKey, templateCatalog{Templates: map[string]map[string]string{

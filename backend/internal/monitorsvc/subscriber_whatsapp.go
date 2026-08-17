@@ -86,7 +86,7 @@ func sendSubscriberTemplate(ctx context.Context, client *http.Client, cfg whatsA
 // template/language isn't registered yet — delivery isolation (FR-55.4):
 // missing onboarding degrades silently rather than blocking anything else.
 func deliverSubscriberWhatsApp(ctx context.Context, settings platform.Settings, client *http.Client, phone, lang, templateKey string, params []string) error {
-	cfg, err := platform.Get[whatsAppConfig](ctx, settings, "notifications.whatsapp")
+	cfg, err := platform.GetEncrypted[whatsAppConfig](ctx, settings, "notifications.whatsapp")
 	if err != nil || cfg.Token == "" || cfg.PhoneID == "" {
 		return nil
 	}

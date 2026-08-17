@@ -77,7 +77,7 @@ func testNotificationHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func sendTestEmail(ctx context.Context, to string) error {
-	cfg, err := platform.Get[smtpConfig](ctx, svc.settings, "notifications.smtp")
+	cfg, err := platform.GetEncrypted[smtpConfig](ctx, svc.settings, "notifications.smtp")
 	if err != nil || cfg.Host == "" {
 		return errors.New("SMTP is not configured (Settings > Notifications)")
 	}
@@ -126,7 +126,7 @@ func sendTestEmail(ctx context.Context, to string) error {
 }
 
 func sendTestTelegram(ctx context.Context, chatID string) error {
-	cfg, err := platform.Get[telegramConfig](ctx, svc.settings, "notifications.telegram")
+	cfg, err := platform.GetEncrypted[telegramConfig](ctx, svc.settings, "notifications.telegram")
 	if err != nil || cfg.BotToken == "" {
 		return errors.New("Telegram bot token is not configured (Settings > Notifications)")
 	}
@@ -139,7 +139,7 @@ func sendTestTelegram(ctx context.Context, chatID string) error {
 }
 
 func sendTestWhatsApp(ctx context.Context, to string) error {
-	cfg, err := platform.Get[whatsappConfig](ctx, svc.settings, "notifications.whatsapp")
+	cfg, err := platform.GetEncrypted[whatsappConfig](ctx, svc.settings, "notifications.whatsapp")
 	if err != nil || cfg.AccessToken == "" || cfg.PhoneNumberID == "" {
 		return errors.New("WhatsApp Business Cloud API credentials are not configured (Settings > Notifications)")
 	}

@@ -17,8 +17,17 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/hikrad/hikrad/internal/auth"
 	"github.com/hikrad/hikrad/internal/httpapi"
+	"github.com/hikrad/hikrad/internal/platform"
 	"github.com/hikrad/hikrad/internal/platform/crypto"
 )
+
+// notificationSecretFields (FR-127) are the notifications-group fields
+// whose values embed a credential (smtp.password, telegram.bot_token,
+// whatsapp.token/access_token) and must therefore be stored encrypted at
+// rest, unlike locale/branding/billing fields which carry nothing secret.
+// The whole object is sealed (not just the credential sub-field) — see
+// internal/platform/settings_crypto.go's doc comment for why.
+var notificationSecretFields = map[string]bool{"smtp": true, "telegram": true, "whatsapp": true}
 
 // settingsGroups declares every v1 group (FR-53.2) and its allowed field
 // names. A PUT with a field not in this list is rejected (422) rather than
@@ -62,6 +71,14 @@ func readGroup(ctx context.Context, group string) map[string]json.RawMessage {
 			_, err := svc.settings.GetRaw(ctx, remoteAccessTokenEncKey)
 			b, _ := json.Marshal(err == nil)
 			out["token_set"] = b
+			continue
+		}
+		if group == "notifications" && notificationSecretFields[f] {
+			raw, err := platform.GetEncryptedRaw(ctx, svc.settings, group+"."+f)
+			if err != nil {
+				continue
+			}
+			out[f] = raw
 			continue
 		}
 		raw, err := svc.settings.GetRaw(ctx, group+"."+f)
@@ -119,6 +136,14 @@ func putSettingsGroupHandler(w http.ResponseWriter, r *http.Request) {
 		if group == "remote_access" && f == "token" {
 			if err := setRemoteAccessToken(ctx, raw); err != nil {
 				svc.log.Error("settings: encrypt remote_access.token failed", "error", err)
+				httpapi.Error(w, http.StatusInternalServerError, "internal", "internal server error")
+				return
+			}
+			continue
+		}
+		if group == "notifications" && notificationSecretFields[f] {
+			if err := platform.SetEncryptedRaw(ctx, svc.settings, group+"."+f, raw); err != nil {
+				svc.log.Error("settings: encrypt notifications field failed", "error", err, "field", f)
 				httpapi.Error(w, http.StatusInternalServerError, "internal", "internal server error")
 				return
 			}

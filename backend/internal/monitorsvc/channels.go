@@ -166,7 +166,7 @@ type telegramSender struct {
 func (telegramSender) channel() string { return chTelegram }
 
 func (s telegramSender) send(ctx context.Context, m alertMessage) error {
-	cfg, err := platform.Get[telegramConfig](ctx, s.settings, "notifications.telegram")
+	cfg, err := platform.GetEncrypted[telegramConfig](ctx, s.settings, "notifications.telegram")
 	if err != nil || cfg.BotToken == "" {
 		return fmt.Errorf("telegram not configured")
 	}
@@ -201,7 +201,7 @@ type emailSender struct{ settings platform.Settings }
 func (emailSender) channel() string { return chEmail }
 
 func (s emailSender) send(ctx context.Context, m alertMessage) error {
-	cfg, err := platform.Get[smtpConfig](ctx, s.settings, "notifications.smtp")
+	cfg, err := platform.GetEncrypted[smtpConfig](ctx, s.settings, "notifications.smtp")
 	if err != nil || cfg.Host == "" {
 		return fmt.Errorf("smtp not configured")
 	}
@@ -241,9 +241,17 @@ func (s emailSender) send(ctx context.Context, m alertMessage) error {
 
 // --- whatsapp (Business Cloud API) ------------------------------------------
 
+// whatsAppConfig's JSON tags MUST match what the panel's
+// NotificationsSettings.tsx actually writes (access_token/phone_number_id)
+// and what internal/platform/setupapi/notify_test_send.go's own
+// whatsappConfig already correctly expects — found this phase (v4-3,
+// FR-127) still using token/phone_id, which meant a WhatsApp channel
+// configured through the panel could pass its own "Test Send" button while
+// the real alert/subscriber-notification delivery path below silently
+// never found credentials at all. See docs/ops/known-issues.md.
 type whatsAppConfig struct {
-	Token    string   `json:"token"`
-	PhoneID  string   `json:"phone_id"`
+	Token    string   `json:"access_token"`
+	PhoneID  string   `json:"phone_number_id"`
 	Template string   `json:"template"` // approved alert template name
 	Lang     string   `json:"lang"`
 	To       []string `json:"to"`
@@ -259,7 +267,7 @@ type whatsAppSender struct {
 func (whatsAppSender) channel() string { return chWhatsApp }
 
 func (s whatsAppSender) send(ctx context.Context, m alertMessage) error {
-	cfg, err := platform.Get[whatsAppConfig](ctx, s.settings, "notifications.whatsapp")
+	cfg, err := platform.GetEncrypted[whatsAppConfig](ctx, s.settings, "notifications.whatsapp")
 	if err != nil || cfg.Token == "" || cfg.PhoneID == "" {
 		return fmt.Errorf("whatsapp not configured")
 	}

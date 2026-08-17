@@ -40,7 +40,7 @@ func TestDigestPerSubscriber_ExpiryReminderWhatsApp(t *testing.T) {
 	graphAPIBase = fake.URL
 	defer func() { graphAPIBase = origBase }()
 
-	if err := settings.Set(ctx, "notifications.whatsapp", whatsAppConfig{Token: "tok", PhoneID: "555"}); err != nil {
+	if err := platform.SetEncrypted(ctx, settings, "notifications.whatsapp", whatsAppConfig{Token: "tok", PhoneID: "555"}); err != nil {
 		t.Fatal(err)
 	}
 	if err := settings.Set(ctx, subscriberTemplatesKey, templateCatalog{Templates: map[string]map[string]string{

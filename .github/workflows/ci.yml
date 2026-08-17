@@ -168,6 +168,18 @@ jobs:
           tar -xf /tmp/hikrad-bundle.tar -C /tmp/hikrad-bundle-stage
           bash scripts/lint-release-manifest.sh /tmp/hikrad-bundle-stage
 
+  secret-scan:
+    name: Secret scanning (gitleaks, FR-127)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITLEAKS_CONFIG: .gitleaks.toml
+
   harness-smoke:
     name: RADIUS harness smoke
     runs-on: ubuntu-latest

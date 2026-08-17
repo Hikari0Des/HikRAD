@@ -1,0 +1,55 @@
+# gitleaks config (FR-127, phase v4-3). Extends the default gitleaks
+# ruleset (entropy/pattern-based secret detection — deliberately not a
+# bespoke grep script, since "is this a secret" needs the heuristics a fixed
+# pattern can't give without either missing real leaks or drowning the
+# operator in false positives) with an allowlist for this repo's own known,
+# documented, non-secret look-alikes.
+#
+# Everything allowlisted below is either a PUBLIC key (not a secret at all,
+# just PEM/base64-shaped so it superficially resembles one) or an explicitly
+# documented dev/pilot-only key that is not, and was never treated as, this
+# vendor's real signing material (see each file's own README for the
+# rotation ritual before a real commercial shipment).
+title = "hikrad-gitleaks-config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "HikRAD known non-secret / dev-only key material"
+paths = [
+  '''scripts/license-tool/dev-vendor-key\.b64''',
+  '''scripts/release-signing/dev-release-key\.pem''',
+  '''scripts/release-signing/dev-release-public-key\.pem''',
+  # FreeRADIUS's own stock, unmodified-upstream mods-available/mods-enabled
+  # eap config — its documented example `pac_opaque_key` placeholder value
+  # (0123456789abcdef0123456789ABCDEF, straight from upstream FreeRADIUS
+  # comments) trips the generic-api-key heuristic. Vendored content, not
+  # HikRAD-authored, not a real key.
+  '''deploy/freeradius/mods-(available|enabled)/eap''',
+]
+regexes = [
+  # license.ProductionPublicKeyB64 (backend/internal/platform/license/license.go)
+  # — the vendor's PUBLIC key, embedded by design so every binary can verify
+  # a license; not a secret.
+  '''ProductionPublicKeyB64\s*=\s*"[A-Za-z0-9+/=]+"''',
+  # RELEASE_PUBLIC_KEY_PEM (scripts/verify-bundle.sh) — the release-signing
+  # PUBLIC key, embedded by design so install.sh/hikrad update can verify a
+  # bundle's signature offline; not a secret.
+  '''RELEASE_PUBLIC_KEY_PEM=''',
+  # frontend/panel/src/pages/LoginPage.test.tsx — a fake TOTP secret fixture
+  # ('otpauth://totp/x', secret: 'ABCDEF123456'), not a real credential.
+  '''ABCDEF123456''',
+  # docs/PRD.md, docs/prd/01-platform-install-licensing.md — "expiry/quota"
+  # prose trips the generic-api-key entropy heuristic on the slashed word
+  # pair; verified by hand, not a secret.
+  '''expiry/quota''',
+]
+
+# Verified by running `gitleaks detect --config .gitleaks.toml --no-git
+# --source .` against the full working tree at v4-3 kickoff: before this
+# allowlist, 5 findings, all confirmed false positives (the four patterns
+# above); after, 0. Re-run that command after adding new key-shaped or
+# high-entropy content to confirm it's a real allowlist candidate before
+# adding an entry — never allowlist something without verifying by hand
+# first.
