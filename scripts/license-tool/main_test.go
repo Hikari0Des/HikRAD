@@ -119,6 +119,74 @@ func TestSignAndWrite_UnlimitedTier(t *testing.T) {
 	}
 }
 
+// TestSignAndWrite_V1UnaffectedByV2Fields confirms an issueInput with no v2
+// fields set (the existing CI call-site shape) still emits a payload with no
+// "version"/"entitlements" keys at all — the FR-122 wire-compat guarantee.
+func TestSignAndWrite_V1UnaffectedByV2Fields(t *testing.T) {
+	keyFile, _ := writeTempKey(t)
+	in := issueInput{
+		keyFile: keyFile, keyID: "K-1", licensee: "ISP", tier: "standard",
+		maxSubs: 500, version: "1", fingerprint: "fp1:fp2",
+		issuedAt: time.Date(2026, 7, 22, 10, 0, 0, 0, time.UTC),
+	}
+	out := runSign(t, in)
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(out, &raw); err != nil {
+		t.Fatalf("unmarshal blob: %v", err)
+	}
+	var payloadRaw map[string]json.RawMessage
+	if err := json.Unmarshal(raw["payload"], &payloadRaw); err != nil {
+		t.Fatalf("unmarshal payload: %v", err)
+	}
+	for _, key := range []string{"version", "entitlements", "expires_at", "support_until", "serial"} {
+		if _, present := payloadRaw[key]; present {
+			t.Errorf("v1-shaped issueInput emitted a %q key — must be fully absent, not just zero", key)
+		}
+	}
+}
+
+// TestSignAndWrite_V2EntitlementsRoundTrip covers the new activation path:
+// setting entitlements (or expiry/support/serial) switches the payload to v2
+// and every field round-trips.
+func TestSignAndWrite_V2EntitlementsRoundTrip(t *testing.T) {
+	keyFile, pub := writeTempKey(t)
+	exp := time.Date(2027, 6, 1, 0, 0, 0, 0, time.UTC)
+	in := issueInput{
+		keyFile: keyFile, keyID: "K-2", licensee: "Acme ISP", tier: "pro",
+		maxSubs: 1000, version: "1", fingerprint: "fp1:fp2",
+		issuedAt:     time.Date(2026, 7, 22, 10, 0, 0, 0, time.UTC),
+		entitlements: []string{"white_label", "self_service"},
+		expiresAt:    &exp,
+		serial:       "SN-777",
+	}
+	out := runSign(t, in)
+
+	var b blob
+	if err := json.Unmarshal(out, &b); err != nil {
+		t.Fatalf("unmarshal blob: %v", err)
+	}
+	sig, err := base64.StdEncoding.DecodeString(b.Signature)
+	if err != nil {
+		t.Fatalf("decode sig: %v", err)
+	}
+	if !ed25519.Verify(pub, b.Payload, sig) {
+		t.Fatal("signature does not verify over v2 payload bytes")
+	}
+	var p payload
+	if err := json.Unmarshal(b.Payload, &p); err != nil {
+		t.Fatalf("unmarshal payload: %v", err)
+	}
+	if p.Version != 2 {
+		t.Errorf("Version = %d, want 2", p.Version)
+	}
+	if len(p.Entitlements) != 2 || p.Serial != "SN-777" {
+		t.Errorf("v2 fields wrong: %+v", p)
+	}
+	if p.ExpiresAt == nil || !p.ExpiresAt.Equal(exp) {
+		t.Errorf("ExpiresAt wrong: %+v", p.ExpiresAt)
+	}
+}
+
 func TestTierCatalog(t *testing.T) {
 	want := map[string]int{"starter": 200, "standard": 500, "pro": 1000, "unlimited": 0}
 	if len(tierCatalog) != len(want) {

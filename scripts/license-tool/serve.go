@@ -112,8 +112,8 @@ type pageData struct {
 	KeyID       string
 	Tiers       []tierOption
 	Version     string
-	Result      string        // the signed blob, shown for copy
-	DownloadURI template.URL  // data: URI so the browser can save the file
+	Result      string       // the signed blob, shown for copy
+	DownloadURI template.URL // data: URI so the browser can save the file
 	Filename    string
 	Erro        string
 	// echo back what was entered so a validation error doesn't wipe the form

@@ -61,6 +61,14 @@ var ErrMalformedPayload = errors.New("license: malformed payload")
 // Payload is the signed license content (FR-50.1): licensee name, issue date,
 // max-subscriber tier, and entitled major version, plus the fingerprint the
 // key was issued for and a vendor-assigned key id.
+//
+// v2 (FR-122, phase v4-3) adds Version/Entitlements/ExpiresAt/SupportUntil/
+// Serial, all `omitempty` so a v1 blob (which never wrote these fields) still
+// unmarshals and verifies cleanly — no separate PayloadV2 type, because every
+// new field is additive and the wire format stays one contract shared with
+// scripts/license-tool. EffectiveVersion/HasEntitlement below are the one
+// place "is this v1 or v2" and "what does it grant" get decided; every other
+// consumer calls those instead of reading Version/Entitlements directly.
 type Payload struct {
 	KeyID           string    `json:"key_id"`
 	Licensee        string    `json:"licensee"`
@@ -69,6 +77,48 @@ type Payload struct {
 	MaxSubscribers  int       `json:"max_subscribers"`
 	EntitledVersion string    `json:"entitled_version"`
 	Fingerprint     string    `json:"fingerprint"`
+
+	// --- v2 fields (FR-122). All omitempty: their absence is what marks a
+	// payload as v1, and Verify must keep accepting that shape unchanged. ---
+	Version      int        `json:"version,omitempty"`
+	Entitlements []string   `json:"entitlements,omitempty"`
+	ExpiresAt    *time.Time `json:"expires_at,omitempty"`
+	SupportUntil *time.Time `json:"support_until,omitempty"`
+	Serial       string     `json:"serial,omitempty"`
+}
+
+// EffectiveVersion returns p.Version, defaulting to 1 when the field is
+// absent or zero (a v1 blob, signed before FR-122 existed) — the single
+// place that decides "is this v1 or v2".
+func (p Payload) EffectiveVersion() int {
+	if p.Version <= 0 {
+		return 1
+	}
+	return p.Version
+}
+
+// HasEntitlement reports whether name is granted by p: for a v2 payload
+// (EffectiveVersion >= 2), checked by string against the signed
+// Entitlements set — never by tier name, so adding a tier never touches
+// enforcement code (Decision 62's discipline). For a v1 payload, falls back
+// to DefaultEntitlements(p.Tier) so an existing customer's grant set stays
+// stable instead of silently becoming empty the moment enforcement code
+// starts asking (FR-122: "no customer is stranded").
+func (p Payload) HasEntitlement(name string) bool {
+	if p.EffectiveVersion() >= 2 {
+		for _, e := range p.Entitlements {
+			if e == name {
+				return true
+			}
+		}
+		return false
+	}
+	for _, e := range DefaultEntitlements(p.Tier) {
+		if e == name {
+			return true
+		}
+	}
+	return false
 }
 
 // Blob is the wire format uploaded via POST /api/v1/license: the payload

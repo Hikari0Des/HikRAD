@@ -117,6 +117,88 @@ func TestVerifyRejectsMissingRequiredFields(t *testing.T) {
 	}
 }
 
+// --- v2 payload / entitlements (FR-122) -------------------------------------
+
+func TestVerify_V1PayloadHasNoVersionField_StillVerifies(t *testing.T) {
+	pub, priv := testKeypair(t)
+	blob, err := Sign(priv, samplePayload()) // samplePayload never sets Version/Entitlements
+	if err != nil {
+		t.Fatalf("Sign: %v", err)
+	}
+	got, err := Verify(pub, blob)
+	if err != nil {
+		t.Fatalf("Verify rejected a v1 payload: %v", err)
+	}
+	if got.EffectiveVersion() != 1 {
+		t.Fatalf("EffectiveVersion() = %d, want 1 for a v1 blob", got.EffectiveVersion())
+	}
+}
+
+func TestPayload_EffectiveVersion(t *testing.T) {
+	cases := []struct {
+		version int
+		want    int
+	}{{0, 1}, {1, 1}, {2, 2}, {3, 3}}
+	for _, c := range cases {
+		p := Payload{Version: c.version}
+		if got := p.EffectiveVersion(); got != c.want {
+			t.Errorf("EffectiveVersion() with Version=%d = %d, want %d", c.version, got, c.want)
+		}
+	}
+}
+
+func TestPayload_HasEntitlement_V2ExplicitSet(t *testing.T) {
+	p := samplePayload()
+	p.Version = 2
+	p.Entitlements = []string{EntitlementWhiteLabel}
+	if !p.HasEntitlement(EntitlementWhiteLabel) {
+		t.Error("expected white_label granted")
+	}
+	if p.HasEntitlement(EntitlementAPIAccess) {
+		t.Error("api_access not in Entitlements, should not be granted")
+	}
+}
+
+func TestPayload_HasEntitlement_V1FallsBackToTierDefault(t *testing.T) {
+	p := samplePayload() // v1: no Version, no Entitlements
+	if p.HasEntitlement(EntitlementWhiteLabel) {
+		t.Error("v1 payload must never be granted white_label by default")
+	}
+	if !p.HasEntitlement(EntitlementSelfService) {
+		t.Error("v1 payload should get self_service from DefaultEntitlements so it is not stranded")
+	}
+}
+
+func TestSign_RoundTripsV2Fields(t *testing.T) {
+	pub, priv := testKeypair(t)
+	exp := time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC)
+	support := time.Date(2028, 1, 1, 0, 0, 0, 0, time.UTC)
+	p := samplePayload()
+	p.Version = 2
+	p.Entitlements = []string{EntitlementWhiteLabel, EntitlementSelfService}
+	p.ExpiresAt = &exp
+	p.SupportUntil = &support
+	p.Serial = "SN-0001"
+
+	blob, err := Sign(priv, p)
+	if err != nil {
+		t.Fatalf("Sign: %v", err)
+	}
+	got, err := Verify(pub, blob)
+	if err != nil {
+		t.Fatalf("Verify: %v", err)
+	}
+	if got.EffectiveVersion() != 2 || len(got.Entitlements) != 2 || got.Serial != "SN-0001" {
+		t.Fatalf("v2 fields did not round-trip: %+v", got)
+	}
+	if got.ExpiresAt == nil || !got.ExpiresAt.Equal(exp) {
+		t.Fatalf("ExpiresAt did not round-trip: %+v", got.ExpiresAt)
+	}
+	if got.SupportUntil == nil || !got.SupportUntil.Equal(support) {
+		t.Fatalf("SupportUntil did not round-trip: %+v", got.SupportUntil)
+	}
+}
+
 func TestProductionPublicKeyDecodes(t *testing.T) {
 	if len(ProductionPublicKey) != ed25519.PublicKeySize {
 		t.Fatalf("ProductionPublicKey is %d bytes, want %d", len(ProductionPublicKey), ed25519.PublicKeySize)

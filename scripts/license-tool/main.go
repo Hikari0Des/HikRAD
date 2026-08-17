@@ -41,20 +41,38 @@ import (
 // (license.Verify never validates the tier string), so this list can grow
 // without a product rebuild. Keep it in sync with the C2 table in
 // docs/v3/phases/phase-v3-3-licensing-hardening/00-phase.md.
+//
+// DefaultEntitlements (FR-122) is this catalog's pre-checked entitlement set
+// for a new v2 license of that tier — a vendor-side sales default, separate
+// from (and not to be confused with) internal/platform/license's
+// DefaultEntitlements(tier), which is the runtime fallback grant for
+// pre-existing v1 blobs. white_label is deliberately unchecked for every
+// stock tier: it is sold as an explicit add-on, never bundled silently.
 type tierOption struct {
-	Key   string
-	Label string
-	Max   int // 0 => unlimited (no cap)
+	Key                 string
+	Label               string
+	Max                 int // 0 => unlimited (no cap)
+	DefaultEntitlements []string
 }
 
 var tierCatalog = []tierOption{
-	{Key: "starter", Label: "Starter — 200 subscribers", Max: 200},
-	{Key: "standard", Label: "Standard — 500 subscribers", Max: 500},
-	{Key: "pro", Label: "Pro — 1000 subscribers", Max: 1000},
-	{Key: "unlimited", Label: "Unlimited — no cap", Max: 0},
+	{Key: "starter", Label: "Starter — 200 subscribers", Max: 200, DefaultEntitlements: []string{"self_service"}},
+	{Key: "standard", Label: "Standard — 500 subscribers", Max: 500, DefaultEntitlements: []string{"self_service", "api_access"}},
+	{Key: "pro", Label: "Pro — 1000 subscribers", Max: 1000, DefaultEntitlements: []string{"self_service", "api_access", "gateways"}},
+	{Key: "unlimited", Label: "Unlimited — no cap", Max: 0, DefaultEntitlements: []string{"self_service", "api_access", "gateways"}},
 }
 
-// payload mirrors internal/platform/license.Payload exactly.
+// knownEntitlements mirrors internal/platform/license.KnownEntitlements —
+// duplicated for the same reason the payload/blob structs are: this module
+// cannot import backend's internal package, so the wire contract (here, the
+// set of names the interactive prompt/serve form offer) is kept in sync by
+// hand, same as everything else in this file's mirrored types.
+var knownEntitlements = []string{"white_label", "self_service", "api_access", "gateways"}
+
+// payload mirrors internal/platform/license.Payload exactly, including the
+// FR-122 v2 fields (Version/Entitlements/ExpiresAt/SupportUntil/Serial), all
+// omitempty so an issuer that never sets them keeps emitting byte-identical
+// v1 output — no behavior change for existing non-interactive callers.
 type payload struct {
 	KeyID           string    `json:"key_id"`
 	Licensee        string    `json:"licensee"`
@@ -63,6 +81,12 @@ type payload struct {
 	MaxSubscribers  int       `json:"max_subscribers"`
 	EntitledVersion string    `json:"entitled_version"`
 	Fingerprint     string    `json:"fingerprint"`
+
+	Version      int        `json:"version,omitempty"`
+	Entitlements []string   `json:"entitlements,omitempty"`
+	ExpiresAt    *time.Time `json:"expires_at,omitempty"`
+	SupportUntil *time.Time `json:"support_until,omitempty"`
+	Serial       string     `json:"serial,omitempty"`
 }
 
 // blob mirrors internal/platform/license.Blob exactly.
@@ -160,6 +184,15 @@ type issueInput struct {
 	keyFile, keyID, licensee, tier, version, fingerprint, out string
 	maxSubs                                                   int
 	issuedAt                                                  time.Time
+
+	// --- v2 fields (FR-122). Zero values (nil/""/empty) mean "not set" and
+	// signBlob leaves schemaVersion at 0 (omitted -> v1) when every one of
+	// them is unset, so an old-style call site keeps emitting byte-identical
+	// v1 output. Setting any one of them switches the emitted payload to v2. ---
+	entitlements []string
+	expiresAt    *time.Time
+	supportUntil *time.Time
+	serial       string
 }
 
 func cmdIssue(args []string) error {
@@ -186,6 +219,10 @@ func cmdIssue(args []string) error {
 	version := fs.String("version", "1", "entitled major version")
 	fingerprint := fs.String("fingerprint", "", "the buyer's server fingerprint (required)")
 	out := fs.String("out", "", "output file (default: stdout)")
+	entitlements := fs.String("entitlements", "", "comma-separated entitlement names (FR-122, e.g. white_label,self_service) — setting this or any of -expires/-support-until/-serial emits a v2 payload; omit all four for a plain v1 blob")
+	expires := fs.String("expires", "", "RFC3339 expiry (e.g. 2027-01-01T00:00:00Z); blank = perpetual")
+	supportUntil := fs.String("support-until", "", "RFC3339 support-window end; blank = unset (informational only, never gates)")
+	serial := fs.String("serial", "", "vendor-assigned serial/order number")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -197,11 +234,57 @@ func cmdIssue(args []string) error {
 	if *maxSubs < 0 {
 		return fmt.Errorf("-max-subscribers must be >= 0 (0 = unlimited)")
 	}
+	expiresAt, err := parseOptionalTime(*expires)
+	if err != nil {
+		return fmt.Errorf("-expires: %w", err)
+	}
+	supportUntilAt, err := parseOptionalTime(*supportUntil)
+	if err != nil {
+		return fmt.Errorf("-support-until: %w", err)
+	}
 	return signAndWrite(issueInput{
 		keyFile: *keyFile, keyID: *keyID, licensee: *licensee, tier: *tier,
 		maxSubs: *maxSubs, version: *version, fingerprint: *fingerprint, out: *out,
-		issuedAt: time.Now().UTC(),
+		issuedAt:     time.Now().UTC(),
+		entitlements: splitEntitlements(*entitlements),
+		expiresAt:    expiresAt,
+		supportUntil: supportUntilAt,
+		serial:       *serial,
 	})
+}
+
+// splitEntitlements parses a comma-separated -entitlements flag value into a
+// trimmed, non-empty string slice (nil for a blank input, so signBlob's
+// "did the caller set any v2 field" check works on len(), not on comma
+// splitting quirks like a single empty string).
+func splitEntitlements(csv string) []string {
+	csv = strings.TrimSpace(csv)
+	if csv == "" {
+		return nil
+	}
+	parts := strings.Split(csv, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// parseOptionalTime parses an RFC3339 timestamp, treating a blank string as
+// "unset" (nil) rather than an error — both -expires and -support-until are
+// optional.
+func parseOptionalTime(s string) (*time.Time, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil, nil
+	}
+	t, err := time.Parse(time.RFC3339, s)
+	if err != nil {
+		return nil, fmt.Errorf("not RFC3339 (e.g. 2027-01-01T00:00:00Z): %w", err)
+	}
+	return &t, nil
 }
 
 // signAndWrite is the single signing path shared by flag mode and interactive
@@ -246,6 +329,14 @@ func signBlob(in issueInput) ([]byte, error) {
 	if issued.IsZero() {
 		issued = time.Now().UTC()
 	}
+	// schemaVersion stays 0 (omitted -> v1, per Payload's omitempty tags)
+	// unless the caller set at least one v2 field — so a caller that never
+	// touches entitlements/expiry/support/serial keeps emitting byte-identical
+	// v1 output (FR-103's invariant, now extended across schema versions too).
+	schemaVersion := 0
+	if len(in.entitlements) > 0 || in.expiresAt != nil || in.supportUntil != nil || in.serial != "" {
+		schemaVersion = 2
+	}
 	p := payload{
 		KeyID:           in.keyID,
 		Licensee:        in.licensee,
@@ -254,6 +345,11 @@ func signBlob(in issueInput) ([]byte, error) {
 		MaxSubscribers:  in.maxSubs,
 		EntitledVersion: in.version,
 		Fingerprint:     in.fingerprint,
+		Version:         schemaVersion,
+		Entitlements:    in.entitlements,
+		ExpiresAt:       in.expiresAt,
+		SupportUntil:    in.supportUntil,
+		Serial:          in.serial,
 	}
 	raw, err := json.Marshal(p)
 	if err != nil {
@@ -294,7 +390,7 @@ func promptIssue() (issueInput, error) {
 	if err != nil {
 		return issueInput{}, err
 	}
-	tier, maxSubs, err := promptTier(r)
+	tier, maxSubs, defaultEnts, err := promptTier(r)
 	if err != nil {
 		return issueInput{}, err
 	}
@@ -306,6 +402,30 @@ func promptIssue() (issueInput, error) {
 	if err != nil {
 		return issueInput{}, err
 	}
+	entitlements, err := promptEntitlements(r, defaultEnts)
+	if err != nil {
+		return issueInput{}, err
+	}
+	expiresStr, err := promptWithDefault(r, "Expires (RFC3339, blank = perpetual)", "")
+	if err != nil {
+		return issueInput{}, err
+	}
+	expiresAt, err := parseOptionalTime(expiresStr)
+	if err != nil {
+		return issueInput{}, fmt.Errorf("expires: %w", err)
+	}
+	supportStr, err := promptWithDefault(r, "Support until (RFC3339, blank = unset)", "")
+	if err != nil {
+		return issueInput{}, err
+	}
+	supportUntil, err := parseOptionalTime(supportStr)
+	if err != nil {
+		return issueInput{}, fmt.Errorf("support-until: %w", err)
+	}
+	serial, err := promptWithDefault(r, "Serial / order number (blank = unset)", "")
+	if err != nil {
+		return issueInput{}, err
+	}
 	out, err := promptWithDefault(r, "Output file (blank = stdout)", "")
 	if err != nil {
 		return issueInput{}, err
@@ -313,14 +433,60 @@ func promptIssue() (issueInput, error) {
 	return issueInput{
 		keyFile: keyFile, keyID: keyID, licensee: licensee, tier: tier,
 		maxSubs: maxSubs, version: version, fingerprint: fingerprint, out: out,
-		issuedAt: time.Now().UTC(),
+		issuedAt:     time.Now().UTC(),
+		entitlements: entitlements,
+		expiresAt:    expiresAt,
+		supportUntil: supportUntil,
+		serial:       serial,
 	}, nil
+}
+
+// promptEntitlements shows the FR-122 catalogue with defaultEnts pre-checked
+// (marked with a *) and lets the operator type a comma-separated list of
+// numbers to toggle, or press Enter to accept the defaults as-is.
+func promptEntitlements(r *bufio.Reader, defaultEnts []string) ([]string, error) {
+	selected := map[string]bool{}
+	for _, e := range defaultEnts {
+		selected[e] = true
+	}
+	fmt.Fprintln(os.Stderr, "Entitlements (checked by name, never by tier — Decision 62):")
+	for i, e := range knownEntitlements {
+		mark := " "
+		if selected[e] {
+			mark = "*"
+		}
+		fmt.Fprintf(os.Stderr, "  [%s] %d) %s\n", mark, i+1, e)
+	}
+	choice, err := promptWithDefault(r, fmt.Sprintf("Toggle numbers (comma-separated, blank = accept the %s above)", map[bool]string{true: "defaults marked *", false: "empty set"}[len(defaultEnts) > 0]), "")
+	if err != nil {
+		return nil, err
+	}
+	choice = strings.TrimSpace(choice)
+	if choice == "" {
+		return defaultEnts, nil
+	}
+	for _, tok := range strings.Split(choice, ",") {
+		n, convErr := strconv.Atoi(strings.TrimSpace(tok))
+		if convErr != nil || n < 1 || n > len(knownEntitlements) {
+			fmt.Fprintf(os.Stderr, "  ignoring invalid selection %q\n", tok)
+			continue
+		}
+		e := knownEntitlements[n-1]
+		selected[e] = !selected[e]
+	}
+	var out []string
+	for _, e := range knownEntitlements {
+		if selected[e] {
+			out = append(out, e)
+		}
+	}
+	return out, nil
 }
 
 // promptTier prints the FR-105 catalog as a numbered menu and returns the
 // chosen tier label + its enforced max-subscriber count. The last option is a
 // free-form custom size for one-off deals the catalog doesn't cover.
-func promptTier(r *bufio.Reader) (string, int, error) {
+func promptTier(r *bufio.Reader) (string, int, []string, error) {
 	fmt.Fprintln(os.Stderr, "Tier:")
 	for i, t := range tierCatalog {
 		fmt.Fprintf(os.Stderr, "  %d) %s\n", i+1, t.Label)
@@ -329,7 +495,7 @@ func promptTier(r *bufio.Reader) (string, int, error) {
 	for {
 		choice, err := promptRequired(r, fmt.Sprintf("Select 1-%d", len(tierCatalog)+1))
 		if err != nil {
-			return "", 0, err
+			return "", 0, nil, err
 		}
 		n, convErr := strconv.Atoi(choice)
 		if convErr != nil || n < 1 || n > len(tierCatalog)+1 {
@@ -338,23 +504,23 @@ func promptTier(r *bufio.Reader) (string, int, error) {
 		}
 		if n <= len(tierCatalog) {
 			t := tierCatalog[n-1]
-			return t.Key, t.Max, nil
+			return t.Key, t.Max, t.DefaultEntitlements, nil
 		}
 		// Custom
 		label, err := promptRequired(r, "Custom tier label")
 		if err != nil {
-			return "", 0, err
+			return "", 0, nil, err
 		}
 		maxStr, err := promptRequired(r, "Max subscribers (>=0; 0 = unlimited)")
 		if err != nil {
-			return "", 0, err
+			return "", 0, nil, err
 		}
 		max, convErr := strconv.Atoi(maxStr)
 		if convErr != nil || max < 0 {
 			fmt.Fprintln(os.Stderr, "  max-subscribers must be an integer >= 0")
 			continue
 		}
-		return label, max, nil
+		return label, max, nil, nil
 	}
 }
 
