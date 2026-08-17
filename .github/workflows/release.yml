@@ -1,5 +1,9 @@
-# HikRAD release pipeline (v2 phase 5, FR-81/C3). Separate from ci.yml
-# deliberately: this job builds+pushes real images and produces a signed,
+# HikRAD release pipeline (v2 phase 5, FR-81/C3; reworked off Docker images
+# in v4-2/FR-119 — the Linux bundle carries binaries, not images; the ONE
+# remaining docker build in this repo is deploy/routeros/build.sh, used
+# purely as a build tool for the single RouterOS container image, Decision
+# 58 — no registry push, no GHCR, nothing installed on a customer server).
+# Separate from ci.yml deliberately: this job builds+publishes a signed,
 # downloadable artifact, so it must never run on an ordinary push/PR — only
 # on a version tag, pushed deliberately by whoever is cutting a release
 # (see docs/ops/release-checklist.md).
@@ -16,20 +20,20 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write   # to attach the bundle as a GitHub Release asset
-      packages: write   # to push images to ghcr.io/hikrad/*
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
 
       - name: Derive version from the pushed tag
         id: version
         run: echo "version=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Decode release signing key
         env:
@@ -42,11 +46,9 @@ jobs:
             echo "RELEASE_SIGNING_KEY_FILE=/tmp/release-signing-key.pem" >> "$GITHUB_ENV"
           fi
 
-      - name: Build, push images and assemble the signed bundle
+      - name: Build binaries, frontend, and assemble the signed Linux bundle
         env:
           HIKRAD_VERSION: ${{ steps.version.outputs.version }}
-          HIKRAD_REGISTRY: ghcr.io/hikrad
-          HIKRAD_PUSH_IMAGES: "1"
         run: |
           bash scripts/build-release-bundle.sh "$HIKRAD_VERSION" "hikrad-${HIKRAD_VERSION}.tar"
 
@@ -58,13 +60,26 @@ jobs:
           tar -xf "hikrad-${HIKRAD_VERSION}.tar" -C "$d"
           bash scripts/verify-bundle.sh "$d"
 
-      - name: Publish the bundle as a GitHub Release asset (internal record, private repo)
+      # Decision 58: the ONE remaining image build in this repo, for the ONE
+      # device target (RouterOS's own container feature) that has no other
+      # way to run third-party software. Not pushed anywhere — distributed
+      # as a downloadable .tar, imported directly on the router (NFR-7).
+      - name: Build the RouterOS container image (amd64 + arm64)
+        env:
+          HIKRAD_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          bash deploy/routeros/build.sh "$HIKRAD_VERSION" "hikrad-routeros-${HIKRAD_VERSION}-amd64.tar" amd64
+          bash deploy/routeros/build.sh "$HIKRAD_VERSION" "hikrad-routeros-${HIKRAD_VERSION}-arm64.tar" arm64
+
+      - name: Publish the release assets (internal record, private repo)
         env:
           HIKRAD_VERSION: ${{ steps.version.outputs.version }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release create "$HIKRAD_VERSION" \
             "hikrad-${HIKRAD_VERSION}.tar" \
+            "hikrad-routeros-${HIKRAD_VERSION}-amd64.tar" \
+            "hikrad-routeros-${HIKRAD_VERSION}-arm64.tar" \
             --title "HikRAD $HIKRAD_VERSION" \
             --generate-notes
 
@@ -80,7 +95,7 @@ jobs:
       # (create the repo, mint the token, add the secret) hasn't happened
       # yet — same "degrade, don't block a rehearsal tag" posture as the
       # release-signing-key fallback above.
-      - name: Publish the bundle to the public releases mirror (customer distribution)
+      - name: Publish the release assets to the public releases mirror (customer distribution)
         if: ${{ secrets.HIKRAD_RELEASES_REPO_TOKEN != '' }}
         continue-on-error: true   # never let a mirror hiccup fail the already-published internal release
         env:
@@ -89,6 +104,8 @@ jobs:
         run: |
           gh release create "$HIKRAD_VERSION" \
             "hikrad-${HIKRAD_VERSION}.tar" \
+            "hikrad-routeros-${HIKRAD_VERSION}-amd64.tar" \
+            "hikrad-routeros-${HIKRAD_VERSION}-arm64.tar" \
             --repo "Hikari0Des/hikrad-releases" \
             --title "HikRAD $HIKRAD_VERSION" \
             --generate-notes
