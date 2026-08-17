@@ -1,102 +1,121 @@
-# Install guide — clean Ubuntu server to a working PPPoE user in under 30 minutes
+# Install guide — clean server to a working PPPoE user in under 30 minutes
 
 This is the **M4 document**: a network technician (persona Ali — MikroTik
 expert, Linux basics, no HikRAD experience) should be able to follow this
 guide alone, with no other context, and reach a real PPPoE Access-Accept in
-under 30 minutes on a clean Ubuntu 22.04/24.04 server. If any step here is
-unclear or wrong, that is a bug in this document, not in you — file it.
+under 30 minutes on a clean server. If any step here is unclear or wrong,
+that is a bug in this document, not in you — file it.
+
+**v4-2 (Decision 57): the install is native — systemd units, no Docker,
+no Compose file, nothing to build on the customer's server unless you're
+running from source.** A separate, single-image RouterOS container target
+exists for MikroTik hardware itself (Decision 58) — see
+[deploy/routeros/README.md](../../deploy/routeros/README.md); it is not
+what this document covers.
 
 ## 0. Before you start
 
 You need:
-- A fresh Ubuntu 22.04 or 24.04 LTS server (VM or bare metal), reachable by
-  SSH, with `sudo`. This is the tested/QA'd tier this guide's 30-minute timing
-  was measured on; `install.sh` also accepts other modern Linux distributions
-  (Debian, RHEL-family, etc.) with a warning instead of blocking — Docker +
-  Compose are the only real OS dependency (Decision 55) — but timing and
-  every step below assume Ubuntu.
+- A fresh Ubuntu 22.04/24.04/26.04 LTS or Debian 12/13 server (VM or bare
+  metal), reachable by SSH, with `sudo`. Other modern Linux distributions
+  are accepted with a warning instead of blocking (Decision 55).
 - Recommended hardware: 4 vCPU / 8 GB RAM / 200 GB SSD (NFR-3). Smaller
   works for a lab/pilot — the installer warns, never blocks.
 - A MikroTik router (or any NAS you can point at this server) for the final
   PPPoE test. A VM/CHR works fine for a rehearsal.
 - Optional: a public domain name pointed at this server, if you want a real
-  (Let's Encrypt) TLS certificate instead of the default self-signed one.
+  (Let's Encrypt, via certbot) TLS certificate instead of the default
+  self-signed one.
 - Optional: a license file from HikRAD if you already have one. If not,
   the wizard shows this server's fingerprint so you can request one — the
-  system runs unrestricted while unlicensed, so you don't need it in hand to
-  start (sub-PRD 01 §2, FR-50; see step 2 below and
-  [admin-guide.md](admin-guide.md#license) for the re-issue flow).
+  system runs unrestricted while unlicensed.
 
 ## 1. Get the release and run the installer
 
-**Production (v2 phase 5, FR-81): install from a signed bundle — no source
-tree, no Go/Node toolchain, works fully offline.** Vendor-delivered
-`hikrad-vX.Y.Z.tar` (see [release-checklist.md](release-checklist.md) for how
-it's cut). Extract it somewhere on the server (it carries its own `install.sh`
-under `scripts/`), then run that copy pointed back at the tar itself — the
-installer re-verifies the whole bundle's checksums and Ed25519 signature
-against a public key embedded in the script **before touching anything**,
-so a corrupted download or a tampered file anywhere in it is refused with no
-partial effect:
+**Recommended — one command**, no source access needed:
 
 ```sh
-tar -xf hikrad-vX.Y.Z.tar -C hikrad-vX.Y.Z && cd hikrad-vX.Y.Z
-sudo ./scripts/install.sh --bundle ../hikrad-vX.Y.Z.tar
-# or, for a real TLS certificate (needs the domain's DNS pointed here first):
-sudo ./scripts/install.sh --bundle ../hikrad-vX.Y.Z.tar --domain panel.your-isp.example
+curl -fsSL https://raw.githubusercontent.com/Hikari0Des/hikrad-releases/main/install.sh | sudo bash
 ```
 
-A bit-flipped or otherwise tampered bundle produces a clear refusal (`bundle
-verification failed`) and changes nothing — try the download again rather
-than proceeding.
+This downloads the latest signed `hikrad-vX.Y.Z.tar` release bundle and
+hands off to its own `install.sh --bundle`, which **re-verifies the whole
+bundle's checksums and Ed25519 signature against a public key embedded in
+the script before touching anything** — a corrupted download or a tampered
+file anywhere in it is refused with no partial effect.
 
-**Development only (unchanged, needs a full checkout + Go/Node/Docker
-toolchain):**
+Extra flags pass straight through, e.g. for a real TLS certificate (needs
+the domain's DNS pointed here first):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/Hikari0Des/hikrad-releases/main/install.sh | sudo bash -s -- --domain panel.your-isp.example
+```
+
+**Manual bundle install** (already have the tar):
+
+```sh
+sudo ./scripts/install.sh --bundle hikrad-vX.Y.Z.tar
+```
+
+**Source-mode (internal/dev only)** — requires access to this private repo
+and a Go/Node toolchain on the target server; builds binaries locally
+instead of loading a signed bundle:
 
 ```sh
 git clone <repo-url> hikrad && cd hikrad
 sudo ./scripts/install.sh
 ```
 
-Both modes do the same things (FR-49.1–49.5), differing only in step 6:
+Non-interactively (no TTY, e.g. scripted): set `HIKRAD_DB_PASS`,
+`HIKRAD_HTTP_PORT`, `HIKRAD_CF_TOKEN` as needed before running either
+command — every prompt the installer would otherwise ask happens before
+any change is made, never mid-run.
+
+### What it does
+
 1. Checks the OS and hardware tier (warns, never blocks, on a small box).
-2. Installs Docker Engine + the Compose plugin if not already present.
-3. Creates `/opt/hikrad/{data,backups,licenses}` and generates fresh secrets
-   into `/opt/hikrad/.env` — database password, encryption key, JWT signing
-   key, and a **backup passphrase**. `--bundle` additionally verifies and
-   stages the release into `/opt/hikrad/release/`.
-4. Installs the `hikrad` CLI to `/usr/local/bin/hikrad`, a nightly backup
-   cron entry, and — best-effort, never blocks the install if it can't —
-   `hikrad-updaterd` (a systemd service) so Settings > System's **Update
-   now** button works from the panel (v2 phase 7, see
-   [update.md](update.md)); the guided `hikrad update` command works either
-   way.
-5. Configures Caddy for Let's Encrypt if you passed `--domain`; otherwise
-   leaves the self-signed default in place.
-6. Starts every service: `postgres`, `redis`, `hikrad-api`, `hikrad-acct`,
-   `hikrad-monitor`, `freeradius`, `caddy` — **loaded from the bundle's
-   images** with `--bundle` (no build step, no internet needed once you have
-   the tar), or **built from source** in dev mode.
+2. Provisions **PostgreSQL 16 + TimescaleDB** (adds the upstream apt repos
+   if missing, creates the `hikrad` role/database) — detects an existing
+   local PostgreSQL and uses it, or refuses with a stated reason.
+3. Provisions **FreeRADIUS 3** at `/etc/hikrad/freeradius`, with
+   **database-backed dynamic NAS clients** — adding a router in the panel
+   authenticates through it immediately, with **no FreeRADIUS restart**
+   (see `deploy/freeradius/README.md`'s "DB-driven clients" section for the
+   mechanism). Validates the config (`freeradius -CX`) **before** enabling
+   the unit — a corrupt config is refused, not half-started.
+4. Installs binaries to `/opt/hikrad/bin`, data to `/var/lib/hikrad`,
+   config to `/etc/hikrad`, backups to `/var/backups/hikrad`. Logs go to
+   journald (`journalctl -u hikrad-api`, etc.) — no log files to manage.
+5. Creates and owns every data directory the services need — **on both a
+   fresh install and every re-run/upgrade**, not just the first time (the
+   recurring class of bug this fixes: a directory-ownership fix that only
+   touched the fresh-install path used to break every *existing* install
+   the moment they upgraded).
+6. Installs **nginx** additively — your existing nginx sites, if any,
+   keep serving. Port 80/443 by default; if 80 is already taken, you're
+   prompted for an alternative (or set `HIKRAD_HTTP_PORT`), and that choice
+   is remembered on every future re-run.
+7. Installs and enables the six `hikrad-*` systemd units (`hikrad-api`,
+   `hikrad-radius-worker`, `hikrad-acct`, `hikrad-monitor`,
+   `hikrad-notification` — not started until its binary ships in a later
+   phase, `hikrad-updaterd`), each running as a dedicated non-root user
+   with `ProtectSystem=strict`/`PrivateTmp`/`Restart=on-failure`.
+8. Installs WireGuard and `cloudflared` (inert until configured — Settings
+   > Remote Access, or `hikrad tunnel enable`).
+9. Prints a summary: panel URL, config/data paths, and the backup
+   passphrase (**shown once — write it down**, see
+   [backup-restore.md](backup-restore.md)).
 
-Bundle mode takes well under a minute once Docker has the images loaded
-(nothing to build); source mode takes 3-8 minutes depending on connection
-speed. Either way, when it finishes it prints an **install summary with your
-backup passphrase — copy it somewhere safe now.** It is not shown again, and
-losing both this copy and `/opt/hikrad/.env` makes existing backups
-permanently unrecoverable by design (see [backup-restore.md](backup-restore.md)).
-
-Re-running `install.sh` against an existing install never touches `data/` —
-it offers an update/repair menu instead (FR-49.4). Which mode an install
-started in is recorded in `/opt/hikrad/install.meta` as `HIKRAD_DELIVERY_MODE`
-(`bundle` or `source`); `hikrad update` reads it too.
+**Re-running `install.sh` against an existing install upgrades it in
+place**: secrets in `/etc/hikrad/hikrad.env` are never regenerated, the
+chosen port never changes, and every directory ownership fix above is
+re-applied. This is also exactly what `hikrad update` does under the hood.
 
 **Verify:**
 ```sh
 hikrad status
+hikrad doctor    # every unit active, Postgres reachable, FreeRADIUS/nginx config valid, hikrad-api answering
 ```
-All services should show `healthy` within about a minute of the install
-finishing (Caddy/hikrad-api/hikrad-acct have short startup healthchecks;
-freeradius reports up once its process is alive).
 
 ## 2. First-run wizard
 
@@ -106,31 +125,13 @@ the panel serves the first-run wizard instead of a login screen.
 
 1. **License.** The wizard shows this server's fingerprint (also available
    at `GET /api/v1/setup/license`) as copyable text. If you have a license
-   file already, upload it here. If not, skip for now — the wizard and the
-   rest of setup work unrestricted (grace/read-only behavior only applies to
-   an *installed* license whose fingerprint later stops matching, per
-   FR-50.3; a fresh install with no license at all is simply unlicensed, not
-   grace-limited).
+   file already, upload it here. If not, skip for now.
 2. **Admin account.** Choose a username and a password (≥ 8 characters).
-   This creates the one administrator account the wizard is allowed to
-   create — every setup endpoint closes immediately afterward.
-3. **Branding.** ISP name, logo URL, and brand colors (all optional — skip
-   and set these later under Settings > Branding).
+3. **Branding.** ISP name, logo URL, and brand colors (optional).
 4. **First NAS.** Add your MikroTik router (see
-   [docs/prd/02-radius-nas-aaa.md](../prd/02-radius-nas-aaa.md) for the NAS
-   wizard content and RouterOS snippet this step generates).
+   [docs/prd/02-radius-nas-aaa.md](../prd/02-radius-nas-aaa.md)).
 5. **First profile.** Create a subscriber profile (rate limit, session/quota
-   behavior) — see
-   [docs/prd/04-subscribers-profiles.md](../prd/04-subscribers-profiles.md).
-
-Steps 4-5 are skippable; you'll need at least one NAS and profile before the
-PPPoE test in step 3 below, whether you create them here or later under
-Subscribers/NAS in the panel.
-
-**If the wizard UI isn't available yet in your build** (frontend still
-landing), the same flow works directly against the API — see
-[Appendix: wizard by API](#appendix-wizard-by-api) below. Every step above
-has a 1:1 endpoint.
+   behavior) — see [docs/prd/04-subscribers-profiles.md](../prd/04-subscribers-profiles.md).
 
 ## 3. Prove it: a real PPPoE Access-Accept
 
@@ -145,35 +146,19 @@ go run ./test/harness -addr <this-server-ip>:1812 -secret <the NAS's RADIUS secr
 
 A `5-case smoke suite (PAP/CHAP accept+reject)` run with your test
 subscriber's credentials passing is your M4 finish line. Note the wall-clock
-time from step 1's `sudo ./scripts/install.sh` to this passing test —
-that's the number this document is held to (< 30 minutes).
+time from step 1's install command to this passing test — that's the number
+this document is held to (< 30 minutes).
 
 ## Appendix: wizard by API
 
-Useful for rehearsing before the panel UI lands, or for scripting a repeat
-install. All bodies are JSON; `$FP` is the fingerprint from step 1 below.
-
 ```sh
 API=https://<this-server>/api/v1
-
-# 1. Status + fingerprint
 curl -s $API/setup/status
 FP=$(curl -s $API/setup/license | grep -o '"fingerprint":"[^"]*"' | cut -d'"' -f4)
-
-# (optional) upload a license blob a vendor issued for $FP
-curl -s -X POST $API/setup/license -H 'Content-Type: application/json' -d @license.json
-
-# 2. Create the admin
+curl -s -X POST $API/setup/license -H 'Content-Type: application/json' -d @license.json   # optional
 curl -s -X POST $API/setup/admin -H 'Content-Type: application/json' \
   -d '{"username":"admin","password":"choose-a-real-password"}'
-
-# 3. Branding (optional)
-curl -s -X POST $API/setup/branding -H 'Content-Type: application/json' \
-  -d '{"name":"Your ISP"}'
-
-# From here on, log in and use the normal authenticated API/panel for
-# NAS + profile creation (setup/* refuses with setup_complete once step 2
-# has run — that's not a bug, it's the point).
+curl -s -X POST $API/setup/branding -H 'Content-Type: application/json' -d '{"name":"Your ISP"}'
 TOKEN=$(curl -s -X POST $API/auth/login -H 'Content-Type: application/json' \
   -d '{"username":"admin","password":"choose-a-real-password"}' \
   | grep -o '"access_token":"[^"]*"' | cut -d'"' -f4)
@@ -181,12 +166,11 @@ TOKEN=$(curl -s -X POST $API/auth/login -H 'Content-Type: application/json' \
 
 ## Firewall / ports the stack uses
 
-Host-published by `deploy/compose.yml`: **80/443 tcp** (panel/portal via
-Caddy), **1812/1813 udp** (RADIUS auth/accounting), **3799 udp** (CoA), and
-**5678 udp** (MikroTik MNDP neighbor discovery, v1.1 — broadcast discovery
-only works when this server shares the routers' L2 segment; the panel's
-IP-range scan works regardless). Nothing else is reachable from outside the
-compose network.
+**80/443 tcp** (panel/portal via nginx), **1812/1813 udp** (RADIUS
+auth/accounting), **3799 udp** (CoA), and **5678 udp** (MikroTik MNDP
+neighbor discovery — broadcast discovery only works when this server
+shares the routers' L2 segment; the panel's IP-range scan works
+regardless).
 
 ## Factory reset (wipe all data, keep the install)
 
@@ -196,30 +180,29 @@ sudo hikrad factory-reset --yes        # non-interactive
 sudo hikrad factory-reset --no-backup  # skip the safety backup (explicit only)
 ```
 
-Erases **all data** — subscribers, profiles, NAS, sessions, the ledger,
-managers, and the installed license — and boots a fresh, empty system on the
-same VM: the data directory is deleted (the append-only ledger/audit tables
-make a fresh cluster the only clean zero state), the bind-mount targets are
-recreated with the ownerships install.sh uses, the generated FreeRADIUS client
-list is emptied, and the stack starts with a clean database. A safety backup is
-taken first unless `--no-backup`; backups, `.env`, images, cron and the CLI are
-all kept. Afterwards the panel runs the first-run wizard again (license, admin,
-branding, NAS, profile).
+Erases **all data** and boots a fresh, empty system on the same server: the
+database is dropped and recreated, data directories are recreated with
+correct ownership, the generated FreeRADIUS client list is emptied. A
+safety backup is taken first unless `--no-backup`. Afterwards the panel
+runs the first-run wizard again.
 
 ## Uninstalling
 
 ```sh
 sudo hikrad uninstall              # interactive: type 'uninstall hikrad' to confirm
 sudo hikrad uninstall --keep-data  # remove the app but keep the data directory
-sudo hikrad uninstall --purge      # remove EVERYTHING including backups + .env
+sudo hikrad uninstall --purge      # remove EVERYTHING including backups + hikrad.env
 ```
 
-Takes a final backup first (unless `--purge`), stops and deletes the
-containers and images, removes the nightly-backup cron entry and the CLI
-wrapper. Backups and `.env` are kept by default — the `.env` holds the backup
-passphrase, without which kept backups can never be decrypted. Docker Engine
-itself is never removed. `scripts/uninstall.sh` in a checkout does the same
-when the CLI was never installed.
+Takes a final backup first (unless `--purge`), stops and disables every
+`hikrad-*` unit, removes the nginx site and the CLI wrapper. Backups and
+`hikrad.env` are kept by default. PostgreSQL/Redis/nginx/FreeRADIUS
+packages are never removed — they may serve other workloads.
+
+## Migrating an existing Docker Compose install
+
+`hikrad migrate-to-native` (or `scripts/migrate-to-native.sh` before the
+CLI is installed) — see [update.md](update.md).
 
 See also: [admin-guide.md](admin-guide.md), [pilot-checklist.md](pilot-checklist.md),
 [backup-restore.md](backup-restore.md), [update.md](update.md),

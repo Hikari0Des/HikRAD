@@ -63,11 +63,11 @@
 
 | # | Control | Where | Result |
 |---|---|---|---|
-| 9.1 | TLS on all web surfaces; HTTP→HTTPS redirect; HSTS (NFR-4.4) | `deploy/caddy/Caddyfile` | ☑ `:80` unconditional redirect (line 58-60); self-signed default + `install.sh --domain` automates Let's Encrypt; added `Strict-Transport-Security`/`X-Content-Type-Options`/`Referrer-Policy` headers this phase; `caddy validate` passes |
-| 9.2 | Trust only Caddy for `X-Forwarded-For`; no downstream XFF trust | `internal/auth/middleware.go` (`clientIP`) | ☑ `hikrad-api` publishes no host port (`expose: "8080"` only, `deploy/compose.yml`) — reachable exclusively via the Docker network, where Caddy is the only party that can originate a request carrying that header |
-| 14.1 | Secrets at rest (RADIUS secrets, SNMP communities, gateway creds, TOTP, **tunnel token**) under one AES-GCM envelope (NFR-4.3) | `internal/platform/crypto` | ☑ `crypto_test.go`; Phase 5 adds `remote_access.token` via the same `crypto.Encrypt`/`Decrypt` (`setupapi/settings_api.go`), never returned by GET (`token_set` boolean only) — live-verified |
-| 14.2 | Encryption key in `.env` only, never in DB; a keyless DB copy reveals nothing (AC-NFR4a) | `internal/platform/crypto` | ☑ `crypto_test.go`; DB dump contains only versioned ciphertext blobs |
-| 14.3 *(new, Phase 5)* | Backup archives are passphrase-encrypted (open item below, now resolved) | `scripts/hikrad` (`gpg --symmetric --cipher-algo AES256`) | ☑ live round-trip test: encrypt → decrypt with correct passphrase succeeds, DB/`.env`/Caddy config restore byte-correct (see status note); wrong-passphrase decrypt fails closed |
+| 9.1 | TLS on all web surfaces; HTTP→HTTPS redirect; HSTS (NFR-4.4) | `deploy/nginx/hikrad.conf.template` (v4-2: replaces Caddy, Decision 59) | ☑ `:80` unconditional redirect; self-signed default + `install.sh --domain` automates Let's Encrypt via certbot; `Strict-Transport-Security`/`X-Content-Type-Options`/`Referrer-Policy` headers; `nginx -t` validated by `install.sh` before every reload |
+| 9.2 | Trust only nginx for `X-Forwarded-For`; no downstream XFF trust | `internal/auth/middleware.go` (`clientIP`) | ☑ v4-2: `hikrad-api` binds `127.0.0.1:8080` explicitly (`cmd/hikrad-api/main.go`), not `:8080`/0.0.0.0 — closes the residual risk noted below from the pre-v4-2 Docker-network-isolation-only version of this control. nginx (loopback), FreeRADIUS's exec scripts, and hikrad-updaterd's relay are the only same-host callers that can ever originate a request carrying this header |
+| 14.1 | Secrets at rest (RADIUS secrets, SNMP communities, gateway creds, TOTP, **tunnel token**) under one AES-GCM envelope (NFR-4.3) | `internal/platform/crypto` | ☑ `crypto_test.go`; `remote_access.token` via the same `crypto.Encrypt`/`Decrypt` (`setupapi/settings_api.go`), never returned by GET (`token_set` boolean only) |
+| 14.2 | Encryption key in `hikrad.env` only, never in DB; a keyless DB copy reveals nothing (AC-NFR4a) | `internal/platform/crypto` | ☑ `crypto_test.go`; DB dump contains only versioned ciphertext blobs |
+| 14.3 | Backup archives are passphrase-encrypted | `scripts/hikrad` (`gpg --symmetric --cipher-algo AES256`) | ☑ round-trip: encrypt → decrypt with correct passphrase succeeds, DB/`hikrad.env` restore byte-correct; wrong-passphrase decrypt fails closed |
 
 ## Resolved this phase
 
@@ -81,9 +81,11 @@
 
 ## Known residual risk (not blocking pilot)
 
-- 9.2's guarantee is architectural (Docker network isolation), not a
-  code-level XFF allowlist — if `hikrad-api`'s port were ever also published
-  to the host (a `deploy/compose.yml` change outside this phase's diff), the
-  trust assumption would silently break. Worth a compose-lint check in a
-  future phase; not re-scoped here since it would touch CI ownership outside
-  this phase's paths.
+- **Closed, v4-2.** 9.2's guarantee used to be purely architectural (Docker
+  network isolation — `hikrad-api`'s port was never published to the host
+  at all) with no code-level XFF allowlist backing it; removing Docker in
+  v4-2 would have silently broken that assumption the moment `hikrad-api`
+  started listening on every interface. Fixed by binding explicitly to
+  `127.0.0.1:8080` (`cmd/hikrad-api/main.go`) rather than relying on a
+  network boundary that no longer exists. See
+  `docs/history/gates/v4-2.md`.

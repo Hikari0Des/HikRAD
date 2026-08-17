@@ -168,7 +168,7 @@ its README) both render the **same** host list, sourced from
 Operators must list, per pilot deployment:
 
 - The HikRAD portal's own host(s) (and the panel's, if a subscriber-visible
-  branding asset is served from a different Caddy host).
+  branding asset is served from a different nginx host).
 - Every **enabled** payment gateway's redirect/callback host, from that
   gateway's own merchant integration docs (e.g. whatever ZainCash's
   onboarding packet specifies for the live merchant account) — this is

@@ -87,10 +87,10 @@ internet is reachable or not (NFR-7, FR-57). Turn it on only if you want to
 reach the panel/portal from outside your network without opening firewall
 ports.
 
-**What it does and doesn't expose:** the tunnel fronts Caddy only — the
+**What it does and doesn't expose:** the tunnel fronts nginx only — the
 panel (`/`), portal (`/portal`), and API (`/api/*`). RADIUS (UDP 1812/1813)
 and CoA (UDP 3799) are never reachable through it; there is no path in the
-tunnel container's config that could route to those ports even by mistake.
+tunnel unit's config that could route to those ports even by mistake.
 
 **Setup (in the Cloudflare dashboard, one time):**
 1. Log into the Cloudflare Zero Trust dashboard for your account.
@@ -98,14 +98,14 @@ tunnel container's config that could route to those ports even by mistake.
 3. Name it (e.g. `hikrad-<your-isp>`), copy the **tunnel token** it gives
    you.
 4. Public Hostname: add a hostname (e.g. `panel.your-isp.example`) and point
-   it at `http://caddy:80` (the tunnel runs inside HikRAD's own Docker
-   network, so it reaches Caddy by its service name — do not use `localhost`
-   or an external IP here).
+   it at `http://127.0.0.1:<HTTP port>` (the tunnel is a systemd unit on
+   this same host, so it reaches nginx over loopback — do not use an
+   external IP here).
 5. **Strongly recommended:** Access > Applications > Add an application for
    that hostname, and require your team's SSO/email OTP before the tunnel
-   will even proxy a request through to Caddy. The tunnel gets you past NAT;
-   it is not itself an authentication layer, and the panel's own login is
-   your only defense if you skip this step.
+   will even proxy a request through to nginx. The tunnel gets you past
+   NAT; it is not itself an authentication layer, and the panel's own
+   login is your only defense if you skip this step.
 
 **Enable it on the server:**
 ```sh
@@ -113,13 +113,14 @@ tunnel container's config that could route to those ports even by mistake.
 # then:
 hikrad tunnel enable
 ```
-This starts only the `cloudflared` container (Compose profile `tunnel`,
-never started by a plain `hikrad up`). `hikrad tunnel disable` stops only
-that container — nothing else restarts.
+This starts only the `hikrad-tunnel` systemd unit (v4-2 native replacement
+for the old `cloudflared` Compose profile), never started by a plain
+`install.sh` run. `hikrad tunnel disable` stops only that unit — nothing
+else restarts.
 
 **Verify:** the health page (`GET /api/v1/health`) reports the tunnel state
 (disabled/connected/disconnected), and it's alertable the same way NAS
 down-state is. Confirm the negative guarantee yourself once: from outside
 your LAN, `nc -zv -u <your-cloudflare-hostname> 1812` (or any RADIUS client
-pointed at the tunnel hostname) should simply fail to connect — only Caddy's
-ports are ever reachable through the tunnel.
+pointed at the tunnel hostname) should simply fail to connect — only
+nginx's port is ever reachable through the tunnel.

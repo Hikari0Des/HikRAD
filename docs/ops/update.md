@@ -1,118 +1,118 @@
-# Update runbook (FR-51.4/51.5, bundle verification FR-81.3 — v2 phase 5)
+# Update runbook (FR-51.4/51.5, bundle verification FR-81.3, retargeted onto
+# systemd in v4-2/FR-121)
 
 ```sh
-hikrad update --bundle hikrad-vX.Y.Z.tar   # production: verify + load a signed offline bundle
-hikrad update                              # dev-only source checkouts: git pull + docker compose build
+hikrad update --bundle hikrad-vX.Y.Z.tar   # production: verify + stage a signed offline bundle
+hikrad update                              # dev-only source checkouts: rebuild + restage from source
 ```
 
-The panel mirrors this runbook at **Settings > System** (v1.1): it shows the
+The panel mirrors this runbook at **Settings > System**: it shows the
 installed version (from `GET /api/v1/system/version`) and walks the operator
 through these exact commands — always available, regardless of whether the
 one-click path below is provisioned on this install.
 
-## One-click update from the panel (FR-86–88, v2 phase 7)
+## One-click update from the panel
 
 Settings > System also gains **Check for update** / **Update now** for a
 manager holding the `system.update` permission (admin by default). This
 does not replace the commands above — it's the exact same `hikrad update`
 path, triggered from a browser instead of a terminal, with live progress.
 
-**How it works:** a small host daemon, `hikrad-updaterd`, runs directly on
-the server (never inside a container — it has to be able to update every
-container, including any that would host it) and listens on a local unix
-socket, never a network port. `hikrad-api` relays the panel's requests to
-it over that socket, authenticated by a shared token (`HIKRAD_UPDATER_TOKEN`
-in `.env`). The daemon does not reimplement backup, apply, health-check, or
-rollback — clicking "Update now" runs the identical `hikrad update` CLI
-path described above as a child process and streams its progress back.
+**How it works:** `hikrad-updaterd` runs directly on the server as a
+systemd unit (never inside a container — it has to be able to update every
+other unit, including any that would host a caller talking to it) and
+listens on a local unix socket (`/run/hikrad/updater.sock`), never a
+network port. `hikrad-api` relays the panel's requests to it over that
+socket, authenticated by a shared token (`HIKRAD_UPDATER_TOKEN` in
+`/etc/hikrad/hikrad.env`). **The daemon's own Go code did not change for
+v4-2** — it has always worked by shelling into `hikrad update` as a child
+process and scanning its output for stage markers; v4-2 only retargeted
+what `hikrad update` itself *drives* (`systemctl`/`install.sh` instead of
+`docker compose`), which the daemon observes exactly the same way it
+always did.
 
-**A lock file (`data/updater/update.lock`, held by whichever `hikrad
-update` invocation is actually running) means a CLI-triggered and a
-panel-triggered update can never run at the same time** — whichever gets
-there first wins, the other is refused immediately with a "locked" message
-rather than queued.
+**A lock file (`/var/lib/hikrad/data/updater/update.lock`, held by
+whichever `hikrad update` invocation is actually running) means a
+CLI-triggered and a panel-triggered update can never run at the same
+time** — whichever gets there first wins, the other is refused immediately
+with a "locked" message rather than queued. This survives the daemon
+itself dying mid-update: the lock is held by the child process's own file
+descriptor, not by the daemon.
 
 **Checking for an update never touches the network** (NFR-7): the daemon
-scans a bundle-drop directory, `$HIKRAD_ROOT/incoming/`, for the highest
-`hikrad-vX.Y.Z.tar` newer than the running version. Get the file onto the
-server however you already move files there without reliable internet
-(`scp`, USB, a download portal) into that directory, *then* click "Check
-for update" in the panel.
-
-**Existing installs upgrading to this version:** `hikrad update` alone
-only swaps container images — it never installs the daemon or its systemd
-unit, and an `.env` from before this version has no
-`HIKRAD_UPDATER_TOKEN`. Run `install.sh` once after updating (source,
-`--bundle`, or the interactive repair option on an existing install) to
-provision `hikrad-updaterd` and backfill the token; `hikrad update` by
-itself leaves the guided-command path above working exactly as before, it
-just doesn't light up the one-click button until that one `install.sh` run
-happens. This is a one-time step per install, not a recurring one.
-
-**If the panel's own container is replaced mid-update** (the expected
-case — that's what an update to `hikrad-api` itself does), the browser's
-progress stream drops; the panel reconnects and, if it lost too much state
-to keep tailing directly, falls back to polling the daemon's status until
-it can report success or rollback definitively. It never leaves the
-operator staring at a dead progress bar.
+scans a bundle-drop directory, `/var/lib/hikrad/incoming/`, for the
+highest `hikrad-vX.Y.Z.tar` newer than the running version. Get the file
+onto the server however you already move files there without reliable
+internet (`scp`, USB, a download portal) into that directory, *then* click
+"Check for update" in the panel.
 
 ## What happens
 
-1. **Automatic pre-update backup** (`hikrad backup now`, tagged `pre_update`
-   in `backup_runs`) — this is the safety net if the update itself goes
-   wrong in a way image rollback can't fix (a bad migration that already
-   committed data changes, for instance).
-2. Current image ids for `hikrad-api`/`hikrad-acct`/`hikrad-monitor` are
-   recorded for rollback, keyed by each image's own actual tag (not a
-   hardcoded name) — correct whether this install's images are the pinned
-   `ghcr.io/hikrad/...` tags a bundle carries or the `build:`-synthesized
-   name a dev checkout uses.
-3. New images are obtained:
-   - `--bundle <path>` (production): the tarball is **verified — checksums
-     and an Ed25519 signature against an embedded public key — before
-     anything in it is used** (same `scripts/verify-bundle.sh` `install.sh`
-     itself calls). A failed verification refuses immediately and changes
-     nothing. On success, its images are `docker load`ed and its
-     `compose.yml`/`freeradius/`/`caddy/`/`scripts/`/`migrations/` are
-     staged into `/opt/hikrad/release/` — replacing the previous release's
-     copy only now, with the previous copy kept as a one-deep rollback
-     backup (see step 6).
-   - No `--bundle` (dev-only source checkout): `git pull --ff-only` +
-     `docker compose build`, exactly as before.
-4. `docker compose up -d` — `hikrad-api` runs pending migrations
+1. **Automatic pre-update backup** (`hikrad backup now`, tagged
+   `pre_update` in `backup_runs`) — this is the safety net if the update
+   itself goes wrong in a way a binary rollback can't fix (a bad migration
+   that already committed data changes, for instance).
+2. The bundle is verified (checksums + Ed25519 signature) before anything
+   in it is used — a failed verification refuses immediately and changes
+   nothing.
+3. The current `/opt/hikrad/bin`, `/opt/hikrad/www`, and
+   `/etc/hikrad/freeradius` are copied to a one-deep rollback location
+   (`/opt/hikrad/release.rollback`) — there is no container image id to
+   re-tag without Docker, so this is v4-2's equivalent rollback mechanism.
+4. `scripts/install.sh` runs (source or `--bundle`) to stage the new
+   release in place: new binaries, frontend build, FreeRADIUS config,
+   migrations — the exact same idempotent, non-secret-touching install
+   path a fresh install uses.
+5. Every `hikrad-*` unit is restarted; `hikrad-api` runs pending migrations
    automatically on boot (forward-only; there is no down-migration path in
    production).
-5. Waits for `hikrad-api`'s Docker healthcheck (up to 2 minutes) — this only
-   passes once the process has completed migrations, connected to
-   Postgres/Redis, and opened its port, so "healthy" means the update
-   actually landed, not just that a container exists.
-6. **If step 4 or 5 fails**: the previous image ids are re-tagged back onto
-   their own tags, and — for a `--bundle` update specifically — the previous
-   `/opt/hikrad/release/` contents are restored too (a bundle pins an exact
-   version tag per release, so image-id rollback alone can't rescue a failed
-   update unless `compose.yml` itself reverts along with it). The stack is
-   brought back up on the old version, and the command exits non-zero with a
-   pointer back to the pre-update backup from step 1, in case a
-   partially-applied migration needs a full data rollback (image/file
-   rollback alone fixes "the new code doesn't work"; it doesn't undo a
-   migration that already committed — that's what the backup is for).
+6. Waits for `hikrad-api` to answer `GET /api/v1/system/version` (up to 2
+   minutes) — this only succeeds once migrations have completed and the
+   process has connected to Postgres/Redis and opened its port.
+7. **If step 4, 5, or 6 fails**: the rollback location's binaries/www/
+   FreeRADIUS config are restored, every unit is restarted on the old
+   version, and the command exits non-zero with a pointer back to the
+   pre-update backup from step 1, in case a partially-applied migration
+   needs a full data rollback (binary/file rollback alone fixes "the new
+   code doesn't work"; it doesn't undo a migration that already
+   committed — that's what the backup is for). **This rollback completes
+   even if `hikrad-updaterd` and `hikrad-api` are both dead** — it is pure
+   `systemctl`/filesystem operations run by the `hikrad update` child
+   process itself, with no dependency on either of them being alive.
 
 ## Offline bundles (FR-81.2, NFR-7)
 
-Every release ships as a signed `hikrad-vX.Y.Z.tar`: HikRAD's own 4 images
-plus the pinned third-party images the stack needs (Postgres/TimescaleDB,
-Redis, FreeRADIUS — a bundle install/update needs no internet access at all,
-not even to pull a base image), a rendered `compose.yml`, runtime config, the
-installer scripts themselves, and migrations — checksummed and signed (see
-[release-checklist.md](release-checklist.md)). Distributed however you
-already move files to a site without reliable internet (a real scenario for
-Iraqi ISPs outside major cities): USB, a download portal, etc. `hikrad update
---bundle <path>` verifies and loads it; `install.sh --bundle <path>` does the
-same for a first install (see [install-guide.md](install-guide.md)).
+Every release ships as a signed `hikrad-vX.Y.Z.tar`: HikRAD's own binaries
+(`hikrad-api`, `hikrad-acct`, `hikrad-monitor`, `hikrad-updaterd`), the
+built frontend, FreeRADIUS config, the nginx template, the systemd units,
+the installer scripts themselves, and migrations — checksummed and signed
+(see [release-checklist.md](release-checklist.md)). No images, no
+registry pull — a bundle install/update needs no internet access at all.
+Distributed however you already move files to a site without reliable
+internet (a real scenario for Iraqi ISPs outside major cities): USB, a
+download portal, etc.
 
-A registry-pull mode (`ghcr.io/hikrad/*`) also exists for the vendor's own
-use, but the signed bundle is the only supported customer-facing delivery
-path in this phase — no registry credential is issued to customers.
+## Migrating an existing Docker Compose install to native (v4-2, FR-118 §3.5)
+
+```sh
+sudo hikrad migrate-to-native            # interactive confirmation
+sudo hikrad migrate-to-native --yes      # non-interactive
+sudo hikrad migrate-to-native --old-root /opt/hikrad   # if the old install lives elsewhere
+```
+
+One-way, stops the old stack, dumps its database, runs the native
+installer, restores the dump (preserving the old encryption key and backup
+passphrase so existing encrypted data stays readable), starts the native
+stack, verifies, and only then offers to remove the old containers/images.
+**The old data directory is never deleted automatically** — remove it
+yourself once you've confirmed the native install is good.
+
+> **Gate item 12 (docs/v4/phases/phase-v4-2-native-install/00-phase.md):
+> this path must be rehearsed on a restored pilot backup before any real
+> customer install runs it.** That rehearsal has not happened as of this
+> commit — see `docs/history/gates/v4-2.md`. Do not run this against a
+> customer's only copy of production data without rehearsing it on a
+> restored backup on a scratch VM first.
 
 ## Before you run a real update
 
@@ -121,7 +121,4 @@ path in this phase — no registry credential is issued to customers.
 - If this update includes a schema change you know is risky, consider
   rehearsing it on a copy of production data first (`hikrad backup now` on
   prod, `hikrad restore` onto a scratch VM, update the scratch VM).
-- Read the release notes for the version you're updating to — a major
-  version bump may exceed your license's entitled-version field even though
-  the update mechanically succeeds (license enforcement of major-version
-  entitlement beyond that is a post-v1 item, master PRD Decision 2).
+- Read the release notes for the version you're updating to.

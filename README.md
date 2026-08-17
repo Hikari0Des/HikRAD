@@ -1,9 +1,12 @@
 # HikRAD
 
 RADIUS AAA + billing platform for Iraqi ISPs — a self-hosted Snono SAS4 alternative sold as a
-one-time license and installed on-premise with Docker. Go backend, FreeRADIUS 3.2,
-PostgreSQL 16 + TimescaleDB, Redis, React 18 panel + subscriber portal (en/ar/ku, true RTL),
-all behind Caddy on a single server (4 vCPU / 8 GB / 200 GB tier).
+one-time license and installed on-premise natively with systemd (Docker is not part of the
+delivery mechanism — v4-2, Decision 57). Go backend, FreeRADIUS 3.2, PostgreSQL 16 +
+TimescaleDB, Redis, React 18 panel + subscriber portal (en/ar/ku, true RTL), all behind nginx
+on a single server (4 vCPU / 8 GB / 200 GB tier). A separate, single-image RouterOS container
+target (Decision 58) exists only for MikroTik's own container feature — see
+[deploy/routeros/](deploy/routeros/README.md) — and is never the Linux install path.
 
 Core product claim: **never lose an Accounting-Request** — a lossless accounting pipeline with
 durable ingest, idempotent replay, and audited counters, plus real-time session visibility.
@@ -12,30 +15,30 @@ durable ingest, idempotent replay, and audited counters, plus real-time session 
 
 | Path | What it is |
 |---|---|
-| `deploy/` | Docker Compose stack, Caddy config, `.env.example` (`deploy/freeradius/` holds the FreeRADIUS config) |
-| `scripts/` | `install.sh` (production installer), `gen-env.sh` (secret generation), `hikrad` (ops CLI wrapper) |
-| `backend/` | Single Go module `github.com/hikrad/hikrad` — binaries `hikrad-api`, `hikrad-acct`, `hikrad-monitor`; SQL migrations in `backend/migrations/` |
+| `deploy/freeradius/` | FreeRADIUS config, retargeted at native paths by `install.sh` |
+| `deploy/systemd/` | The six `hikrad-*` unit files installed to `/etc/systemd/system/` |
+| `deploy/nginx/` | The nginx site template (additive to any existing nginx config) |
+| `deploy/routeros/` | The single RouterOS-container OCI image build (Decision 58) |
+| `scripts/` | `install.sh` (native installer), `gen-env.sh` (secret generation), `hikrad` (ops CLI), `migrate-to-native.sh` |
+| `backend/` | Single Go module `github.com/hikrad/hikrad` — binaries `hikrad-api`, `hikrad-acct`, `hikrad-monitor`, `hikrad-updaterd`; SQL migrations in `backend/migrations/` |
 | `frontend/` | npm workspaces: `panel` (admin), `portal` (subscriber PWA), `shared` (`@hikrad/shared` i18n) |
 | `docs/` | PRD (source of truth), domain sub-PRDs, phased execution plan, ops guides |
 
 ## Quickstart (development)
 
-Prerequisites: Docker Engine + Compose plugin, GNU make, bash. Go 1.22+ and Node 20+ only if
-you work on the code outside containers.
+Prerequisites: Go 1.22+, Node 20+, a local PostgreSQL 16 + TimescaleDB and Redis (natively
+installed, or via WSL2 on Windows). No Docker involved.
 
 ```sh
 git clone <repo> hikrad && cd hikrad
-make up      # generates deploy/.env on first run, then docker compose up -d --build
-make seed    # demo data: admin/admin manager, testuser subscriber, one profile
-make test    # backend unit tests + script self-tests
-make down    # stop the stack
+make dev-env     # generates deploy/hikrad.env against your local Postgres/Redis
+make dev-up      # runs hikrad-api/hikrad-acct/hikrad-monitor via `go run`, foreground
+make seed        # demo data: admin/admin manager, testuser subscriber, one profile
+make test        # backend unit tests + script self-tests
 ```
 
-The panel is served at `https://localhost/` (self-signed cert by default), the subscriber
-portal at `https://localhost/portal`, the API under `https://localhost/api/v1`. RADIUS auth,
-accounting, and CoA listen on UDP 1812/1813/3799.
-
-Full walkthrough (including the RADIUS packet harness): [docs/ops/dev-setup.md](docs/ops/dev-setup.md).
+Full walkthrough (installing Postgres/Redis/FreeRADIUS locally, the RADIUS packet harness,
+and how to reset a dev environment): [docs/ops/dev-setup.md](docs/ops/dev-setup.md).
 
 ## Production install
 
@@ -51,14 +54,23 @@ Extra flags (`--domain`, `--no-start`, …) pass straight through, e.g.:
 curl -fsSL https://raw.githubusercontent.com/Hikari0Des/hikrad-releases/main/install.sh | sudo bash -s -- --domain panel.example.isp
 ```
 
-**Source-mode (internal/dev only)** — requires access to this (private) repo; builds images on the server instead of loading a signed bundle. Ubuntu 22.04/24.04 LTS is the tested tier, most other modern Linux distributions work too with a warning:
+**Source-mode (internal/dev only)** — requires access to this (private) repo and a Go/Node
+toolchain on the target server; builds binaries locally instead of loading a signed bundle.
+Ubuntu 22.04/24.04/26.04 LTS and Debian 12/13 are the tested tier, most other modern Linux
+distributions work too with a warning:
 
 ```sh
 sudo ./scripts/install.sh
 ```
 
-Either way: installs Docker if missing, creates `/opt/hikrad/{data,backups,licenses}`, generates secrets
-into `/opt/hikrad/.env`, and starts the stack. Re-running on an installed server offers update/repair instead of reinstalling. Daily operation requires no internet access.
+Either way: provisions PostgreSQL + TimescaleDB, FreeRADIUS, nginx, and the six `hikrad-*`
+systemd units; creates `/opt/hikrad/bin`, `/etc/hikrad`, `/var/lib/hikrad`,
+`/var/backups/hikrad`; generates secrets into `/etc/hikrad/hikrad.env`. Re-running upgrades an
+existing install in place — it never overwrites config, regenerates secrets, or changes the
+chosen port. Daily operation requires no internet access.
+
+**Migrating an existing Docker Compose install?** See `hikrad migrate-to-native` in
+[docs/ops/update.md](docs/ops/update.md).
 
 ## Documentation
 

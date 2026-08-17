@@ -51,12 +51,14 @@ commit is a descendant of all three:
       (panel-added NAS previously required a manual FreeRADIUS restart) and
       the `acct-spill` root-owned bind-mount chown fix in `install.sh`.
 
-## Signing & registry (v2 phase 5, FR-81)
+## Signing & bundle (v2 phase 5, FR-81; reworked off Docker images v4-2, FR-119)
 
-- [ ] `VERSION` file at the repo root matches the tag being cut (e.g. `v1.2.0`).
-- [ ] Release images built and pushed to `ghcr.io/hikrad/{hikrad-api,hikrad-
-      acct,hikrad-monitor,hikrad-caddy}` at the exact tag, no `:latest` ever
-      pushed (`.github/workflows/release.yml`, triggered by pushing the tag).
+- [ ] `VERSION` file at the repo root matches the tag being cut (e.g. `v4.2.0`).
+- [ ] `scripts/build-release-bundle.sh` produced binaries for `hikrad-api`,
+      `hikrad-acct`, `hikrad-monitor`, `hikrad-updaterd` (`bin/`) and the
+      frontend build (`www/`) — no OCI image in the Linux bundle at all
+      (Decision 57; `.github/workflows/release.yml`, triggered by pushing
+      the tag).
 - [ ] `HIKRAD_RELEASE_SIGNING_KEY` repo secret is set to the **real** offline
       release keypair, not `scripts/release-signing/dev-release-key.pem`
       (dev key is fine for a rehearsal tag only — see
@@ -68,14 +70,16 @@ commit is a descendant of all three:
       disk" false confidence): `bash scripts/verify-bundle.sh <extracted-dir>`.
 - [ ] A copy of the bundle with a single byte flipped anywhere in it is
       refused by both `install.sh --bundle` and `hikrad update --bundle`
-      before anything is extracted into place — re-run the tamper-refusal
-      leg of `scripts/gate-v2-phase-5.sh` against the real artifact, not
-      just its scripted fake-bundle version.
-- [ ] The bundle is fully offline-installable: every image the compose stack
-      needs is inside it (HikRAD's own 4 plus the pinned Postgres/
-      TimescaleDB, Redis, and FreeRADIUS images) — confirm with `tar -tf
-      hikrad-vX.Y.Z.tar | grep images/` before publishing, not after a
+      before anything is extracted into place.
+- [ ] The bundle is fully offline-installable: `tar -tf hikrad-vX.Y.Z.tar`
+      shows `bin/`, `www/`, `freeradius/`, `nginx/`, `systemd/`,
+      `migrations/`, and `scripts/` — confirm before publishing, not after a
       customer reports a failed offline install.
+- [ ] The RouterOS container image (`deploy/routeros/build.sh`, both amd64
+      and arm64) built successfully and is attached to the same release —
+      this is the ONE remaining OCI image in the pipeline (Decision 58);
+      confirm it is NOT pushed to any registry, only attached as a
+      downloadable release asset.
 - [ ] Repo visibility of the **canonical** repo (`Hikari0Des/HikRAD`) is
       confirmed **Private** (account-level setting, not enforceable by a
       commit — FR-83.1). **Found public 2026-08-16** — full source readable
