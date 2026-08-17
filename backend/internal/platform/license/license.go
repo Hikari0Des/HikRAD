@@ -187,12 +187,25 @@ var ErrNoFingerprint = errors.New("license: could not determine machine-id or MA
 // so this identifies the host, not the container (a container recreated by
 // `docker compose up` must not look like new hardware).
 func Current() (string, error) {
+	mid, mac, err := CurrentComponents()
+	if err != nil {
+		return "", err
+	}
+	return Compose(mid, mac), nil
+}
+
+// CurrentComponents returns this server's raw (un-hashed) machine-id and
+// primary-MAC strings — the same two values Current() composes and hashes
+// into a fingerprint. Exported for NewActivationRequest (FR-123), which
+// needs the raw components to populate an ActivationRequest's individually
+// hashed fields without re-deriving Current()'s private lookup logic.
+func CurrentComponents() (mid, mac string, err error) {
 	mid, midErr := machineID()
 	mac, macErr := primaryMAC()
 	if midErr != nil && macErr != nil {
-		return "", ErrNoFingerprint
+		return "", "", ErrNoFingerprint
 	}
-	return Compose(mid, mac), nil
+	return mid, mac, nil
 }
 
 // Compose builds the fingerprint string from its two raw components (machine
@@ -342,4 +355,79 @@ func WithinTolerance(stored, current string) bool {
 		diffs++
 	}
 	return diffs <= 1
+}
+
+// --- Activation as a file exchange (FR-123) ---------------------------------
+
+// activationRequestSchemaVersion is ActivationRequest's own wire-format
+// version, independent of Payload.Version (the license schema) — bumped only
+// if the request file's shape itself changes.
+const activationRequestSchemaVersion = 1
+
+// ActivationRequest is the FR-123 file exported by POST
+// /api/v1/license/request-blob: this server's LIVE fingerprint (both raw
+// hashed components, so license-tool never has to re-derive or re-hash
+// anything), the currently installed license's key id/serial if any, this
+// build's product version, and when it was generated. scripts/license-tool's
+// `activate` command signs a new license against exactly Fingerprint —
+// never a hand-transcribed value — which is what makes "signed against a
+// stale fingerprint" structurally impossible: the fingerprint in the
+// resulting license is always the one this exact file carried.
+//
+// The server holds no private key (only license.ProductionPublicKey, the
+// vendor's public key), so this file cannot be asymmetrically signed the way
+// the license blob it results in is. Checksum instead provides the same
+// "detect tampering/corruption before trusting anything in it" property for
+// the one direction that matters here: license-tool must refuse a hand-
+// edited or corrupted request before showing an operator a fingerprint to
+// sign against.
+type ActivationRequest struct {
+	SchemaVersion  int       `json:"schema_version"`
+	MachineIDHash  string    `json:"machine_id_hash"`
+	MACHash        string    `json:"mac_hash"`
+	Fingerprint    string    `json:"fingerprint"` // Compose(machine_id_hash, mac_hash) — identical string to Payload.Fingerprint
+	CurrentKeyID   string    `json:"current_key_id,omitempty"`
+	CurrentSerial  string    `json:"current_serial,omitempty"`
+	ProductVersion string    `json:"product_version"`
+	GeneratedAt    time.Time `json:"generated_at"`
+	Checksum       string    `json:"checksum"` // hex sha256 over the canonical JSON of every field above, itself excluded
+}
+
+// NewActivationRequest builds and checksums a request from this server's
+// live fingerprint components (machineID/mac are the raw, un-hashed values
+// exactly as Current()/Compose take them).
+func NewActivationRequest(machineID, mac, currentKeyID, currentSerial, productVersion string, now time.Time) ActivationRequest {
+	req := ActivationRequest{
+		SchemaVersion:  activationRequestSchemaVersion,
+		MachineIDHash:  hashComponent(machineID),
+		MACHash:        hashComponent(mac),
+		Fingerprint:    Compose(machineID, mac),
+		CurrentKeyID:   currentKeyID,
+		CurrentSerial:  currentSerial,
+		ProductVersion: productVersion,
+		GeneratedAt:    now,
+	}
+	req.Checksum = activationRequestChecksum(req)
+	return req
+}
+
+// VerifyActivationRequestChecksum reports whether req.Checksum matches a
+// freshly recomputed checksum over req's other fields — license-tool calls
+// this before trusting anything in an imported request file.
+func VerifyActivationRequestChecksum(req ActivationRequest) bool {
+	return req.Checksum != "" && req.Checksum == activationRequestChecksum(req)
+}
+
+// activationRequestChecksum hashes every field of req except Checksum
+// itself, via a zeroed-Checksum copy marshaled the same way on both the
+// generating and verifying side — deterministic because Go's encoding/json
+// always emits struct fields in declaration order (unlike map keys).
+func activationRequestChecksum(req ActivationRequest) string {
+	req.Checksum = ""
+	raw, err := json.Marshal(req)
+	if err != nil {
+		return ""
+	}
+	sum := sha256.Sum256(raw)
+	return hex.EncodeToString(sum[:])
 }

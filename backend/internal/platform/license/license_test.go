@@ -199,6 +199,35 @@ func TestSign_RoundTripsV2Fields(t *testing.T) {
 	}
 }
 
+// --- Activation request (FR-123) --------------------------------------------
+
+func TestNewActivationRequest_ChecksumVerifies(t *testing.T) {
+	now := time.Date(2026, 8, 20, 12, 0, 0, 0, time.UTC)
+	req := NewActivationRequest("machine-a", "aa:bb:cc:dd:ee:ff", "K-OLD", "SN-1", "1.5.0", now)
+	if req.Fingerprint != Compose("machine-a", "aa:bb:cc:dd:ee:ff") {
+		t.Fatalf("Fingerprint = %q, want the same Compose() value", req.Fingerprint)
+	}
+	if !VerifyActivationRequestChecksum(req) {
+		t.Fatal("freshly built request failed its own checksum check")
+	}
+}
+
+func TestVerifyActivationRequestChecksum_RejectsTampering(t *testing.T) {
+	now := time.Date(2026, 8, 20, 12, 0, 0, 0, time.UTC)
+	req := NewActivationRequest("machine-a", "aa:bb:cc:dd:ee:ff", "K-OLD", "SN-1", "1.5.0", now)
+	req.Fingerprint = Compose("machine-b", "11:22:33:44:55:66") // hand-edited after the fact
+	if VerifyActivationRequestChecksum(req) {
+		t.Fatal("checksum accepted a request whose fingerprint was edited after generation")
+	}
+}
+
+func TestVerifyActivationRequestChecksum_RejectsMissingChecksum(t *testing.T) {
+	req := ActivationRequest{Fingerprint: "x:y"}
+	if VerifyActivationRequestChecksum(req) {
+		t.Fatal("checksum accepted a request with an empty Checksum field")
+	}
+}
+
 func TestProductionPublicKeyDecodes(t *testing.T) {
 	if len(ProductionPublicKey) != ed25519.PublicKeySize {
 		t.Fatalf("ProductionPublicKey is %d bytes, want %d", len(ProductionPublicKey), ed25519.PublicKeySize)

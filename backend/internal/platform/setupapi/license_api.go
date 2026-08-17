@@ -188,15 +188,31 @@ func decodeLicenseBlob(w http.ResponseWriter, r *http.Request) (license.Blob, bo
 	return license.Blob{Payload: req.Payload, Signature: req.Signature}, true
 }
 
+// requestBlobResponse is the FR-123 activation-request file: this server's
+// live fingerprint (both hashed halves, plus the composed string kept for
+// wire-compatibility with the field name the FR-50.4 flow already used),
+// the currently installed license's key id/serial if any, this build's
+// version, and a checksum license-tool verifies before trusting the file.
+// Field names/shapes are additive over the pre-v4-3 response — a re-issue
+// request built against an old server build still round-trips.
 type requestBlobResponse struct {
-	CurrentKeyID string `json:"current_key_id,omitempty"`
-	Fingerprint  string `json:"fingerprint"`
-	RequestedAt  string `json:"requested_at"`
+	CurrentKeyID   string `json:"current_key_id,omitempty"`
+	CurrentSerial  string `json:"current_serial,omitempty"`
+	Fingerprint    string `json:"fingerprint"`
+	MachineIDHash  string `json:"machine_id_hash"`
+	MACHash        string `json:"mac_hash"`
+	ProductVersion string `json:"product_version"`
+	RequestedAt    string `json:"requested_at"`
+	Checksum       string `json:"checksum"`
 }
 
-// requestBlobHandler produces the FR-50.4 re-issue request: old key id (if
-// any) + the new fingerprint, for the admin to send the vendor by whatever
-// offline channel they have (email, support ticket, USB). No phone-home.
+// requestBlobHandler produces the FR-123 activation request: this server's
+// OWN current fingerprint (never a value the operator typed), so
+// license-tool's `activate` command signs the resulting license against
+// exactly this file's Fingerprint — the file exchange that makes "signed
+// against a stale fingerprint" structurally impossible, replacing the old
+// hand-transcription trap. No phone-home: this only builds and returns a
+// local file, no outbound network call is made.
 func requestBlobHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	rec, ok, err := platform.LoadLicenseRecord(ctx, svc.db)
@@ -205,12 +221,25 @@ func requestBlobHandler(w http.ResponseWriter, r *http.Request) {
 		httpapi.Error(w, http.StatusInternalServerError, "internal", "internal server error")
 		return
 	}
-	resp := requestBlobResponse{
-		Fingerprint: currentFingerprintOrEmpty(svc.log.Warn),
-		RequestedAt: time.Now().UTC().Format(time.RFC3339),
+	machineID, macAddr, fpErr := license.CurrentComponents()
+	if fpErr != nil {
+		svc.log.Warn("license: fingerprint unavailable for activation request", "error", fpErr)
 	}
+	var currentKeyID, currentSerial string
 	if ok {
-		resp.CurrentKeyID = rec.KeyID
+		currentKeyID = rec.KeyID
+		currentSerial = rec.Payload.Serial
+	}
+	req := license.NewActivationRequest(machineID, macAddr, currentKeyID, currentSerial, appVersion, time.Now().UTC())
+	resp := requestBlobResponse{
+		CurrentKeyID:   req.CurrentKeyID,
+		CurrentSerial:  req.CurrentSerial,
+		Fingerprint:    req.Fingerprint,
+		MachineIDHash:  req.MachineIDHash,
+		MACHash:        req.MACHash,
+		ProductVersion: req.ProductVersion,
+		RequestedAt:    req.GeneratedAt.Format(time.RFC3339),
+		Checksum:       req.Checksum,
 	}
 	_ = auth.Audit(ctx, "license.request_blob", "license", resp.CurrentKeyID, nil, resp)
 	httpapi.JSON(w, http.StatusOK, resp)

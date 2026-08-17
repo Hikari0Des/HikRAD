@@ -1799,9 +1799,9 @@
       "submit": "Install license"
     },
     "requestBlob": {
-      "title": "Request a new license",
-      "body": "Send this file to your license vendor to get a new license for this machine.",
-      "download": "Download request"
+      "title": "Export activation request",
+      "body": "Downloads a file carrying this server's current fingerprint. Send it to your license vendor — they sign the new license against exactly this fingerprint, so it can never land back in grace from a stale value.",
+      "download": "Export activation request"
     },
     "banner": {
       "readOnly": "License expired — changes are disabled.",

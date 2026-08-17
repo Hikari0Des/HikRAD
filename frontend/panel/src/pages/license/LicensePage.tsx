@@ -77,7 +77,7 @@ export function LicensePage() {
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `hikrad-license-request-${res.fingerprint}.json`
+      a.download = `hikrad-activation-request-${res.fingerprint}.json`
       document.body.appendChild(a)
       a.click()
       a.remove()

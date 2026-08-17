@@ -106,6 +106,8 @@ func main() {
 		err = cmdKeygen(os.Args[2:])
 	case "issue":
 		err = cmdIssue(os.Args[2:])
+	case "activate":
+		err = cmdActivate(os.Args[2:])
 	case "serve":
 		err = cmdServe(os.Args[2:])
 	case "-h", "--help", "help":
@@ -139,11 +141,30 @@ func usage() {
   license-tool issue -key <privkey-file> -keyid <id> -licensee <name>
                       -tier <tier> -max-subscribers <n> -version <entitled>
                       -fingerprint <fingerprint> [-out <file.json>]
-      Non-interactive form (for CI/scripts). Signs a license for the given
-      fingerprint (as printed by the buyer's wizard/Settings > System). Writes
-      the {"payload":...,"signature":...} blob to -out (default: stdout) —
-      that file is what the buyer uploads. Both forms produce byte-identical
-      output for identical inputs.
+                      [-entitlements <csv>] [-expires <RFC3339>]
+                      [-support-until <RFC3339>] [-serial <id>]
+      Non-interactive form (for CI/scripts, and the manual-entry fallback
+      when the buyer cannot send an activation-request file). Signs a
+      license for the given fingerprint AS TYPED — prefer 'activate' below
+      whenever a request file is available, since a hand-transcribed
+      fingerprint is exactly the failure mode FR-123 exists to remove.
+      Writes the {"payload":...,"signature":...} blob to -out (default:
+      stdout) — that file is what the buyer uploads. Both forms produce
+      byte-identical output for identical inputs.
+
+  license-tool activate -request <activation-request.json>
+                         [-key <privkey-file> -keyid <id> -licensee <name>
+                          -tier <tier> -max-subscribers <n>
+                          -entitlements <csv> -expires <RFC3339>
+                          -support-until <RFC3339> -serial <id> -out <file.json>]
+      FR-123: the file-exchange activation flow. Reads an activation-request
+      file the buyer's server exported (POST /api/v1/license/request-blob or
+      the panel's "Export activation request" button), verifies its
+      checksum, and signs the license against EXACTLY the fingerprint that
+      file carries — never a typed value — so a re-issue can never land back
+      in grace from a stale/mistyped fingerprint. With no flags beyond
+      -request on a terminal, walks through the remaining fields with
+      prompts (same tier/entitlement menu as 'issue').
 
   license-tool serve -key <privkey-file> -keyid <id> [-addr 127.0.0.1:7070]
       Starts a local web issuer: open the printed URL in a browser and fill in

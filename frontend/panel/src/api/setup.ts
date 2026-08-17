@@ -83,10 +83,22 @@ export function uploadLicense(payload: unknown, signature: string): Promise<Lice
   return request<LicenseResponse>('/license', { method: 'POST', body: { payload, signature } })
 }
 
+/**
+ * FR-123: the activation-request file. The server's OWN current
+ * fingerprint (never a value anyone types) plus context the vendor's
+ * license-tool needs — downloaded as-is and sent to the vendor by whatever
+ * offline channel, then consumed by `license-tool activate` so the
+ * resulting license is always signed against this exact fingerprint.
+ */
 export interface RequestBlobResponse {
   current_key_id?: string
+  current_serial?: string
   fingerprint: string
+  machine_id_hash: string
+  mac_hash: string
+  product_version: string
   requested_at: string
+  checksum: string
 }
 
 export function requestLicenseBlob(): Promise<RequestBlobResponse> {
