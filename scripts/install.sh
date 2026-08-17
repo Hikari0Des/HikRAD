@@ -513,6 +513,40 @@ chown hikrad-api:hikrad-api "$FR_DIR/clients-generated.conf" 2>/dev/null || true
 chmod 0640 "$FR_DIR/clients-generated.conf"
 
 if command -v freeradius >/dev/null 2>&1; then
+    # --- 8a. FreeRADIUS EAP certs: generate once per install, never checked
+    # in (FR-127) — a known, identical-across-every-clone private key on an
+    # EAP surface is indefensible, and that is exactly what the repo shipped
+    # until this phase deleted the checked-in certs/*.key, *.p12 files.
+    # $FR_DIR is wiped and freshly re-copied from $STAGE_FR on EVERY run
+    # (fresh install and every upgrade alike, see step 8 above), so certs
+    # must live in a location that wipe never touches — same "generate once,
+    # survive every re-run" shape as $TLS_DIR below, applied here so an
+    # upgrade never silently invalidates an already-enrolled EAP client's
+    # trust of the previous CA.
+    FR_CERTS_STABLE="$VAR_DIR/freeradius-certs"
+    if command -v openssl >/dev/null 2>&1; then
+        if [ ! -f "$FR_CERTS_STABLE/server.key" ]; then
+            log "Generating unique FreeRADIUS EAP certificates for this install…"
+            install -d -m 0750 "$FR_CERTS_STABLE"
+            ( cd "$FR_DIR/certs" && ./bootstrap ) >/tmp/hikrad-freeradius-certgen.log 2>&1 \
+                || die "FreeRADIUS cert generation (certs/bootstrap) failed — see /tmp/hikrad-freeradius-certgen.log"
+            cp "$FR_DIR"/certs/ca.key "$FR_DIR"/certs/ca.pem "$FR_DIR"/certs/ca.der \
+               "$FR_DIR"/certs/ca.crl "$FR_DIR"/certs/server.key "$FR_DIR"/certs/server.pem \
+               "$FR_DIR"/certs/server.crt "$FR_DIR"/certs/client.key "$FR_DIR"/certs/client.pem \
+               "$FR_DIR"/certs/client.crt "$FR_DIR"/certs/client.p12 "$FR_DIR"/certs/server.p12 \
+               "$FR_DIR"/certs/dh "$FR_DIR"/certs/index.txt "$FR_DIR"/certs/index.txt.attr \
+               "$FR_DIR"/certs/serial "$FR_DIR"/certs/passwords.mk \
+               "$FR_CERTS_STABLE/" 2>/dev/null || true
+        else
+            vlog "FreeRADIUS EAP certs already present at $FR_CERTS_STABLE — restoring into the freshly-staged config tree, not regenerating."
+            cp "$FR_CERTS_STABLE"/* "$FR_DIR/certs/" 2>/dev/null || true
+        fi
+        chown -R freerad:freerad "$FR_DIR/certs" "$FR_CERTS_STABLE" 2>/dev/null || true
+        chmod 0640 "$FR_DIR"/certs/*.key "$FR_CERTS_STABLE"/*.key 2>/dev/null || true
+    else
+        warn "openssl not found — skipping FreeRADIUS EAP cert generation; EAP methods will not work until certs exist under $FR_CERTS_STABLE."
+    fi
+
     log "Validating FreeRADIUS config before enabling the unit (gate item 8)…"
     if ! freeradius -CX -d "$FR_DIR" >/tmp/hikrad-freeradius-check.log 2>&1; then
         cat /tmp/hikrad-freeradius-check.log >&2
