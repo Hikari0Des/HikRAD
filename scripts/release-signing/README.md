@@ -1,5 +1,14 @@
 # Release signing key
 
+**Vendor-only — never ships.** This directory lives under `scripts/`,
+outside anything `build-release-bundle.sh` copies into a release bundle
+(it names each file/directory it stages explicitly, never globs `scripts/`
+wholesale), and `scripts/lint-release-manifest.sh` (FR-126, phase v4-3)
+denies the `license-tool/`/`release-signing/` path prefixes in CI as
+defense-in-depth against a future change that would accidentally include
+them. Nothing here is compiled into, embedded in, or shipped alongside any
+product binary or bundle.
+
 Signs `hikrad-vX.Y.Z.tar` release bundles (FR-81.3, phase v2-5 C1) — a
 **separate** keypair from `scripts/license-tool`'s license-issuance key.
 That key authenticates *customer entitlements*; this one authenticates
