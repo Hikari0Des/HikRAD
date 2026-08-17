@@ -6,6 +6,14 @@ export default defineConfig({
   // Caddy serves the portal under /portal with the prefix stripped
   // (handle_path, contract C5) — assets must be referenced at /portal/*.
   base: '/portal/',
+  // FR-126: closed-source distribution — never ship source maps. Vite
+  // already defaults to false, but a frozen contract shouldn't rely on an
+  // upstream default that could change across a Vite major bump; the
+  // release-manifest CI gate (scripts/lint-release-manifest.sh) is what
+  // actually enforces this, this is the config-side statement of intent.
+  build: {
+    sourcemap: false,
+  },
   server: {
     // Dev-only convenience: forward API calls to the Compose stack's Caddy
     // (self-signed cert in dev, hence secure: false). Override with
