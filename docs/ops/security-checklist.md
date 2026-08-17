@@ -58,6 +58,8 @@
 | 5.2 | Parameterized SQL everywhere (pgx); no string-built queries with user input | package-wide | ☑ audited `internal/platform`, `internal/platform/setupapi`, `internal/auth` (this phase's paths) — every query uses `$N` placeholders; `scripts/hikrad`'s two raw-SQL lines (`backup_runs` insert) interpolate only script-generated timestamps/escaped error text, never request input |
 | 13.1 | UUID path params validated before `::uuid` casts | `internal/auth/util.go` | ☑ `validUUID` guards every `chi.URLParam(r, "id")` before a cast (grep across `auth`) |
 | 13.2 *(new, Phase 5)* | Untrusted license blob (signature + payload) rejected before any field is trusted | `internal/platform/license/license.go:Verify` | ☑ `license_test.go` (tampered payload, wrong key, bad base64, malformed JSON, missing required fields all rejected); live-tested against a real upload (see status note) |
+| 13.3 *(new, v4-3)* | Licence v2 entitlements/cap/expiry derived from the SIGNED payload on every evaluation — never cached into a settings row, config file, or a DB column an operator can edit and have it take effect | `internal/platform/license_store.go` (`LicenseSnapshot`, `RefreshLicenseCache`'s re-verify-before-adopt) | ☑ `license_store_db_test.go:TestLicenseHasEntitlement_DBRowEditDoesNotGrant` — a direct SQL edit to the entitlements/max_subscribers columns is confirmed to have no effect after the next refresh, because the signature no longer verifies against the edited payload |
+| 13.4 *(new, v4-3)* | White-label attribution removed only by a signed entitlement; no settings key or panel UI path can hide it either way | `internal/portalapi/branding.go`, both apps' `PoweredByFooter.tsx` | ☑ `branding_test.go`, `PoweredByFooter.test.tsx` (both apps) — grepped Settings > Branding for any white-label/hide-attribution control: none exists |
 
 ## V9/V14 — Communications & Config
 
@@ -65,7 +67,8 @@
 |---|---|---|---|
 | 9.1 | TLS on all web surfaces; HTTP→HTTPS redirect; HSTS (NFR-4.4) | `deploy/nginx/hikrad.conf.template` (v4-2: replaces Caddy, Decision 59) | ☑ `:80` unconditional redirect; self-signed default + `install.sh --domain` automates Let's Encrypt via certbot; `Strict-Transport-Security`/`X-Content-Type-Options`/`Referrer-Policy` headers; `nginx -t` validated by `install.sh` before every reload |
 | 9.2 | Trust only nginx for `X-Forwarded-For`; no downstream XFF trust | `internal/auth/middleware.go` (`clientIP`) | ☑ v4-2: `hikrad-api` binds `127.0.0.1:8080` explicitly (`cmd/hikrad-api/main.go`), not `:8080`/0.0.0.0 — closes the residual risk noted below from the pre-v4-2 Docker-network-isolation-only version of this control. nginx (loopback), FreeRADIUS's exec scripts, and hikrad-updaterd's relay are the only same-host callers that can ever originate a request carrying this header |
-| 14.1 | Secrets at rest (RADIUS secrets, SNMP communities, gateway creds, TOTP, **tunnel token**) under one AES-GCM envelope (NFR-4.3) | `internal/platform/crypto` | ☑ `crypto_test.go`; `remote_access.token` via the same `crypto.Encrypt`/`Decrypt` (`setupapi/settings_api.go`), never returned by GET (`token_set` boolean only) |
+| 9.3 *(new, v4-3)* | FreeRADIUS EAP certs generated per-install, never checked into the repo | `scripts/install.sh` (FreeRADIUS EAP certs step, before `-CX` validation) | ☑ checked-in `.key`/`.p12`/etc. deleted from `deploy/freeradius/certs/`; live-verified two independent `certs/bootstrap` runs produce byte-different `ca.key`/`server.key` and different certificate SHA-256 fingerprints |
+| 14.1 | Secrets at rest (RADIUS secrets, SNMP communities, gateway creds, TOTP, tunnel token, **notification-channel credentials**) under one AES-GCM envelope (NFR-4.3) | `internal/platform/crypto`, `internal/platform/settings_crypto.go` | ☑ `crypto_test.go`; `remote_access.token` via `crypto.Encrypt`/`Decrypt` directly (`setupapi/settings_api.go`), never returned by GET (`token_set` boolean only); **v4-3**: `notifications.{smtp,telegram,whatsapp}` (SMTP password, Telegram bot token, WhatsApp access token — found NOT encrypted while auditing this row) now sealed via `platform.SetEncrypted`/`GetEncrypted` in `internal/monitorsvc/channels.go`, `subscriber_whatsapp.go`, `setupapi/notify_test_send.go`; `settings_crypto_test.go` proves the raw DB value contains no plaintext credential and a tampered ciphertext is refused |
 | 14.2 | Encryption key in `hikrad.env` only, never in DB; a keyless DB copy reveals nothing (AC-NFR4a) | `internal/platform/crypto` | ☑ `crypto_test.go`; DB dump contains only versioned ciphertext blobs |
 | 14.3 | Backup archives are passphrase-encrypted | `scripts/hikrad` (`gpg --symmetric --cipher-algo AES256`) | ☑ round-trip: encrypt → decrypt with correct passphrase succeeds, DB/`hikrad.env` restore byte-correct; wrong-passphrase decrypt fails closed |
 
@@ -79,6 +82,26 @@
   vendor escrow) — see `docs/ops/backup-restore.md`.
 - **Full ASVS L2 pass with evidence**: done, this file.
 
+### v4-3 additions
+
+- **Checked-in FreeRADIUS private keys** (row 9.3): deleted; generated
+  per-install instead. Closes the known-issues row opened at v4-0.
+- **Notification-credential plaintext-at-rest gap** (row 14.1): SMTP
+  password / Telegram bot token / WhatsApp access token were the one place
+  left storing a credential unencrypted; now sealed the same way every
+  other secret in this system is.
+- **Licence entitlement/cap forgeability** (rows 13.3/13.4): a direct
+  database edit to the license row's payload now fails signature
+  re-verification and is never adopted, closing the theoretical gap between
+  "the schema comment says re-verified on every read" and what the code
+  actually did before this phase.
+- **Backups**: restated, unchanged — see row 14.3. Archives are
+  passphrase-encrypted (`HIKRAD_BACKUP_PASSPHRASE`, `gpg --symmetric
+  --cipher-algo AES256`); the key lives only in `hikrad.env` and the
+  install summary, never in the DB or the archive itself.
+- **Secret scanning is now live in CI** (`secret-scan` job, `gitleaks`) and
+  available locally as a pre-commit hook — see `docs/ops/security-and-source.md` §4.
+
 ## Known residual risk (not blocking pilot)
 
 - **Closed, v4-2.** 9.2's guarantee used to be purely architectural (Docker
@@ -89,3 +112,16 @@
   `127.0.0.1:8080` (`cmd/hikrad-api/main.go`) rather than relying on a
   network boundary that no longer exists. See
   `docs/history/gates/v4-2.md`.
+- **New, v4-3.** The PKCS#12 export password baked into
+  `deploy/freeradius/certs/passwords.mk` (used only if an operator exports
+  `client.p12`/`server.p12` for a desktop EAP client) stays FreeRADIUS's
+  well-known stock default even though the RSA key material `bootstrap`
+  regenerates is genuinely unique per install (row 9.3). Properly closing
+  this means templating `server.cnf`/`client.cnf`'s `output_password` with
+  an install-generated secret before `bootstrap` runs — a real but small
+  follow-up, not done this phase because the `.p12` export path is an
+  optional convenience (RADIUS itself never reads `passwords.mk`; the live
+  server only uses `server.key`/`server.pem`, which are already unique) and
+  templating the `.cnf` files touches FreeRADIUS's own stock PKI tooling in
+  a way that deserved its own verification pass rather than a rushed
+  addition at the end of this one.
