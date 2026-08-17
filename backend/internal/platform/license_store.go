@@ -26,26 +26,96 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-var cachedLicenseState atomic.Value // holds license.State; zero value -> StateValid (no license row yet)
+// LicenseSnapshot is the ONE process-wide view of the installed license's
+// enforcement-relevant fields (FR-124): state, subscriber cap, and the
+// resolved entitlement set, derived from the SIGNED payload every time
+// SaveLicenseRecord/RefreshLicenseCache runs and never written from
+// anywhere else. Every enforcement call site (the cap check, entitlement
+// gates like white-label, the read-only license gate) reads this one
+// structure — never a settings row, a config file, or a DB column an
+// operator could edit and have it take effect. RefreshLicenseCache
+// re-verifies the stored payload's signature before building a new
+// snapshot from it (see the doc comment there); a snapshot is otherwise
+// never replaced with unverified data.
+type LicenseSnapshot struct {
+	State          license.State
+	MaxSubscribers int
+	Entitlements   map[string]bool
+	ExpiresAt      *time.Time
+	SupportUntil   *time.Time
+}
 
-// cachedLicenseMaxSubscribers holds the installed license's MaxSubscribers
-// (FR-105) for the cap check on subscriber create/import, without a DB read on
-// the hot create path. 0 means "no cap": either an unlimited-tier license or
-// no license at all (a fresh/dev install is never restricted). Kept current by
-// SaveLicenseRecord and RefreshLicenseCache alongside cachedLicenseState.
-var cachedLicenseMaxSubscribers atomic.Int64
+var cachedLicenseSnapshot atomic.Value // holds LicenseSnapshot
+
+func loadSnapshot() LicenseSnapshot {
+	if v, ok := cachedLicenseSnapshot.Load().(LicenseSnapshot); ok {
+		return v
+	}
+	return LicenseSnapshot{State: license.StateValid}
+}
+
+// entitlementSnapshot resolves every license.KnownEntitlements name against
+// p.HasEntitlement into the map a LicenseSnapshot carries — the same
+// derivation the License page's response uses, so the panel display and the
+// enforcement path never have two different notions of what's granted.
+func entitlementSnapshot(p license.Payload) map[string]bool {
+	m := make(map[string]bool, len(license.KnownEntitlements))
+	for _, name := range license.KnownEntitlements {
+		m[name] = p.HasEntitlement(name)
+	}
+	return m
+}
 
 // CachedLicenseMaxSubscribers returns the licensed subscriber cap without a DB
 // round-trip; 0 means unlimited (or no license installed).
 func CachedLicenseMaxSubscribers() int {
-	return int(cachedLicenseMaxSubscribers.Load())
+	return loadSnapshot().MaxSubscribers
 }
 
-// SetCachedLicenseMaxSubscribersForTest overrides the cached cap. Test-only,
-// mirroring SetCachedLicenseStateForTest — lets cap-enforcement tests exercise
-// every band without standing up a signed license row.
+// LicenseHasEntitlement reports whether the currently cached license grants
+// name (FR-122/FR-124), e.g. license.EntitlementWhiteLabel. False (never a
+// panic) when no license is installed or the snapshot hasn't been primed
+// yet — an absent/unverifiable license grants nothing, which is the
+// fail-safe direction for every entitlement this phase defines (white_label
+// false means the attribution mark stays visible, not the other way round).
+func LicenseHasEntitlement(name string) bool {
+	return loadSnapshot().Entitlements[name]
+}
+
+// CachedLicenseExpiresAt/CachedLicenseSupportUntil expose the resolved
+// snapshot's calendar fields for the License page (FR-125); nil means
+// perpetual/unset.
+func CachedLicenseExpiresAt() *time.Time    { return loadSnapshot().ExpiresAt }
+func CachedLicenseSupportUntil() *time.Time { return loadSnapshot().SupportUntil }
+
+// storeSnapshot is the one place cachedLicenseSnapshot is ever written —
+// called by SaveLicenseRecord/RefreshLicenseCache (the two verified
+// production paths) and by the "ForTest" setters below. Kept unexported and
+// distinct from the ForTest name so a call site never reads as "test-only
+// code in the production path" by accident.
+func storeSnapshot(s LicenseSnapshot) {
+	if s.Entitlements == nil {
+		s.Entitlements = map[string]bool{}
+	}
+	cachedLicenseSnapshot.Store(s)
+}
+
+// SetCachedLicenseSnapshotForTest overrides the entire process-wide
+// snapshot in one call — the FR-124 test seam for entitlement/expiry
+// coverage that doesn't want to stand up a signed license row. Never called
+// outside tests.
+func SetCachedLicenseSnapshotForTest(s LicenseSnapshot) {
+	storeSnapshot(s)
+}
+
+// SetCachedLicenseMaxSubscribersForTest overrides only the cached cap,
+// leaving the rest of the snapshot as last stored. Kept as a thin wrapper
+// over SetCachedLicenseSnapshotForTest so existing cap-enforcement tests
+// (internal/platform/subscriber_cap_test.go) don't need to change shape.
 func SetCachedLicenseMaxSubscribersForTest(n int) {
-	cachedLicenseMaxSubscribers.Store(int64(n))
+	s := loadSnapshot()
+	s.MaxSubscribers = n
+	storeSnapshot(s)
 }
 
 // SubscriberCapStatus describes how a subscriber count sits against the
@@ -87,32 +157,38 @@ func EvalSubscriberCap(count int) SubscriberCapStatus {
 // (called at boot and on a ticker, plus synchronously after every upload)
 // keeps it current within one refresh interval.
 func CachedLicenseState() license.State {
-	if v, ok := cachedLicenseState.Load().(license.State); ok && v != "" {
-		return v
+	if s := loadSnapshot().State; s != "" {
+		return s
 	}
 	return license.StateValid
 }
 
-// SetCachedLicenseStateForTest overrides the process-wide license cache.
-// Exported solely so internal/httpapi's license-gate coverage-map test (in a
-// different package, which cannot reach an unexported var) can exercise every
-// state without standing up a Postgres-backed license row for each case.
-// Never called outside tests.
+// SetCachedLicenseStateForTest overrides only the cached state, leaving the
+// rest of the snapshot as last stored. Exported solely so internal/httpapi's
+// license-gate coverage-map test (a different package, can't reach an
+// unexported var) can exercise every state without standing up a
+// Postgres-backed license row. Never called outside tests.
 func SetCachedLicenseStateForTest(s license.State) {
-	cachedLicenseState.Store(s)
+	snap := loadSnapshot()
+	snap.State = s
+	storeSnapshot(snap)
 }
 
 // LoadLicenseRecord reads the single `current` license row, if any. ok is
 // false (with a nil error) when no license has ever been uploaded — a valid,
 // unrestricted state for a fresh install (the wizard's license step hasn't
 // run yet, or an operator chose to skip straight to internal testing).
+// rec.PayloadRaw/rec.Signature carry the exact stored bytes (not a
+// re-marshaled reconstruction) so a caller can re-verify them — see
+// RefreshLicenseCache, the one place that actually does.
 func LoadLicenseRecord(ctx context.Context, db *pgxpool.Pool) (rec license.Record, ok bool, err error) {
 	var payloadRaw []byte
+	var signature string
 	var state string
 	err = db.QueryRow(ctx,
-		`SELECT key_id, payload, fingerprint, state, grace_started_at
+		`SELECT key_id, payload, signature, fingerprint, state, grace_started_at
 		   FROM license WHERE id = 'current'`).
-		Scan(&rec.KeyID, &payloadRaw, &rec.IssuedFingerprint, &state, &rec.GraceStartedAt)
+		Scan(&rec.KeyID, &payloadRaw, &signature, &rec.IssuedFingerprint, &state, &rec.GraceStartedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return license.Record{}, false, nil
 	}
@@ -122,6 +198,8 @@ func LoadLicenseRecord(ctx context.Context, db *pgxpool.Pool) (rec license.Recor
 	if err := json.Unmarshal(payloadRaw, &rec.Payload); err != nil {
 		return license.Record{}, false, fmt.Errorf("platform: decode license payload: %w", err)
 	}
+	rec.PayloadRaw = json.RawMessage(payloadRaw)
+	rec.Signature = signature
 	rec.State = license.State(state)
 	return rec, true, nil
 }
@@ -131,6 +209,11 @@ func LoadLicenseRecord(ctx context.Context, db *pgxpool.Pool) (rec license.Recor
 // come from rec as already evaluated by the caller (setupapi calls
 // license.Evaluate before saving so a freshly uploaded key that still
 // mismatches the live fingerprint is stored honestly, not force-valid).
+// installLicense already ran license.Verify against this exact payload
+// before calling this function, so it is safe to build the cache snapshot
+// straight from rec.Payload here — the re-verify-on-load discipline
+// (RefreshLicenseCache) exists for the path this function doesn't cover:
+// a row that changed via something other than a verified upload.
 func SaveLicenseRecord(ctx context.Context, db *pgxpool.Pool, rec license.Record, signature string) error {
 	payload, err := json.Marshal(rec.Payload)
 	if err != nil {
@@ -147,8 +230,13 @@ func SaveLicenseRecord(ctx context.Context, db *pgxpool.Pool, rec license.Record
 	if err != nil {
 		return fmt.Errorf("platform: save license: %w", err)
 	}
-	cachedLicenseState.Store(rec.State)
-	cachedLicenseMaxSubscribers.Store(int64(rec.Payload.MaxSubscribers))
+	storeSnapshot(LicenseSnapshot{
+		State:          rec.State,
+		MaxSubscribers: rec.Payload.MaxSubscribers,
+		Entitlements:   entitlementSnapshot(rec.Payload),
+		ExpiresAt:      rec.Payload.ExpiresAt,
+		SupportUntil:   rec.Payload.SupportUntil,
+	})
 	return nil
 }
 
@@ -161,12 +249,39 @@ func saveLicenseState(ctx context.Context, db *pgxpool.Pool, rec license.Record)
 	return err
 }
 
+// insertLicenseStateAudit records one migration-0596 transition row. Best
+// effort — a failure here must never block the state transition itself,
+// same posture as raiseGraceAlert.
+func insertLicenseStateAudit(ctx context.Context, db *pgxpool.Pool, log *slog.Logger, keyID string, before, after license.Record, currentFP string, reason license.TransitionReason) {
+	_, err := db.Exec(ctx,
+		`INSERT INTO license_state_audit (key_id, from_state, to_state, issued_fingerprint, current_fingerprint, reason)
+		 VALUES ($1, $2, $3, $4, $5, $6)`,
+		keyID, string(before.State), string(after.State), after.IssuedFingerprint, currentFP, string(reason))
+	if err != nil {
+		log.Warn("license: insert state-transition audit row failed", "error", err)
+	}
+}
+
 // RefreshLicenseCache re-evaluates the installed license (if any) against the
 // server's current fingerprint and now, persists a state transition, raises
 // an in-app alert event the first time grace begins, and updates the
 // process-wide cache. Called at boot, on a 10-minute ticker (setupapi.Module
 // starts it), and synchronously right after an upload so the banner/gate
 // react immediately rather than waiting for the next tick.
+//
+// FR-124 forgeability guard: before adopting rec.Payload into the cached
+// snapshot, this function re-verifies rec.PayloadRaw/rec.Signature against
+// license.ProductionPublicKey. installLicense already verified the payload
+// once at upload time, but RefreshLicenseCache also runs unconditionally on
+// every boot and every 10-minute tick — the only path that would ever pick
+// up a license row edited directly in the database (or a config file, if one
+// existed) rather than through a verified upload. A row that fails
+// re-verification is never adopted: this function returns without touching
+// cachedLicenseSnapshot, so the last-known-good in-memory snapshot keeps
+// being what every enforcement call site reads. This is what makes gate
+// item 7 ("edit the entitlement in the database... has no effect") true:
+// any edit to payload or signature invalidates the signature over the
+// *other* one, since Ed25519 signs the exact payload bytes.
 func RefreshLicenseCache(ctx context.Context, db *pgxpool.Pool, log *slog.Logger) {
 	rec, ok, err := LoadLicenseRecord(ctx, db)
 	if err != nil {
@@ -174,32 +289,46 @@ func RefreshLicenseCache(ctx context.Context, db *pgxpool.Pool, log *slog.Logger
 		return
 	}
 	if !ok {
-		cachedLicenseState.Store(license.StateValid)
-		cachedLicenseMaxSubscribers.Store(0)
+		storeSnapshot(LicenseSnapshot{State: license.StateValid})
 		return
 	}
-	cachedLicenseMaxSubscribers.Store(int64(rec.Payload.MaxSubscribers))
+
+	verified, verr := license.Verify(license.ProductionPublicKey, license.Blob{Payload: rec.PayloadRaw, Signature: rec.Signature})
+	if verr != nil {
+		log.Error("license: stored record failed signature re-verification — refusing to adopt, keeping last-known-good cache", "error", verr, "key_id", rec.KeyID)
+		return
+	}
+	rec.Payload = verified
 
 	cur, ferr := license.Current()
 	if ferr != nil {
 		// Can't determine this host's fingerprint (stripped-down container,
 		// missing /etc/machine-id mount): keep the last-known state rather
-		// than guessing either direction.
+		// than guessing either direction, but the verified entitlements/cap
+		// still update — those don't depend on the fingerprint.
 		log.Warn("license: fingerprint unavailable, keeping last-known state", "error", ferr)
-		cachedLicenseState.Store(rec.State)
+		snap := loadSnapshot()
+		snap.MaxSubscribers = rec.Payload.MaxSubscribers
+		snap.Entitlements = entitlementSnapshot(rec.Payload)
+		snap.ExpiresAt = rec.Payload.ExpiresAt
+		snap.SupportUntil = rec.Payload.SupportUntil
+		storeSnapshot(snap)
 		return
 	}
 
 	before := rec.State
-	updated := license.Evaluate(rec, cur, time.Now().UTC())
+	now := time.Now().UTC()
+	updated := license.Evaluate(rec, cur, now)
 	if updated.State != before {
 		if err := saveLicenseState(ctx, db, updated); err != nil {
 			log.Error("license: persist state transition failed", "error", err, "from", before, "to", updated.State)
 		}
+		reason := license.EvaluateReason(rec, updated, cur, now)
+		insertLicenseStateAudit(ctx, db, log, rec.KeyID, rec, updated, cur, reason)
 		if updated.State == license.StateGrace {
 			raiseGraceAlert(ctx, db, log, updated)
 		}
-		log.Info("license: state transition", "from", before, "to", updated.State)
+		log.Info("license: state transition", "from", before, "to", updated.State, "reason", reason)
 	}
 	// Whenever the license reads valid, clear any firing grace notifications —
 	// not just on the transition edge, so a pile of stale rows from earlier
@@ -208,7 +337,13 @@ func RefreshLicenseCache(ctx context.Context, db *pgxpool.Pool, log *slog.Logger
 	if updated.State == license.StateValid {
 		resolveGraceAlerts(ctx, db, log)
 	}
-	cachedLicenseState.Store(updated.State)
+	storeSnapshot(LicenseSnapshot{
+		State:          updated.State,
+		MaxSubscribers: updated.Payload.MaxSubscribers,
+		Entitlements:   entitlementSnapshot(updated.Payload),
+		ExpiresAt:      updated.Payload.ExpiresAt,
+		SupportUntil:   updated.Payload.SupportUntil,
+	})
 }
 
 // raiseGraceAlert writes a row directly into monitorsvc's alert_events table

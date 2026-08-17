@@ -85,6 +85,81 @@ func TestEvaluateSingleComponentDriftTolerated(t *testing.T) {
 	}
 }
 
+// --- Calendar expiry (FR-124) ------------------------------------------------
+
+func TestEvaluate_ExpiredPayloadGoesStraightToExpiredGrace(t *testing.T) {
+	fp := Compose("machine-a", "aa:bb:cc:dd:ee:ff")
+	past := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	rec := Record{
+		State:             StateValid,
+		IssuedFingerprint: fp,
+		Payload:           Payload{ExpiresAt: &past},
+	}
+	now := past.Add(24 * time.Hour)
+	// Fingerprint matches exactly — only the calendar expiry should matter.
+	rec = Evaluate(rec, fp, now)
+	if rec.State != StateExpiredGrace {
+		t.Fatalf("expired license: state = %v, want expired_grace even with a matching fingerprint", rec.State)
+	}
+}
+
+func TestEvaluate_FutureExpiryDoesNotAffectValidState(t *testing.T) {
+	fp := Compose("machine-a", "aa:bb:cc:dd:ee:ff")
+	future := time.Date(2099, 1, 1, 0, 0, 0, 0, time.UTC)
+	rec := Record{
+		State:             StateValid,
+		IssuedFingerprint: fp,
+		Payload:           Payload{ExpiresAt: &future},
+	}
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	rec = Evaluate(rec, fp, now)
+	if rec.State != StateValid {
+		t.Fatalf("future expiry: state = %v, want valid", rec.State)
+	}
+}
+
+func TestEvaluate_NilExpiryIsPerpetual(t *testing.T) {
+	fp := Compose("machine-a", "aa:bb:cc:dd:ee:ff")
+	rec := Record{State: StateValid, IssuedFingerprint: fp, Payload: Payload{ExpiresAt: nil}}
+	// A time far in any plausible future must never trip expiry when ExpiresAt is nil.
+	rec = Evaluate(rec, fp, time.Date(2200, 1, 1, 0, 0, 0, 0, time.UTC))
+	if rec.State != StateValid {
+		t.Fatalf("nil ExpiresAt: state = %v, want valid (perpetual)", rec.State)
+	}
+}
+
+func TestEvaluateReason(t *testing.T) {
+	fp := Compose("machine-a", "aa:bb:cc:dd:ee:ff")
+	newFP := Compose("machine-b", "11:22:33:44:55:66")
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	before := Record{State: StateValid, IssuedFingerprint: fp}
+	after := Evaluate(before, fp, now)
+	if got := EvaluateReason(before, after, fp, now); got != ReasonFingerprintMatch {
+		t.Errorf("matching fingerprint: reason = %v, want %v", got, ReasonFingerprintMatch)
+	}
+
+	after = Evaluate(before, newFP, now)
+	if got := EvaluateReason(before, after, newFP, now); got != ReasonFingerprintMismatchFirst {
+		t.Errorf("first mismatch: reason = %v, want %v", got, ReasonFingerprintMismatchFirst)
+	}
+
+	graceStart := now
+	before = Record{State: StateGrace, IssuedFingerprint: fp, GraceStartedAt: &graceStart}
+	elapsed := now.Add(GracePeriod)
+	after = Evaluate(before, newFP, elapsed)
+	if got := EvaluateReason(before, after, newFP, elapsed); got != ReasonGraceWindowElapsed {
+		t.Errorf("grace elapsed: reason = %v, want %v", got, ReasonGraceWindowElapsed)
+	}
+
+	past := now.Add(-time.Hour)
+	before = Record{State: StateValid, IssuedFingerprint: fp, Payload: Payload{ExpiresAt: &past}}
+	after = Evaluate(before, fp, now)
+	if got := EvaluateReason(before, after, fp, now); got != ReasonLicenseExpired {
+		t.Errorf("expired license: reason = %v, want %v", got, ReasonLicenseExpired)
+	}
+}
+
 func TestGraceExpiresAt(t *testing.T) {
 	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	rec := Record{State: StateGrace, GraceStartedAt: &t0}
