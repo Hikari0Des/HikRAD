@@ -109,28 +109,68 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
       - name: Syntax-check shell scripts
-        run: bash -n scripts/gen-env.sh scripts/gen-env.test.sh scripts/install.sh scripts/hikrad
+        run: |
+          bash -n scripts/gen-env.sh scripts/gen-env.test.sh scripts/install.sh scripts/hikrad \
+                  scripts/migrate-to-native.sh scripts/build-release-bundle.sh scripts/dev-run.sh \
+                  scripts/uninstall.sh scripts/quick-install.sh deploy/routeros/entrypoint.sh \
+                  deploy/routeros/build.sh backend/test/harness/run-smoke.sh
       - name: gen-env self-test (unique valid secrets twice)
         run: bash scripts/gen-env.test.sh
-      - name: install.sh idempotency (sandboxed root, no docker/compose)
+      # v4-2 (FR-118): install.sh's idempotency contract (gate item 3) —
+      # HIKRAD_ROOT_OVERRIDE sandboxes every frozen path under $RUNNER_TEMP
+      # so this never touches real system state; HIKRAD_SKIP_PACKAGES skips
+      # apt-get/postgres/freeradius provisioning (that's exercised for real
+      # in the harness-smoke job below via native freeradius) so this stays
+      # a fast, network-independent check of the actual idempotency logic:
+      # directory/user creation, hikrad.env write-once, port persistence.
+      - name: install.sh idempotency (sandboxed root, no packages installed)
         run: |
-          export HIKRAD_ROOT="$RUNNER_TEMP/hikrad-root"
-          export HIKRAD_SKIP_OS_CHECK=1 HIKRAD_SKIP_DOCKER=1
-          bash scripts/install.sh --no-start
-          test -f "$HIKRAD_ROOT/.env"
-          # Second run must refuse politely (exit 2) and change nothing.
-          before="$(sha256sum "$HIKRAD_ROOT/.env")"
-          if bash scripts/install.sh --no-start; then
-            echo "second install.sh run should have aborted"; exit 1
-          else
-            [ $? -eq 2 ] || { echo "expected exit 2 on existing install"; exit 1; }
-          fi
-          [ "$before" = "$(sha256sum "$HIKRAD_ROOT/.env")" ] || { echo ".env was modified on re-run"; exit 1; }
+          export HIKRAD_ROOT_OVERRIDE="$RUNNER_TEMP/hikrad-root"
+          export HIKRAD_SKIP_OS_CHECK=1 HIKRAD_SKIP_PACKAGES=1 HIKRAD_HTTP_PORT=8080
+          sudo -E bash scripts/install.sh --no-start
+          test -f "$HIKRAD_ROOT_OVERRIDE/etc/hikrad/hikrad.env"
+          before="$(sha256sum "$HIKRAD_ROOT_OVERRIDE/etc/hikrad/hikrad.env")"
+          before_meta="$(cat "$HIKRAD_ROOT_OVERRIDE/etc/hikrad/install.meta")"
+          # Re-run with a DIFFERENT HIKRAD_HTTP_PORT to prove install.meta's
+          # already-recorded port wins over the env var, not the other way
+          # around (gate item 3/5: the chosen port is never changed by a
+          # re-run once set).
+          export HIKRAD_HTTP_PORT=9090
+          sudo -E bash scripts/install.sh --no-start
+          after="$(sha256sum "$HIKRAD_ROOT_OVERRIDE/etc/hikrad/hikrad.env")"
+          after_meta="$(cat "$HIKRAD_ROOT_OVERRIDE/etc/hikrad/install.meta")"
+          [ "$before" = "$after" ] || { echo "hikrad.env was modified on re-run"; exit 1; }
+          [ "$before_meta" = "$after_meta" ] || { echo "install.meta (port/delivery mode) changed on re-run despite a different HIKRAD_HTTP_PORT"; exit 1; }
 
   harness-smoke:
     name: RADIUS harness smoke
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: timescale/timescaledb:latest-pg16
+        env:
+          POSTGRES_USER: hikrad
+          POSTGRES_PASSWORD: hikrad-ci
+          POSTGRES_DB: hikrad_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U hikrad -d hikrad_test"
+          --health-interval 5s --health-timeout 3s --health-retries 12
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 12
+    env:
+      HIKRAD_DB_URL: postgres://hikrad:hikrad-ci@127.0.0.1:5432/hikrad_test?sslmode=disable
+      HIKRAD_REDIS_URL: redis://127.0.0.1:6379/0
     steps:
       - uses: actions/checkout@v4
       - name: Detect harness target
@@ -140,8 +180,15 @@ jobs:
             echo "present=true" >> "$GITHUB_OUTPUT"
           else
             echo "present=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::backend test-harness-smoke target not present yet (Agent B) — skipping"
+            echo "::notice::backend test-harness-smoke target not present yet — skipping"
           fi
-      - name: Run harness smoke (simulated MikroTik NAS → FreeRADIUS → stub authorize)
+      - uses: actions/setup-go@v5
+        if: steps.detect.outputs.present == 'true'
+        with:
+          go-version-file: backend/go.mod
+      - name: Install FreeRADIUS (native, no Docker — v4-2/FR-118)
+        if: steps.detect.outputs.present == 'true'
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq freeradius
+      - name: Run harness smoke (simulated MikroTik NAS → native FreeRADIUS → hikrad-api authorize)
         if: steps.detect.outputs.present == 'true'
         run: make -C backend test-harness-smoke
