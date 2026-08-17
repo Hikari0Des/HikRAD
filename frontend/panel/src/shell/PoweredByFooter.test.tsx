@@ -14,7 +14,7 @@ import { BrandingProvider } from '../branding'
 // custom identity is configured — the two coexist rather than one crowding
 // out the other.
 
-function stubBrandingFetch() {
+function stubBrandingFetch(whiteLabel = false) {
   vi.stubGlobal(
     'fetch',
     vi.fn((input: RequestInfo | URL) => {
@@ -27,6 +27,7 @@ function stubBrandingFetch() {
               logo_url: null,
               theme_color: '#08748f',
               background_color: '#0f172a',
+              white_label: whiteLabel,
             }),
             { status: 200 },
           ),
@@ -80,5 +81,22 @@ describe('PoweredByFooter (FR-93)', () => {
 
     expect(await screen.findByText('Nur Net')).toBeInTheDocument()
     expect(screen.getByText(en.common.poweredBy)).toBeInTheDocument()
+  })
+
+  // FR-122/Decision 62, gate item 6: the mark is absent only when the
+  // signed licence grants white_label — nothing else can hide it.
+  it('is absent when the licence grants the white_label entitlement', async () => {
+    stubBrandingFetch(true)
+    window.localStorage.setItem('hikrad.access_token', 'access-abc')
+    window.localStorage.setItem('hikrad.refresh_token', 'refresh-def')
+    window.localStorage.setItem(
+      'hikrad.manager',
+      JSON.stringify({ id: 'm1', username: 'admin', role: 'admin' }),
+    )
+
+    renderAt('/')
+
+    expect(await screen.findByText('Nur Net')).toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByText(en.common.poweredBy)).not.toBeInTheDocument())
   })
 })

@@ -7,6 +7,10 @@ export interface Branding {
   logo_url: string | null
   theme_color: string | null
   background_color: string | null
+  /** FR-122/Decision 62: true only when a signed licence entitlement grants
+   * it. There is no settings key or panel control that sets this — see
+   * PoweredByFooter.tsx. */
+  white_label: boolean
 }
 
 const FALLBACK: Branding = {
@@ -14,6 +18,7 @@ const FALLBACK: Branding = {
   logo_url: null,
   theme_color: null,
   background_color: null,
+  white_label: false,
 }
 
 export async function getBranding(): Promise<Branding> {

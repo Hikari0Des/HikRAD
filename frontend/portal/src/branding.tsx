@@ -13,6 +13,7 @@ const FALLBACK: Branding = {
   logo_url: null,
   theme_color: null,
   background_color: null,
+  white_label: false,
 }
 
 const BrandingContext = createContext<Branding>(FALLBACK)

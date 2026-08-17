@@ -13,6 +13,7 @@ import (
 
 	"github.com/hikrad/hikrad/internal/httpapi"
 	"github.com/hikrad/hikrad/internal/platform"
+	"github.com/hikrad/hikrad/internal/platform/license"
 )
 
 type brandingResponse struct {
@@ -20,6 +21,16 @@ type brandingResponse struct {
 	LogoURL         *string `json:"logo_url"`
 	ThemeColor      *string `json:"theme_color"`
 	BackgroundColor *string `json:"background_color"`
+
+	// WhiteLabel (FR-122, Decision 62) is true only when the installed
+	// license's SIGNED payload grants the white_label entitlement — never a
+	// settings value. This is the one field on this public, unauthenticated
+	// endpoint that both PoweredByFooter components (panel and portal) read
+	// to decide whether to render the HikRAD attribution mark; there is no
+	// settings key, no PUT, and no panel UI path anywhere that writes this
+	// value — it is derived fresh from platform.LicenseHasEntitlement on
+	// every request.
+	WhiteLabel bool `json:"white_label"`
 }
 
 func (m *Module) brandingHandler(w http.ResponseWriter, r *http.Request) {
@@ -33,6 +44,7 @@ func (m *Module) brandingHandler(w http.ResponseWriter, r *http.Request) {
 		resp.ThemeColor = id.ThemeColor
 		resp.BackgroundColor = id.BackgroundColor
 	}
+	resp.WhiteLabel = platform.LicenseHasEntitlement(license.EntitlementWhiteLabel)
 	httpapi.JSON(w, http.StatusOK, resp)
 }
 
