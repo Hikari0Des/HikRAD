@@ -8,10 +8,11 @@
 #
 #   sudo ./scripts/uninstall.sh [--yes] [--keep-data] [--purge]
 #
-# What it removes: the compose stack + its images, the nightly backup cron
-# entry, the CLI wrapper, and (with consent) the data directory. Backups and
-# .env (which holds the backup passphrase) are kept unless --purge. Docker
-# Engine is never removed.
+# What it removes (v4-2, FR-119): every hikrad-* systemd unit, the nightly
+# backup timer, the nginx site, the CLI wrapper, and (with consent) the data
+# directory. Backups and hikrad.env (which holds the backup passphrase) are
+# kept unless --purge. PostgreSQL/Redis/nginx/FreeRADIUS packages are never
+# removed — they may serve other workloads.
 
 set -euo pipefail
 

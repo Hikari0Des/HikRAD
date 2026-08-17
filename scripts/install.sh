@@ -1,59 +1,91 @@
 #!/usr/bin/env bash
-# install.sh — HikRAD production installer (FR-49.1/49.4/49.5; Phase 1 Agent
-# A, finalized Phase 5; bundle mode added v2 phase 5, FR-81.4).
+# install.sh — HikRAD native installer (v4-2, FR-118). Provisions PostgreSQL
+# + TimescaleDB, FreeRADIUS 3 (with zero-restart dynamic NAS clients), nginx,
+# and the six hikrad-* systemd units directly on a Linux host — Docker is
+# CANCELLED as the delivery mechanism (Decision 57); nothing here installs
+# or depends on it. The RouterOS container target (Decision 58) is a
+# completely separate, single-image artifact built by
+# deploy/routeros/build.sh — this script never touches it.
+#
+# Supported: Ubuntu 22.04/24.04/26.04 LTS, Debian 12/13 (tested tier).
+# Other systemd Linux is accepted with a warning (Decision 55 stands).
 #
 # Two modes:
-#   Source (dev-only, unchanged):
-#     sudo ./scripts/install.sh [--no-start] [--domain panel.example.isp]
-#     Run from an unpacked HikRAD checkout — docker compose builds images
-#     from backend/deploy/frontend. This is what `make up` uses.
 #   Bundle (production — no source tree, no Go/Node toolchain required):
-#     sudo ./scripts/install.sh --bundle hikrad-vX.Y.Z.tar [--no-start] [--domain ...]
+#     sudo ./scripts/install.sh --bundle hikrad-vX.Y.Z.tar
 #     Verifies the bundle's signature (scripts/verify-bundle.sh) BEFORE
-#     touching anything, then uses its compose.yml (image: tags, no build:)
-#     and runtime config — no image is ever built on the customer's server.
+#     touching anything, then installs its prebuilt binaries + frontend
+#     build + FreeRADIUS config straight onto this host.
+#   Source (dev-only, needs a full checkout + Go/Node toolchains on THIS
+#   host to build first — see docs/ops/dev-setup.md for the lighter-weight
+#   `go run`/`npm run dev` inner loop instead of this):
+#     sudo ./scripts/install.sh
 #
-# What it does on a clean server:
-#   1. Checks the OS: Ubuntu 22.04/24.04 LTS is the tested tier and passes
-#      silently; any other Linux distro is accepted with a warning (PRD
-#      Decision 55 — HikRAD's only real OS dependency is Docker + optionally
-#      systemd, both broadly available). Also warns (never blocks — small
-#      labs/VMs are legitimate) if below the NFR-3 hardware tier.
-#   2. Installs Docker Engine + Compose plugin if missing.
-#   3. Creates /opt/hikrad/{data,backups,licenses} and generates secrets
-#      into /opt/hikrad/.env (HIKRAD_ENV=prod), including a backup
-#      passphrase printed ONCE below — write it down (FR-51.1, deliberately
-#      unrecoverable if both copies are lost). With --bundle: also verifies
-#      and stages the release into /opt/hikrad/release/ (FR-81.3/81.4).
-#   4. Installs the `hikrad` CLI wrapper to /usr/local/bin and a nightly
-#      backup cron entry (FR-51.1).
-#   5. With --domain: points Caddy at that hostname for Let's Encrypt;
-#      without it, Caddy's default self-signed cert is used (NFR-4, FR-49.5).
-#   6. Starts the stack: `docker compose up -d --build` in source mode, or
-#      `docker compose up -d` (images already loaded from the bundle, no
-#      build) in bundle mode. The first-run wizard (license, admin, branding,
-#      NAS, profile) then runs at the panel URL.
-#
-# Idempotent: re-running against an existing install NEVER touches data/. It
-# offers an update/repair menu instead (interactive) or prints guidance and
-# exits 2 (non-interactive / scripted re-run, e.g. CI's install.sh self-test).
+# THE CONTRACT THIS SCRIPT MUST HOLD ON EVERY RE-RUN (gate items 1, 3, 7):
+#   - idempotent: re-running upgrades in place — new binaries/config/units
+#     are (re)written every run, since that IS how an upgrade is applied —
+#     but /etc/hikrad/hikrad.env (secrets) is written ONLY if absent, the
+#     chosen nginx port is recorded once and never re-prompted/changed, and
+#     directory ownership is (re)applied on EVERY run, fresh install or
+#     upgrade alike (anti-pattern A11 — the fix must not only touch the
+#     fresh-install path).
+#   - non-interactive via env vars: HIKRAD_DB_PASS, HIKRAD_HTTP_PORT,
+#     HIKRAD_CF_TOKEN, HIKRAD_VERBOSE, NO_COLOR. Every prompt happens before
+#     any change is made — never mid-run.
 #
 # Test/override knobs (not for production use):
-#   HIKRAD_ROOT           install root (default /opt/hikrad)
-#   HIKRAD_SKIP_OS_CHECK  =1 skips the OS check entirely (root + /etc/os-release
-#                         readable are otherwise required; non-Ubuntu already
-#                         just warns and proceeds, see step 1)
-#   HIKRAD_SKIP_DOCKER    =1 skips Docker presence/install
-#   --no-start            do everything except `docker compose up`
-#   --domain <fqdn>       configure Caddy for Let's Encrypt on this hostname
-#   --bundle <path>       install from a signed offline bundle (FR-81) instead
-#                         of building images from source — see above
+#   HIKRAD_SKIP_OS_CHECK   =1 skips the OS/root check
+#   HIKRAD_SKIP_PACKAGES   =1 skips apt-get entirely (assumes postgres/
+#                           freeradius/nginx already present — CI/sandboxed
+#                           idempotency checks only, mirrors the old
+#                           HIKRAD_SKIP_DOCKER knob)
+#   HIKRAD_ROOT_OVERRIDE   remaps the frozen /opt,/etc,/var paths under a
+#                           prefix for a sandboxed test run (never set in
+#                           production — the frozen contract is real paths)
+#   --no-start             do everything except starting/restarting units
+#   --domain <fqdn>        run certbot for a real TLS cert on this hostname
+#   --bundle <path>        install from a signed offline bundle instead of
+#                           building from a source checkout
 
 set -euo pipefail
+shopt -s nullglob
+# `install -d -m MODE dir` only forces MODE on the directories explicitly
+# named — any ANCESTOR it has to create implicitly along the way (e.g.
+# /opt/hikrad, which is never itself a named target — only /opt/hikrad/bin
+# etc. are) gets created under the INVOKING shell's umask instead. Found
+# live: `sudo bash install.sh` under a caller with a restrictive personal
+# umask (027) silently produced /opt/hikrad at 0750 root:root, which then
+# made every hikrad-api/-acct/-monitor unit crash-loop with "Permission
+# denied" at exec — systemd's EXEC step needs the whole ancestor chain
+# traversable by the unit's own non-root user, and 0750 root:root blocks
+# that regardless of the binary's own 0755. A fixed umask makes every
+# directory this script creates predictable regardless of who invokes it.
+umask 022
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-HIKRAD_ROOT="${HIKRAD_ROOT:-/opt/hikrad}"
+
+# --- frozen paths (docs/v4/phases/phase-v4-2-native-install/00-phase.md §4) -
+# HIKRAD_ROOT_OVERRIDE exists ONLY so the scripts CI job and local rehearsal
+# can point this whole tree at a sandboxed prefix without root — production
+# installs never set it, so every path below is the real, frozen one.
+PREFIX="${HIKRAD_ROOT_OVERRIDE:-}"
+BIN_DIR="$PREFIX/opt/hikrad/bin"
+WWW_DIR="$PREFIX/opt/hikrad/www"
+MIGRATIONS_DIR="$PREFIX/opt/hikrad/migrations"
+VERSION_FILE="$PREFIX/opt/hikrad/VERSION"
+RELEASE_ROLLBACK_DIR="$PREFIX/opt/hikrad/release.rollback"
+ETC_DIR="$PREFIX/etc/hikrad"
+ENV_FILE="$ETC_DIR/hikrad.env"
+META_FILE="$ETC_DIR/install.meta"
+TLS_DIR="$ETC_DIR/tls"
+FR_DIR="$ETC_DIR/freeradius"
+VAR_DIR="$PREFIX/var/lib/hikrad"
+BACKUP_DIR="$PREFIX/var/backups/hikrad"
+SYSTEMD_DIR="$PREFIX/etc/systemd/system"
+NGINX_AVAILABLE="$PREFIX/etc/nginx/sites-available"
+NGINX_ENABLED="$PREFIX/etc/nginx/sites-enabled"
+
 NO_START=0
 DOMAIN=""
 BUNDLE=""
@@ -63,443 +95,579 @@ while [ $# -gt 0 ]; do
         --no-start) NO_START=1; shift ;;
         --domain) DOMAIN="${2:?--domain requires a hostname}"; shift 2 ;;
         --bundle) BUNDLE="${2:?--bundle requires a path to a hikrad-vX.Y.Z.tar file}"; shift 2 ;;
-        -h|--help) sed -n '2,36p' "$0"; exit 0 ;;
+        -h|--help) sed -n '2,45p' "$0"; exit 0 ;;
         *) echo "error: unknown argument '$1' (see --help)" >&2; exit 1 ;;
     esac
 done
 
-log()  { printf '[hikrad-install] %s\n' "$*"; }
+# --- logging (NO_COLOR / HIKRAD_VERBOSE, frozen env names) ------------------
+if [ -t 1 ] && [ "${NO_COLOR:-}" = "" ]; then
+    C_BLUE=$'\033[1;34m'; C_YELLOW=$'\033[1;33m'; C_RESET=$'\033[0m'
+else
+    C_BLUE=""; C_YELLOW=""; C_RESET=""
+fi
+log()  { printf '%s[hikrad-install]%s %s\n' "$C_BLUE" "$C_RESET" "$*"; }
+warn() { printf '%s[hikrad-install] WARNING:%s %s\n' "$C_YELLOW" "$C_RESET" "$*" >&2; }
 die()  { printf '[hikrad-install] ERROR: %s\n' "$*" >&2; exit 1; }
+vlog() { [ "${HIKRAD_VERBOSE:-0}" = "1" ] && printf '[hikrad-install][v] %s\n' "$*" || true; }
 
-# --- 0. Existing install? Offer update/repair instead of reinstalling. ------
-if [ -e "$HIKRAD_ROOT/.env" ] || [ -e "$HIKRAD_ROOT/install.meta" ]; then
-    log "An existing HikRAD installation was found at $HIKRAD_ROOT — data/ is untouched."
-    if [ -t 0 ] && [ -t 1 ]; then
-        cat <<EOF
-
-What would you like to do?
-  1) Update to the latest version (hikrad update — takes a pre-update backup)
-  2) Repair: re-run this installer's non-destructive steps (CLI wrapper,
-     cron entry) without touching secrets or data
-  3) Show status and exit
-  4) Exit
-
-EOF
-        read -r -p "Choice [1-4]: " choice
-        case "$choice" in
-            1) exec /usr/local/bin/hikrad update ;;
-            2) log "Repairing CLI wrapper + cron entry only…" ;; # falls through to steps 3b/3c below
-            3) exec /usr/local/bin/hikrad status ;;
-            *) log "Exiting. Nothing changed."; exit 0 ;;
-        esac
-    else
-        log "Non-interactive re-run: not making changes. Use one of:"
-        log "    hikrad update             # versioned update, pre-backed-up"
-        log "    hikrad status              # show service health"
-        exit 2
-    fi
-fi
-
-REPAIR_ONLY=0
-[ "${choice:-}" = "2" ] && REPAIR_ONLY=1
-
-# RELEASE_DIR / CHECKOUT_DIR / SCRIPTS_SRC_DIR (v2 phase 5, FR-81.4): where
-# compose.yml + runtime config, the "checkout-equivalent" root (VERSION,
-# migrations), and the scripts/ to install the CLI wrapper from actually
-# live — source mode vs. bundle mode. Resolved once, used by every step
-# below (both the REPAIR_ONLY branch, whose idempotent chown/cert fixups run
-# unconditionally, and the fresh-install branch). On a repair of an existing
-# install, these are read back out of install.meta rather than re-derived —
-# a repair run does not necessarily pass --bundle again, and the original
-# install's own compose file is the only source of truth for where its
-# runtime config actually lives.
-if [ -f "$HIKRAD_ROOT/install.meta" ]; then
+# --- 1. OS + privilege check -------------------------------------------------
+if [ "${HIKRAD_SKIP_OS_CHECK:-0}" != "1" ]; then
+    [ "$(id -u)" -eq 0 ] || die "must run as root (sudo ./scripts/install.sh)"
+    [ -r /etc/os-release ] || die "cannot read /etc/os-release — not a systemd-standard Linux; set HIKRAD_SKIP_OS_CHECK=1 to install anyway."
     # shellcheck disable=SC1091
-    . "$HIKRAD_ROOT/install.meta"
-    RELEASE_DIR="$(dirname "$HIKRAD_COMPOSE_FILE")"
-    CHECKOUT_DIR="$HIKRAD_CHECKOUT"
-else
-    RELEASE_DIR="$REPO_DIR/deploy"
-    CHECKOUT_DIR="$REPO_DIR"
+    . /etc/os-release
+    case "${ID:-}:${VERSION_ID:-}" in
+        ubuntu:22.04|ubuntu:24.04|ubuntu:26.04) log "OS check passed: $PRETTY_NAME" ;;
+        debian:12|debian:13) log "OS check passed: $PRETTY_NAME" ;;
+        *) warn "$PRETTY_NAME is not the QA'd tier (Ubuntu 22.04/24.04/26.04 LTS, Debian 12/13) — continuing anyway (Decision 55). Set HIKRAD_SKIP_OS_CHECK=1 to skip this check entirely." ;;
+    esac
+    command -v systemctl >/dev/null 2>&1 || die "systemd (systemctl) not found — the native installer requires it. Set HIKRAD_SKIP_OS_CHECK=1 only for a sandboxed --no-start rehearsal with no real service management."
 fi
-SCRIPTS_SRC_DIR="$SCRIPT_DIR"
 
-if [ "$REPAIR_ONLY" -eq 0 ]; then
-    # --- 1. OS + privilege + hardware checks ---------------------------------
-    if [ "${HIKRAD_SKIP_OS_CHECK:-0}" != "1" ]; then
-        [ "$(id -u)" -eq 0 ] || die "must run as root (sudo ./scripts/install.sh)"
-        [ -r /etc/os-release ] || die "cannot read /etc/os-release — not a systemd-standard Linux; set HIKRAD_SKIP_OS_CHECK=1 to install anyway."
-        # shellcheck disable=SC1091
-        . /etc/os-release
+# --- 2. Resolve the HTTP port BEFORE any work begins (frozen: every prompt --
+# happens up front, never mid-run — non-interactive via HIKRAD_HTTP_PORT).
+# Once chosen, it is recorded in install.meta and NEVER re-prompted or
+# changed by a later re-run (gate items 3 and 5).
+#
+# HIKRAD_INTERNAL_API_PORT: hikrad-api always binds 127.0.0.1:8080
+# (cmd/hikrad-api/main.go) — fixed, not configurable, since nginx/
+# FreeRADIUS/hikrad-updaterd all assume it. The PUBLIC nginx port must never
+# be the same number: found live (v4-2's first real install run) — 8080 is
+# also the single most common "port 80 is taken, try this instead" instinct
+# a human or a script reaches for, and it used to be this script's own
+# suggested default, so an operator following the obvious prompt landed
+# nginx and hikrad-api on the same port and hikrad-api crash-looped forever
+# on "bind: address already in use" the moment nginx (which starts first,
+# via its own apt postinst) claimed 8080.
+readonly HIKRAD_INTERNAL_API_PORT=8080
 
-        # PRD Decision 55: HikRAD's only real OS-level dependencies are Docker
-        # Engine + the Compose plugin (installed automatically below via
-        # get.docker.com, which itself supports every mainstream distro) and,
-        # optionally, systemd (only for the one-click-update daemon — step 4b
-        # already degrades gracefully with a warning if systemctl is absent).
-        # Ubuntu 22.04/24.04 LTS remains the only combination this release is
-        # actually QA'd against (what "the supported tier" in NFR-3/AC-49a
-        # means) — every other distro is accepted but flagged, the same
-        # "warn, never block" posture NFR-3 already applies to hardware,
-        # since small labs, VMs, and non-Ubuntu servers are legitimate
-        # deployments HikRAD just hasn't been formally gated on.
-        if [ "${ID:-}" = "ubuntu" ] && { [ "${VERSION_ID:-}" = "22.04" ] || [ "${VERSION_ID:-}" = "24.04" ]; }; then
-            log "OS check passed: $PRETTY_NAME"
+port_in_use() { # port_in_use PORT -> 0 if something is already listening
+    command -v ss >/dev/null 2>&1 && ss -ltn "( sport = :$1 )" 2>/dev/null | grep -q ":$1" && return 0
+    command -v ss >/dev/null 2>&1 || return 1
+    return 1
+}
+
+resolve_http_port() {
+    local existing=""
+    if [ -f "$META_FILE" ]; then
+        # shellcheck disable=SC1090
+        existing="$(. "$META_FILE" 2>/dev/null; echo "${HIKRAD_HTTP_PORT:-}")"
+    fi
+    if [ -n "$existing" ]; then
+        HTTP_PORT="$existing"
+        log "Re-using previously chosen HTTP port: $HTTP_PORT (never changed by a re-run)"
+        if [ "$HTTP_PORT" = "$HIKRAD_INTERNAL_API_PORT" ]; then
+            die "install.meta has HIKRAD_HTTP_PORT=$HIKRAD_INTERNAL_API_PORT, which collides with hikrad-api's own fixed internal port — this install predates the fix for that collision. Edit $META_FILE, change HIKRAD_HTTP_PORT to something else, then re-run."
+        fi
+        return
+    fi
+    if [ -n "${HIKRAD_HTTP_PORT:-}" ]; then
+        HTTP_PORT="$HIKRAD_HTTP_PORT"
+        log "Using HIKRAD_HTTP_PORT=$HTTP_PORT (non-interactive)"
+        if [ "$HTTP_PORT" = "$HIKRAD_INTERNAL_API_PORT" ]; then
+            die "HIKRAD_HTTP_PORT=$HIKRAD_INTERNAL_API_PORT collides with hikrad-api's own fixed internal port ($HIKRAD_INTERNAL_API_PORT) — choose a different port."
+        fi
+        return
+    fi
+    HTTP_PORT=80
+    if port_in_use 80; then
+        if [ -t 0 ] && [ -t 1 ]; then
+            warn "port 80 is already in use by something else on this host."
+            while :; do
+                read -r -p "Enter an alternative HTTP port to use instead [8880]: " chosen
+                HTTP_PORT="${chosen:-8880}"
+                if [ "$HTTP_PORT" = "$HIKRAD_INTERNAL_API_PORT" ]; then
+                    warn "$HIKRAD_INTERNAL_API_PORT is hikrad-api's own fixed internal port — choose a different number."
+                    continue
+                fi
+                break
+            done
         else
-            log "WARNING: $PRETTY_NAME is not the QA'd tier (Ubuntu 22.04/24.04 LTS) — continuing anyway. Docker + (optionally) systemd are HikRAD's only real OS dependencies. Set HIKRAD_SKIP_OS_CHECK=1 to skip this check entirely."
+            die "port 80 is in use and this is a non-interactive run — set HIKRAD_HTTP_PORT=<port> (not $HIKRAD_INTERNAL_API_PORT) and re-run."
         fi
-
-        # NFR-3 tier: warn, never block (small labs / VMs are legitimate — this
-        # IS the override; there is no separate flag to bypass a check that
-        # never blocks in the first place).
-        cpus="$(nproc 2>/dev/null || echo 0)"
-        mem_kb="$(awk '/MemTotal/ {print $2}' /proc/meminfo 2>/dev/null || echo 0)"
-        disk_gb="$(df -BG --output=avail / 2>/dev/null | tail -1 | tr -dc '0-9' || echo 0)"
-        [ "$cpus" -ge 4 ]            || log "WARNING: $cpus vCPU found; the supported tier is 4 vCPU (NFR-3)."
-        [ "$mem_kb" -ge 7000000 ]    || log "WARNING: <8 GB RAM found; the supported tier is 8 GB (NFR-3)."
-        [ "${disk_gb:-0}" -ge 180 ]  || log "WARNING: <200 GB free disk; the supported tier is 200 GB SSD (NFR-3)."
     fi
+}
+resolve_http_port
+HTTPS_PORT=$((HTTP_PORT == 80 ? 443 : HTTP_PORT + 1))
+if [ -f "$META_FILE" ]; then
+    # shellcheck disable=SC1090
+    existing_https="$(. "$META_FILE" 2>/dev/null; echo "${HIKRAD_HTTPS_PORT:-}")"
+    if [ -n "${existing_https:-}" ]; then HTTPS_PORT="$existing_https"; fi
+fi
+[ "$HTTPS_PORT" != "$HIKRAD_INTERNAL_API_PORT" ] \
+    || die "the derived HTTPS port ($HTTPS_PORT, one above HIKRAD_HTTP_PORT=$HTTP_PORT) collides with hikrad-api's own fixed internal port — choose a different HIKRAD_HTTP_PORT."
 
-    # --- 2. Docker Engine + Compose plugin -----------------------------------
-    if [ "${HIKRAD_SKIP_DOCKER:-0}" != "1" ]; then
-        if ! command -v docker >/dev/null 2>&1; then
-            log "Docker not found — installing Docker Engine (get.docker.com)…"
-            log "(Offline servers: install Docker from your OS media first, then re-run.)"
-            curl -fsSL https://get.docker.com | sh
+# --- 3. OS package dependencies (idempotent — apt-get install is already a --
+# no-op on an already-satisfied package; TimescaleDB/PGDG repo files are only
+# added if missing).
+if [ "${HIKRAD_SKIP_PACKAGES:-0}" != "1" ]; then
+    command -v apt-get >/dev/null 2>&1 || die "apt-get not found — this installer currently supports Debian/Ubuntu package management only (Decision 55's 'warn, never silently half-install' — file an issue for other distros)."
+    export DEBIAN_FRONTEND=noninteractive
+
+    # shellcheck disable=SC1091
+    . /etc/os-release
+    log "Installing OS package dependencies…"
+    apt-get update -qq
+
+    # PostgreSQL + TimescaleDB: add the upstream repos only if not already
+    # present (idempotent — a second run must not duplicate apt sources).
+    if [ ! -f /etc/apt/sources.list.d/pgdg.list ]; then
+        install -d -m 0755 /usr/share/keyrings
+        curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+            | gpg --dearmor -o /usr/share/keyrings/postgresql.gpg
+        # gpg --dearmor writes 0600 root:root by default — apt's sandboxed
+        # _apt user (Debian trixie/modern Ubuntu privilege-separate the
+        # actual fetch+verify step) can't read that, and the repo add
+        # fails with a confusing "not signed" error that looks like a
+        # signature problem, not a permissions one (found live: v4-2's
+        # first real install run on Debian 13).
+        chmod 0644 /usr/share/keyrings/postgresql.gpg
+        echo "deb [signed-by=/usr/share/keyrings/postgresql.gpg] https://apt.postgresql.org/pub/repos/apt ${VERSION_CODENAME}-pgdg main" \
+            > /etc/apt/sources.list.d/pgdg.list
+    fi
+    if [ ! -f /etc/apt/sources.list.d/timescaledb.list ]; then
+        install -d -m 0755 /usr/share/keyrings
+        curl -fsSL https://packagecloud.io/timescale/timescaledb/gpgkey \
+            | gpg --dearmor -o /usr/share/keyrings/timescaledb.gpg
+        chmod 0644 /usr/share/keyrings/timescaledb.gpg
+        echo "deb [signed-by=/usr/share/keyrings/timescaledb.gpg] https://packagecloud.io/timescale/timescaledb/${ID}/ ${VERSION_CODENAME} main" \
+            > /etc/apt/sources.list.d/timescaledb.list
+    fi
+    apt-get update -qq
+
+    apt-get install -y -qq \
+        postgresql postgresql-contrib \
+        freeradius freeradius-utils \
+        nginx \
+        wireguard wireguard-tools \
+        openssl gnupg curl ca-certificates \
+        redis-server \
+        cron \
+        || die "package installation failed — see apt-get's own output above"
+
+    # TimescaleDB's package name is versioned to the installed PG major
+    # version (e.g. timescaledb-2-postgresql-16); resolve it rather than
+    # hardcoding one PG version across every supported OS release.
+    pg_major="$(pg_config --version 2>/dev/null | grep -oE '[0-9]+' | head -1)"
+    [ -n "$pg_major" ] || pg_major="$(psql -V 2>/dev/null | grep -oE '[0-9]+' | head -1)"
+    if [ -n "$pg_major" ]; then
+        if apt-get install -y -qq "timescaledb-2-postgresql-${pg_major}"; then
+            # The package alone is not enough — TimescaleDB is a shared-
+            # preload extension; CREATE EXTENSION fails with "must be
+            # preloaded" until shared_preload_libraries names it AND
+            # postgres has been restarted to actually load it (found live:
+            # v4-2's first real install run — the package installed clean,
+            # the extension still failed). timescaledb-tune is the
+            # package's own recommended, idempotent way to do this.
+            if command -v timescaledb-tune >/dev/null 2>&1; then
+                timescaledb-tune --quiet --yes >/dev/null 2>&1 \
+                    || warn "timescaledb-tune failed — add 'timescaledb' to shared_preload_libraries in postgresql.conf manually, then restart postgresql."
+                systemctl restart postgresql \
+                    || warn "postgresql restart after timescaledb-tune failed — CREATE EXTENSION timescaledb will keep failing until it's restarted."
+                for i in $(seq 1 15); do
+                    pg_isready >/dev/null 2>&1 && break
+                    sleep 1
+                done
+            else
+                warn "timescaledb-tune not found — add 'timescaledb' to shared_preload_libraries in postgresql.conf manually, then restart postgresql."
+            fi
+        else
+            warn "timescaledb-2-postgresql-${pg_major} failed to install — TimescaleDB features will be unavailable until this is resolved manually."
         fi
-        docker compose version >/dev/null 2>&1 \
-            || die "Docker Compose plugin missing. Install docker-compose-plugin and re-run."
-        log "Docker OK: $(docker --version)"
-    fi
-
-    command -v gpg >/dev/null 2>&1 || log "WARNING: gpg not found — install gnupg before your first 'hikrad backup now' (backups are passphrase-encrypted, FR-51.1)."
-
-    # --- 3. Layout + secrets --------------------------------------------------
-    log "Creating $HIKRAD_ROOT/{data,backups,licenses}…"
-    mkdir -p "$HIKRAD_ROOT/data" "$HIKRAD_ROOT/backups" "$HIKRAD_ROOT/licenses"
-    chmod 750 "$HIKRAD_ROOT"
-
-    log "Generating secrets into $HIKRAD_ROOT/.env…"
-    # Invoked via bash explicitly, not relying on gen-env.sh's own executable
-    # bit: a checkout obtained via GitHub's "Download ZIP" (vs. `git clone`,
-    # which preserves git's tracked file mode) strips execute bits from every
-    # file, and gen-env.sh silently failing with "Permission denied" was found
-    # live in the Phase-5 M4 gate rehearsal on a genuinely fresh Ubuntu box.
-    bash "$SCRIPT_DIR/gen-env.sh" --env prod "$HIKRAD_ROOT/.env"
-    {
-        echo "HIKRAD_DATA_DIR=$HIKRAD_ROOT/data"
-        echo "HIKRAD_BACKUP_DIR=$HIKRAD_ROOT/backups"
-    } >> "$HIKRAD_ROOT/.env"
-
-    # --- 3a. Bundle staging (FR-81.3/81.4, v2 phase 5): verify, THEN place --
-    # A bundle is extracted to its own scratch dir and verified there before
-    # anything is copied into $HIKRAD_ROOT — a failed verification leaves the
-    # live install (if any) completely untouched (FR-81.3's "no partial
-    # effect"). Only on success do RELEASE_DIR/CHECKOUT_DIR/SCRIPTS_SRC_DIR
-    # get pointed at the now-staged, verified copy for the rest of this run.
-    HIKRAD_DELIVERY_MODE=source
-    if [ -n "$BUNDLE" ]; then
-        [ -f "$BUNDLE" ] || die "--bundle file not found: $BUNDLE"
-        log "Verifying release bundle $BUNDLE before using anything from it…"
-        BUNDLE_SCRATCH="$(mktemp -d)"
-        trap 'rm -rf "$BUNDLE_SCRATCH"' EXIT
-        tar -xf "$BUNDLE" -C "$BUNDLE_SCRATCH"
-        bash "$BUNDLE_SCRATCH/scripts/verify-bundle.sh" "$BUNDLE_SCRATCH" \
-            || die "bundle verification failed — refusing to install from $BUNDLE (nothing was changed)"
-
-        log "Bundle verified. Loading images into Docker…"
-        for image_tar in "$BUNDLE_SCRATCH"/images/*.tar; do
-            [ -e "$image_tar" ] || continue   # empty images/ (HIKRAD_SKIP_IMAGE_BUILD rehearsal bundles)
-            log "  docker load -i $(basename "$image_tar")"
-            docker load -i "$image_tar"
-        done
-
-        log "Staging release into $HIKRAD_ROOT/release…"
-        mkdir -p "$HIKRAD_ROOT/release"
-        cp -r "$BUNDLE_SCRATCH/compose.yml" "$BUNDLE_SCRATCH/freeradius" "$BUNDLE_SCRATCH/caddy" \
-              "$BUNDLE_SCRATCH/scripts" "$BUNDLE_SCRATCH/migrations" "$BUNDLE_SCRATCH/manifest.json" \
-              "$HIKRAD_ROOT/release/"
-        [ -f "$BUNDLE_SCRATCH/VERSION" ] && cp "$BUNDLE_SCRATCH/VERSION" "$HIKRAD_ROOT/release/"
-        rm -rf "$BUNDLE_SCRATCH"
-        trap - EXIT
-
-        RELEASE_DIR="$HIKRAD_ROOT/release"
-        CHECKOUT_DIR="$HIKRAD_ROOT/release"
-        SCRIPTS_SRC_DIR="$HIKRAD_ROOT/release/scripts"
-        HIKRAD_DELIVERY_MODE=bundle
-        log "Release staged at $RELEASE_DIR (delivery mode: bundle — no source tree, no build on this server)."
-    fi
-
-    # --- 3b. TLS: Let's Encrypt if --domain given, else self-signed default --
-    if [ -n "$DOMAIN" ]; then
-        log "Configuring Caddy for Let's Encrypt on $DOMAIN…"
-        CADDYFILE="$RELEASE_DIR/caddy/Caddyfile"
-        cp "$CADDYFILE" "$CADDYFILE.orig"
-        sed -i \
-            -e "s/^:443 {/${DOMAIN}:443 {/" \
-            -e '/^\ttls \/etc\/caddy\/selfsigned\//d' \
-            "$CADDYFILE"
-        log "Caddyfile updated (original saved as Caddyfile.orig). Point $DOMAIN's DNS at this server before starting, or Let's Encrypt issuance will retry until it can."
     else
-        log "No --domain given: using a self-signed cert (browsers will warn until you trust it, or re-run with --domain later)."
+        warn "could not detect the installed PostgreSQL major version — skipping the TimescaleDB package; install timescaledb-2-postgresql-<N> manually."
     fi
 
-    # Record where the release sources live so the `hikrad` wrapper finds
-    # them, and how this install obtained its images (HIKRAD_DELIVERY_MODE:
-    # bundle|source — hikrad update reads this to decide its own default mode).
-    cat > "$HIKRAD_ROOT/install.meta" <<EOF
-# Written by install.sh $(date -u +%Y-%m-%dT%H:%M:%SZ) — read by /usr/local/bin/hikrad.
-HIKRAD_CHECKOUT=$CHECKOUT_DIR
-HIKRAD_COMPOSE_FILE=$RELEASE_DIR/compose.yml
-HIKRAD_ENV_FILE=$HIKRAD_ROOT/.env
-HIKRAD_DELIVERY_MODE=$HIKRAD_DELIVERY_MODE
-EOF
+    # cloudflared: installed but inert until `hikrad tunnel enable` (FR-118
+    # §3.1 step 8 — "installed but inert until configured").
+    if ! command -v cloudflared >/dev/null 2>&1; then
+        arch="$(dpkg --print-architecture)"
+        curl -fsSL "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-${arch}" \
+            -o /usr/local/bin/cloudflared \
+            && chmod 0755 /usr/local/bin/cloudflared \
+            || warn "cloudflared download failed — Settings > Remote Access will be unavailable until it's installed manually."
+    fi
+
+    systemctl enable --now postgresql >/dev/null 2>&1 || true
+    systemctl enable --now redis-server >/dev/null 2>&1 || true
+
+    # The distro's OWN freeradius.service must never run — hikrad-radius-
+    # worker.service (below) is a second, HikRAD-owned instance of the same
+    # binary pointed at /etc/hikrad/freeradius; running both would fight over
+    # UDP 1812/1813/3799.
+    systemctl disable --now freeradius >/dev/null 2>&1 || true
+else
+    log "HIKRAD_SKIP_PACKAGES=1: skipping apt-get (assuming postgres/freeradius/nginx/redis are already present)"
 fi
 
-# --- 3c2. Backfill HIKRAD_UPDATER_TOKEN into an existing .env (idempotent; --
-# also runs on repair). An install from before v2 phase 7 has no such key —
-# compose.yml treats it as optional so hikrad-api still boots either way
-# (see its own comment), but a real token here is what actually provisions
-# the one-click updater on THIS install the next time this script runs.
-# `hikrad update` alone never re-runs install.sh (it only swaps images), so a
-# pre-existing install must run install.sh (source or --bundle, or --repair
-# on an already-updated one) at least once to pick this feature up at all —
-# documented in docs/ops/update.md.
-if [ -f "$HIKRAD_ROOT/.env" ] && ! grep -q '^HIKRAD_UPDATER_TOKEN=' "$HIKRAD_ROOT/.env" && command -v openssl >/dev/null 2>&1; then
-    echo "HIKRAD_UPDATER_TOKEN=$(openssl rand -base64 32 | tr -d '\n')" >> "$HIKRAD_ROOT/.env"
-    log "Backfilled HIKRAD_UPDATER_TOKEN into an existing .env (one-click updater now provisioned)."
+# --- 4. PostgreSQL: detect existing role/db, create idempotently, refuse ----
+# with a stated reason rather than silently reusing a wrong instance.
+if [ "${HIKRAD_SKIP_PACKAGES:-0}" != "1" ]; then
+    command -v psql >/dev/null 2>&1 || die "psql not found after package install — PostgreSQL provisioning cannot continue."
+    systemctl is-active --quiet postgresql \
+        || die "PostgreSQL service is not active after install — check 'systemctl status postgresql' and re-run."
+
+    PG_PASSWORD="${HIKRAD_DB_PASS:-}"
+    if [ -f "$ENV_FILE" ]; then
+        PG_PASSWORD="$(grep '^POSTGRES_PASSWORD=' "$ENV_FILE" 2>/dev/null | cut -d= -f2-)"
+    fi
+    [ -n "$PG_PASSWORD" ] || PG_PASSWORD="$(openssl rand -hex 24)"
+
+    role_exists="$(sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='hikrad'" 2>/dev/null || true)"
+    if [ "$role_exists" = "1" ]; then
+        vlog "role 'hikrad' already exists — leaving its password untouched (never re-set on an existing role, matches the 'never regenerate secrets' contract)"
+    else
+        sudo -u postgres psql -v ON_ERROR_STOP=1 -c \
+            "CREATE ROLE hikrad LOGIN PASSWORD '$(printf '%s' "$PG_PASSWORD" | sed "s/'/''/g")';" \
+            || die "failed to create the 'hikrad' PostgreSQL role"
+    fi
+
+    db_exists="$(sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='hikrad'" 2>/dev/null || true)"
+    if [ "$db_exists" != "1" ]; then
+        sudo -u postgres psql -v ON_ERROR_STOP=1 -c "CREATE DATABASE hikrad OWNER hikrad;" \
+            || die "failed to create the 'hikrad' database"
+    fi
+    sudo -u postgres psql -v ON_ERROR_STOP=1 -d hikrad -c "CREATE EXTENSION IF NOT EXISTS timescaledb;" \
+        || warn "CREATE EXTENSION timescaledb failed — install the timescaledb-2-postgresql-<N> package and run this again; hikrad-api's own migrations will otherwise fail."
 fi
 
-# --- 3d. acct-spill ownership (idempotent; also runs on repair) -------------
-# hikrad-acct runs as a fixed non-root uid (10002, deploy/docker/acct.Dockerfile)
-# and writes its crash-safe spill WAL into this bind mount. Create + chown it
-# ourselves, the same way cmd_tunnel's token file already does for its own
-# bind mount — otherwise Docker auto-creates it root-owned on the first
-# `compose up` and the non-root container can never write to it (this was a
-# known, documented crash-loop bug; see CLAUDE.md's "known deployment bug").
-# Runs on repair too, so an install broken by this bug before the fix landed
-# self-heals on the next repair without a full reinstall.
-mkdir -p "$HIKRAD_ROOT/data/acct-spill"
-chown 10002:10002 "$HIKRAD_ROOT/data/acct-spill"
+# --- 5. Directories + system users + ownership ------------------------------
+# Runs on EVERY invocation, fresh install AND upgrade alike (anti-pattern
+# A11 — this is the fix, and it is not conditional on "first run").
+log "Creating directories and system users (idempotent, also runs on upgrade)…"
 
-# --- 3d0. branding logo dir ownership (idempotent; also runs on repair) ------
-# hikrad-api (uid 10001) writes the uploaded instance logo here (FR-91). Same
-# bug/fix shape as acct-spill: without a pre-created, api-owned dir, Docker
-# auto-creates the bind mount root-owned and the non-root container's logo
-# upload fails with "mkdir … permission denied" (FR-106.3).
-mkdir -p "$HIKRAD_ROOT/data/branding"
-chown 10001:10001 "$HIKRAD_ROOT/data/branding"
+ensure_user() { # ensure_user NAME
+    id -u "$1" >/dev/null 2>&1 || useradd --system --no-create-home --shell /usr/sbin/nologin "$1"
+}
+ensure_user hikrad-api
+ensure_user hikrad-acct
+ensure_user hikrad-monitor
+ensure_user hikrad-notification
 
-# --- 3d0b. release layout sanity check (runs on fresh install AND repair) ---
-# From here on, every step below reads real files out of $RELEASE_DIR — fail
-# loudly and specifically here rather than letting the first such step (the
-# clients-generated.conf chown just below) blow up with a bare "No such file
-# or directory" that gives no hint why. The concrete way this goes wrong: a
-# release *bundle* was extracted and install.sh run directly against it
-# without --bundle. Bundle mode's own extraction (3a above) verifies+stages
-# into $HIKRAD_ROOT/release itself, so this can only be hit by running
-# straight from an extracted bundle tree (source-mode fallback then assumes a
-# deploy/ subdirectory a bundle never has — its compose.yml/freeradius/caddy
-# sit at the tar's root) — or, on a repair, an install.meta left over from
-# that exact mistake, which is why the wrong RELEASE_DIR persists across
-# every re-run of the installer's own menu.
-if [ ! -f "$RELEASE_DIR/compose.yml" ]; then
-    die "expected release layout not found at $RELEASE_DIR (compose.yml missing) — refusing to continue. If you're installing from a signed release bundle, pass --bundle: sudo ./scripts/install.sh --bundle /path/to/hikrad-vX.Y.Z.tar (do not run install.sh directly from inside an extracted bundle — its compose.yml/freeradius/caddy live at the tar's root, not under a deploy/ subdirectory). If this is an existing install, check $HIKRAD_ROOT/install.meta's HIKRAD_COMPOSE_FILE — it may point at a path that no longer exists."
+install -d -m 0755 "$PREFIX/opt/hikrad"
+install -d -m 0755 "$BIN_DIR" "$WWW_DIR" "$MIGRATIONS_DIR"
+# 0755, not 0750: a service running as its own non-root user (hikrad-api,
+# freerad, ...) needs traverse (x) permission on EVERY ancestor directory
+# to reach its own, more-restrictively-owned subdirectory below — a 0750
+# root:root parent blocks that regardless of the leaf's own ownership.
+# Found live: hikrad-radius-worker's freerad user couldn't read its own
+# config at all ("Permission denied" on a file it owns, during `freeradius
+# -CX`) because /etc/hikrad itself was 0750. Nothing actually secret lives
+# directly in these two directories — hikrad.env (0600) and tls/ (0700)
+# protect themselves independently at the file/leaf level.
+install -d -m 0755 "$ETC_DIR"
+install -d -m 0700 "$TLS_DIR"
+install -d -m 0755 "$FR_DIR"
+install -d -m 0750 "$BACKUP_DIR"
+install -d -m 0755 "$VAR_DIR"
+
+install -d -m 0750 -o hikrad-api -g hikrad-api "$VAR_DIR/branding"
+install -d -m 0750 -o hikrad-acct -g hikrad-acct "$VAR_DIR/acct-spill"
+# 0777: shared IPC between hikrad-api (uid varies) and the freeradius worker
+# (freerad user, package-managed) — no secret lives in this directory, the
+# control socket's own peercred/mode is the real boundary, same reasoning
+# install.sh has always used for this one directory.
+install -d -m 0777 "$VAR_DIR/radius-control"
+install -d -m 0750 "$VAR_DIR/incoming"
+install -d -m 0750 "$VAR_DIR/data/updater"
+install -d -m 0755 "$PREFIX/var/log/hikrad-radius"
+if getent passwd freerad >/dev/null 2>&1; then
+    chown freerad:freerad "$PREFIX/var/log/hikrad-radius" 2>/dev/null || true
 fi
 
-# --- 3d1. clients-generated.conf ownership (idempotent; also runs on repair) -
-# hikrad-api runs as a fixed non-root uid (10001, deploy/docker/api.Dockerfile)
-# and regenerates this file on every NAS create/update/delete (FR-13.2). A
-# plain checkout (git clone as root, or any other method) leaves it
-# root-owned 644 — hikrad-api's own uid can't write that either, so NAS
-# secrets never actually reach FreeRADIUS's transport layer (found live in
-# the Phase-5 M4 gate rehearsal against a real MikroTik: silent timeout,
-# nothing in FreeRADIUS's clients-generated.conf despite the NAS existing in
-# HikRAD). Same fix shape as acct-spill just below.
-chown 10001:10001 "$RELEASE_DIR/freeradius/clients-generated.conf"
+log "Directories and ownership reconciled."
 
-# --- 3d2. FreeRADIUS control-socket dir (idempotent; also runs on repair) ---
-# Shared between hikrad-api and freeradius (FR-13.2/AC-13a) so hikrad-api can
-# trigger a config reload after regenerating the per-NAS client list. Neither
-# container's runtime uid is ours to assume (third-party freeradius image;
-# hikrad-api's own uid varies by build) — 0777 on this one ephemeral
-# IPC-socket directory (no secrets live here) is the pragmatic choice, same
-# reasoning as the acct-spill fix just above.
-mkdir -p "$HIKRAD_ROOT/data/radius-control"
-chmod 777 "$HIKRAD_ROOT/data/radius-control"
+# --- 6. hikrad.env: write ONLY if absent — this is the "never regenerate ---
+# existing secrets" guarantee (gate item 3).
+if [ ! -f "$ENV_FILE" ]; then
+    log "Generating $ENV_FILE (fresh secrets)…"
+    HIKRAD_DB_PASS="${PG_PASSWORD:-${HIKRAD_DB_PASS:-}}" \
+        bash "$SCRIPT_DIR/gen-env.sh" --env prod "$ENV_FILE"
+    chmod 0600 "$ENV_FILE"
+else
+    log "$ENV_FILE already exists — leaving all secrets untouched."
+fi
 
-# --- 3d3. Updater socket/lock dir + bundle-drop dir (idempotent; also runs on repair) ---
-# hikrad-updaterd (FR-86, v2 phase 7) runs as root on the host (systemd, no
-# User= — it must be able to run `hikrad update`, which itself needs root for
-# Docker/compose); hikrad-api's container connects to the bind-mounted socket
-# as ITS OWN unrelated non-root uid. Same reasoning as the existing
-# radius-control dir just above (neither uid is ours to assume, and no secret
-# lives in this ephemeral IPC directory — the shared token is the actual
-# security boundary, not filesystem permissions): 0777 on the directory, and
-# main.go chmods the socket file itself to 0777 after creating it.
-# `incoming/` is where an operator drops a downloaded hikrad-vX.Y.Z.tar before
-# "Check for update" can find it (`check` never touches the network, C2 of
-# the phase brief) — see docs/ops/update.md for the operator-facing explanation.
-mkdir -p "$HIKRAD_ROOT/data/updater" "$HIKRAD_ROOT/incoming"
-chmod 777 "$HIKRAD_ROOT/data/updater"
+# --- 7. Stage the release: bundle (verified) or local source checkout ------
+HIKRAD_DELIVERY_MODE="source"
+STAGE_BIN="$REPO_DIR/backend" # source-mode fallback locations
+STAGE_WWW_PANEL="$REPO_DIR/frontend/panel/dist"
+STAGE_WWW_PORTAL="$REPO_DIR/frontend/portal/dist"
+STAGE_FR="$REPO_DIR/deploy/freeradius"
+STAGE_MIGRATIONS="$REPO_DIR/backend/migrations"
+STAGE_SYSTEMD="$REPO_DIR/deploy/systemd"
+STAGE_NGINX_TEMPLATE="$REPO_DIR/deploy/nginx/hikrad.conf.template"
+STAGE_CLI="$SCRIPT_DIR/hikrad"
+STAGE_VERSION=""
 
-# --- 3e. Self-signed TLS cert (idempotent; also runs on repair) -------------
-# Covers this server's actual detected IP address(es) plus localhost, not
-# just "localhost" — a browser reaching the panel via the server's real LAN
-# IP sends no SNI at all (RFC 6066 only applies SNI to hostnames), so a cert
-# scoped to a single hostname can never be selected for that connection and
-# the handshake fails outright (see deploy/caddy/Caddyfile's own comment;
-# found live in the Phase-5 M4 gate rehearsal: curl https://localhost worked,
-# a browser hitting the LAN IP got ERR_SSL_PROTOCOL_ERROR). Unused when
-# --domain is given (Let's Encrypt takes over) but harmless to have on disk
-# either way. Runs on repair too, so an install broken by this bug before the
-# fix landed self-heals without a full reinstall — to pick up a changed IP
-# later, delete data/caddy-selfsigned/ and re-run.
-CERT_DIR="$HIKRAD_ROOT/data/caddy-selfsigned"
-if [ ! -f "$CERT_DIR/cert.pem" ]; then
-    log "Generating a self-signed TLS certificate covering this server's detected address(es)…"
-    mkdir -p "$CERT_DIR"
-    SAN="DNS:localhost,IP:127.0.0.1"
-    for ip in $(hostname -I 2>/dev/null); do
-        SAN="$SAN,IP:$ip"
+if [ -n "$BUNDLE" ]; then
+    [ -f "$BUNDLE" ] || die "--bundle file not found: $BUNDLE"
+    log "Verifying release bundle $BUNDLE before using anything from it…"
+    SCRATCH="$(mktemp -d)"
+    trap 'rm -rf "$SCRATCH"' EXIT
+    tar -xf "$BUNDLE" -C "$SCRATCH"
+    bash "$SCRATCH/scripts/verify-bundle.sh" "$SCRATCH" \
+        || die "bundle verification failed — refusing to install from $BUNDLE (nothing was changed)"
+    log "Bundle verified."
+
+    STAGE_BIN=""             # bundle ships prebuilt binaries directly, no go build
+    STAGE_WWW_PANEL="$SCRATCH/www/panel"
+    STAGE_WWW_PORTAL="$SCRATCH/www/portal"
+    STAGE_FR="$SCRATCH/freeradius"
+    STAGE_MIGRATIONS="$SCRATCH/migrations"
+    STAGE_SYSTEMD="$SCRATCH/systemd"
+    STAGE_NGINX_TEMPLATE="$SCRATCH/nginx/hikrad.conf.template"
+    STAGE_CLI="$SCRATCH/scripts/hikrad"
+    STAGE_VERSION="$SCRATCH/VERSION"
+    BUNDLE_BIN_DIR="$SCRATCH/bin"
+    HIKRAD_DELIVERY_MODE="bundle"
+else
+    command -v go >/dev/null 2>&1 || die "no --bundle given and no Go toolchain found — source-mode install needs Go to build the binaries. Either install Go, or use --bundle with a signed release (see docs/ops/install-guide.md)."
+    log "Source mode: building binaries from $REPO_DIR/backend…"
+    ( cd "$REPO_DIR/backend" && for svc in hikrad-api hikrad-acct hikrad-monitor hikrad-updaterd; do
+        CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o "/tmp/hikrad-build-$svc" "./cmd/$svc"
+      done ) || die "source build failed"
+    BUNDLE_BIN_DIR="/tmp/hikrad-build-dir-does-not-exist" # unused in source mode, see copy step below
+fi
+
+# --- 7a. Backup current bin/www/freeradius for rollback (upgrade path only) -
+# Same one-deep rollback pattern scripts/hikrad's cmd_update has always used
+# for bundle-mode's release directory — generalized here to cover the binary
+# tree too, since there is no image id to re-tag without Docker (FR-121).
+if [ -d "$BIN_DIR" ] && [ -n "$(ls -A "$BIN_DIR" 2>/dev/null || true)" ]; then
+    rm -rf "$RELEASE_ROLLBACK_DIR"
+    install -d -m 0755 "$RELEASE_ROLLBACK_DIR"
+    cp -a "$BIN_DIR" "$RELEASE_ROLLBACK_DIR/bin" 2>/dev/null || true
+    [ -d "$WWW_DIR" ] && cp -a "$WWW_DIR" "$RELEASE_ROLLBACK_DIR/www" 2>/dev/null || true
+    [ -d "$FR_DIR" ] && cp -a "$FR_DIR" "$RELEASE_ROLLBACK_DIR/freeradius" 2>/dev/null || true
+fi
+
+# --- 7b. Install binaries -----------------------------------------------------
+if [ -n "$BUNDLE" ]; then
+    for svc in hikrad-api hikrad-acct hikrad-monitor hikrad-updaterd hikrad-notification; do
+        if [ -f "$BUNDLE_BIN_DIR/$svc" ]; then
+            install -m 0755 "$BUNDLE_BIN_DIR/$svc" "$BIN_DIR/$svc"
+        fi
     done
-    openssl req -x509 -nodes -newkey rsa:2048 -days 3650 \
-        -keyout "$CERT_DIR/key.pem" -out "$CERT_DIR/cert.pem" \
-        -subj "/CN=hikrad" -addext "subjectAltName=$SAN" >/dev/null 2>&1
-    chmod 644 "$CERT_DIR/cert.pem"
-    chmod 600 "$CERT_DIR/key.pem"
-    log "Self-signed cert covers: $SAN"
-fi
-
-# --- 4. CLI wrapper + nightly backup cron (idempotent; also runs on repair) --
-# SCRIPTS_SRC_DIR is the verified bundle's scripts/ on a fresh --bundle
-# install (never the customer's own unverified bootstrap copy of this file —
-# see the 3a staging block above), or $SCRIPT_DIR unchanged in every other
-# case (source install, or any repair, matching pre-v2-phase-5 behavior).
-if install -m 0755 "$SCRIPTS_SRC_DIR/hikrad" /usr/local/bin/hikrad 2>/dev/null; then
-    log "Installed CLI wrapper: /usr/local/bin/hikrad"
 else
-    log "WARNING: could not install /usr/local/bin/hikrad — copy scripts/hikrad there manually."
-fi
-
-# --- 4a. hikrad-updaterd daemon (idempotent; also runs on repair) -----------
-# A prebuilt binary in $SCRIPTS_SRC_DIR/hikrad-updaterd means a --bundle
-# install (the release CI job builds it alongside the four container images
-# and ships it next to the hikrad CLI wrapper, same directory, C1) — just
-# install it like the wrapper above. Otherwise (source checkout, dev-only)
-# build it from backend/cmd/hikrad-updaterd if a Go toolchain is present.
-# Best-effort, non-fatal either way: one-click panel updates are a
-# convenience on top of the guided Settings > System command, which keeps
-# working regardless (docs/ops/update.md).
-if [ -f "$SCRIPTS_SRC_DIR/hikrad-updaterd" ]; then
-    if install -m 0755 "$SCRIPTS_SRC_DIR/hikrad-updaterd" /usr/local/bin/hikrad-updaterd 2>/dev/null; then
-        log "Installed hikrad-updaterd (prebuilt): /usr/local/bin/hikrad-updaterd"
-    else
-        log "WARNING: could not install /usr/local/bin/hikrad-updaterd — copy it there manually."
-    fi
-elif command -v go >/dev/null 2>&1 && [ -d "$CHECKOUT_DIR/backend/cmd/hikrad-updaterd" ]; then
-    log "Building hikrad-updaterd from source…"
-    if ( cd "$CHECKOUT_DIR/backend" && go build -o /usr/local/bin/hikrad-updaterd ./cmd/hikrad-updaterd ); then
-        chmod 0755 /usr/local/bin/hikrad-updaterd
-        log "Installed hikrad-updaterd (built from source): /usr/local/bin/hikrad-updaterd"
-    else
-        log "WARNING: failed to build hikrad-updaterd — one-click panel updates will be unavailable until it is built manually (the guided Settings > System command still works)."
-    fi
-else
-    log "NOTE: no prebuilt hikrad-updaterd and no Go toolchain found — one-click panel updates will be unavailable (the guided Settings > System command still works)."
-fi
-
-# --- 4b. hikrad-updaterd systemd unit (idempotent; also runs on repair) -----
-# Only attempted if the binary above actually landed — an install without it
-# simply keeps the v1.1 guided-command screen working, nothing else changes.
-# The heredoc write itself is guarded (not a bare redirect): under `set -e`,
-# an unguarded write to a root-owned path aborts the WHOLE installer on any
-# non-root/sandboxed run (e.g. CI's install.sh idempotency test, which runs
-# with HIKRAD_SKIP_OS_CHECK=1 and no root) — this feature must degrade to a
-# WARNING like every other best-effort step here, never take install.sh down
-# with it.
-if command -v systemctl >/dev/null 2>&1 && [ -x /usr/local/bin/hikrad-updaterd ]; then
-    if cat > /etc/systemd/system/hikrad-updaterd.service <<EOF 2>/dev/null
-[Unit]
-Description=HikRAD host update daemon
-After=network.target docker.service
-
-[Service]
-Type=simple
-ExecStart=/usr/local/bin/hikrad-updaterd
-EnvironmentFile=$HIKRAD_ROOT/.env
-Environment=HIKRAD_ROOT=$HIKRAD_ROOT
-Environment=HIKRAD_UPDATER_SOCKET=$HIKRAD_ROOT/data/updater/updater.sock
-Environment=HIKRAD_VERSION_FILE=$CHECKOUT_DIR/VERSION
-Environment=HIKRAD_DELIVERY_MODE=$HIKRAD_DELIVERY_MODE
-Environment=HIKRAD_UPDATE_CMD=/usr/local/bin/hikrad
-Restart=on-failure
-RestartSec=2
-
-[Install]
-WantedBy=multi-user.target
-EOF
-    then
-        systemctl daemon-reload 2>/dev/null || true
-        if systemctl enable --now hikrad-updaterd >/dev/null 2>&1; then
-            log "hikrad-updaterd enabled and started (systemd)."
-        else
-            log "WARNING: could not enable/start hikrad-updaterd via systemd — one-click panel updates will be unavailable."
+    for svc in hikrad-api hikrad-acct hikrad-monitor hikrad-updaterd; do
+        if [ -f "/tmp/hikrad-build-$svc" ]; then
+            install -m 0755 "/tmp/hikrad-build-$svc" "$BIN_DIR/$svc"
+            rm -f "/tmp/hikrad-build-$svc"
         fi
+    done
+fi
+log "Installed binaries to $BIN_DIR."
+
+# --- 7c. Frontend (built dists; a bundle ships them prebuilt, source mode --
+# builds them here if npm is available and dist/ doesn't already exist).
+if [ ! -d "$STAGE_WWW_PANEL" ] || [ ! -d "$STAGE_WWW_PORTAL" ]; then
+    if [ -z "$BUNDLE" ] && command -v npm >/dev/null 2>&1; then
+        log "Building frontend (panel + portal)…"
+        ( cd "$REPO_DIR/frontend" && npm ci --silent && npm run build --workspaces --if-present --silent ) \
+            || warn "frontend build failed — panel/portal will 404 until 'cd frontend && npm run build --workspaces' succeeds."
+    fi
+fi
+if [ -d "$STAGE_WWW_PANEL" ]; then rm -rf "$WWW_DIR/panel"; cp -a "$STAGE_WWW_PANEL" "$WWW_DIR/panel"; fi
+if [ -d "$STAGE_WWW_PORTAL" ]; then rm -rf "$WWW_DIR/portal"; cp -a "$STAGE_WWW_PORTAL" "$WWW_DIR/portal"; fi
+
+# --- 7d. Migrations (hikrad-api applies them on boot; HIKRAD_MIGRATIONS_DIR -
+# in the systemd unit points here).
+if [ -d "$STAGE_MIGRATIONS" ]; then
+    rm -rf "$MIGRATIONS_DIR"
+    install -d -m 0755 "$MIGRATIONS_DIR"
+    cp "$STAGE_MIGRATIONS"/*.up.sql "$MIGRATIONS_DIR/" 2>/dev/null || true
+fi
+
+# --- 7e. VERSION file (read by hikrad-updaterd + the panel's Settings > ----
+# System screen).
+if [ -n "$STAGE_VERSION" ] && [ -f "$STAGE_VERSION" ]; then
+    cp "$STAGE_VERSION" "$VERSION_FILE"
+elif [ ! -f "$VERSION_FILE" ]; then
+    echo "dev" > "$VERSION_FILE"
+fi
+
+# --- 8. FreeRADIUS: copy config, retarget paths, provision the discovery ---
+# client, validate BEFORE enabling the unit (gate item 8).
+log "Staging FreeRADIUS config to $FR_DIR…"
+rm -rf "$FR_DIR"
+cp -a "$STAGE_FR" "$FR_DIR"
+
+# Retarget the three hardcoded paths radiusd.conf's stock values assume
+# (/etc/freeradius, /var/log/freeradius, /var/run/<name>) onto HikRAD's own
+# tree — applied fresh every run against the pristine copy above, so this is
+# naturally idempotent and never drifts from source.
+sed -i \
+    -e "s#^raddbdir = /etc/freeradius#raddbdir = $FR_DIR#" \
+    -e "s#^logdir = /var/log/freeradius#logdir = $PREFIX/var/log/hikrad-radius#" \
+    -e "s#^run_dir = \${localstatedir}/run/\${name}#run_dir = $VAR_DIR/radius-control#" \
+    "$FR_DIR/radiusd.conf"
+
+# clients-generated.conf is written by hikrad-api (a different user) —
+# same fix shape as the old acct-spill/branding chown bugs (anti-pattern
+# A11): create it with the right owner BEFORE hikrad-api ever needs to
+# write it, on fresh install AND every upgrade.
+touch "$FR_DIR/clients-generated.conf"
+chown hikrad-api:hikrad-api "$FR_DIR/clients-generated.conf" 2>/dev/null || true
+chmod 0640 "$FR_DIR/clients-generated.conf"
+
+if command -v freeradius >/dev/null 2>&1; then
+    log "Validating FreeRADIUS config before enabling the unit (gate item 8)…"
+    if ! freeradius -CX -d "$FR_DIR" >/tmp/hikrad-freeradius-check.log 2>&1; then
+        cat /tmp/hikrad-freeradius-check.log >&2
+        die "FreeRADIUS config failed validation (freeradius -CX) — refusing to enable hikrad-radius-worker. See the output above."
+    fi
+    log "FreeRADIUS config validated OK."
+else
+    warn "freeradius binary not found — skipping config validation (expected only with HIKRAD_SKIP_PACKAGES=1, a test-only knob; a real install always has it from step 3)."
+fi
+
+# --- 9. nginx: additive site, port-fallback aware (gate items 4, 5) --------
+log "Configuring nginx (additive — no other site is touched)…"
+install -d -m 0755 "$NGINX_AVAILABLE" "$NGINX_ENABLED"
+sed -e "s/@@HTTP_PORT@@/$HTTP_PORT/g" -e "s/@@HTTPS_PORT@@/$HTTPS_PORT/g" \
+    "$STAGE_NGINX_TEMPLATE" > "$NGINX_AVAILABLE/hikrad.conf"
+ln -sf "$NGINX_AVAILABLE/hikrad.conf" "$NGINX_ENABLED/hikrad.conf"
+
+if [ ! -f "$TLS_DIR/cert.pem" ]; then
+    log "Generating a self-signed TLS certificate covering this server's detected address(es)…"
+    SAN="DNS:localhost,IP:127.0.0.1"
+    for ip in $(hostname -I 2>/dev/null); do SAN="$SAN,IP:$ip"; done
+    openssl req -x509 -nodes -newkey rsa:2048 -days 3650 \
+        -keyout "$TLS_DIR/key.pem" -out "$TLS_DIR/cert.pem" \
+        -subj "/CN=hikrad" -addext "subjectAltName=$SAN" >/dev/null 2>&1
+    chmod 644 "$TLS_DIR/cert.pem"; chmod 600 "$TLS_DIR/key.pem"
+    log "Self-signed cert covers: $SAN"
+else
+    vlog "TLS cert already present at $TLS_DIR — left untouched."
+fi
+
+if command -v nginx >/dev/null 2>&1; then
+    nginx -t >/tmp/hikrad-nginx-check.log 2>&1 || { cat /tmp/hikrad-nginx-check.log >&2; die "nginx config failed validation (nginx -t)."; }
+fi
+
+if [ -n "$DOMAIN" ]; then
+    log "Requesting a real TLS certificate for $DOMAIN via certbot…"
+    apt-get install -y -qq python3-certbot-nginx >/dev/null 2>&1 || true
+    if command -v certbot >/dev/null 2>&1; then
+        certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos -m "admin@$DOMAIN" --redirect \
+            || warn "certbot failed — the self-signed default remains in place. Point $DOMAIN's DNS at this server and re-run with --domain."
     else
-        log "WARNING: could not write /etc/systemd/system/hikrad-updaterd.service (not root?) — one-click panel updates will be unavailable."
+        warn "certbot not available — install python3-certbot-nginx and re-run with --domain."
     fi
+fi
+
+# --- 10. systemd units --------------------------------------------------------
+log "Installing systemd units…"
+install -d -m 0755 "$SYSTEMD_DIR"
+unit_count=0
+for unit in "$STAGE_SYSTEMD"/*.service; do
+    install -m 0644 "$unit" "$SYSTEMD_DIR/$(basename "$unit")"
+    unit_count=$((unit_count + 1))
+done
+[ "$unit_count" -ge 1 ] || die "no systemd unit files found under $STAGE_SYSTEMD — release layout looks wrong, refusing to continue"
+systemctl daemon-reload
+
+ENABLE_LIST="hikrad-api hikrad-acct hikrad-monitor hikrad-radius-worker"
+if [ -x "$BIN_DIR/hikrad-updaterd" ]; then
+    ENABLE_LIST="$ENABLE_LIST hikrad-updaterd"
+fi
+if [ -x "$BIN_DIR/hikrad-notification" ]; then
+    ENABLE_LIST="$ENABLE_LIST hikrad-notification"
 else
-    log "NOTE: systemd not found, or hikrad-updaterd binary missing — one-click panel updates will be unavailable (the guided Settings > System command still works)."
+    vlog "hikrad-notification binary not present yet (ships in v4-10) — unit installed but not enabled."
 fi
 
-if command -v crontab >/dev/null 2>&1; then
-    CRON_MARK="# hikrad nightly backup (FR-51.1, installed by install.sh)"
-    CRON_LINE="0 3 * * * HIKRAD_META=$HIKRAD_ROOT/install.meta /usr/local/bin/hikrad backup now >> $HIKRAD_ROOT/backup.log 2>&1"
-    if ! crontab -l 2>/dev/null | grep -qF "$CRON_MARK"; then
-        ( crontab -l 2>/dev/null; echo "$CRON_MARK"; echo "$CRON_LINE" ) | crontab -
-        log "Installed nightly backup cron entry (03:00, retention from HIKRAD_BACKUP_RETENTION in .env, default 14)."
-    fi
-else
-    log "WARNING: no crontab available — schedule 'hikrad backup now' yourself (e.g. a systemd timer)."
-fi
-
-if [ "$REPAIR_ONLY" -eq 1 ]; then
-    log "Repair complete. Nothing else was changed."
-    exit 0
-fi
-
-# --- 5. Bring the stack up ----------------------------------------------------
 if [ "$NO_START" -eq 1 ]; then
-    log "--no-start given: skipping compose up. Start later with: hikrad up"
+    log "--no-start given: units installed but not enabled/started."
 else
-    if [ "$HIKRAD_DELIVERY_MODE" = "bundle" ]; then
-        log "Starting the stack (images already loaded from the bundle — no build)…"
-        docker compose --env-file "$HIKRAD_ROOT/.env" -f "$RELEASE_DIR/compose.yml" up -d
-    else
-        log "Starting the stack (first build can take a few minutes)…"
-        docker compose --env-file "$HIKRAD_ROOT/.env" -f "$RELEASE_DIR/compose.yml" up -d --build
-    fi
-    log "Stack started. Panel: https://<this-server>/  (first-run wizard: license, admin, branding, NAS, profile)"
+    for unit in $ENABLE_LIST; do
+        systemctl enable "$unit" >/dev/null 2>&1 || true
+        systemctl restart "$unit" \
+            || warn "$unit failed to (re)start — check: systemctl status $unit; journalctl -u $unit"
+    done
+    systemctl reload nginx 2>/dev/null || systemctl restart nginx
 fi
 
-# --- 6. Install summary: the backup passphrase, shown exactly once. ---------
-PASSPHRASE="$(grep '^HIKRAD_BACKUP_PASSPHRASE=' "$HIKRAD_ROOT/.env" | cut -d= -f2-)"
+# --- 10b. Cloudflare tunnel bootstrap (HIKRAD_CF_TOKEN, frozen non---------
+# interactive env var). Installed-but-inert by default (FR-118 §3.1 step 8);
+# only started here if a token was actually given — post-install management
+# stays through the panel's Settings > Remote Access + `hikrad tunnel
+# enable|disable` (DB-driven, see scripts/hikrad), this is purely a
+# fully-non-interactive-install convenience.
+if [ -n "${HIKRAD_CF_TOKEN:-}" ]; then
+    printf '%s' "$HIKRAD_CF_TOKEN" > "$ETC_DIR/cloudflared-token"
+    chmod 0600 "$ETC_DIR/cloudflared-token"
+    if [ "$NO_START" -ne 1 ]; then
+        systemctl enable --now hikrad-tunnel >/dev/null 2>&1 \
+            || warn "hikrad-tunnel failed to start — check: systemctl status hikrad-tunnel"
+    fi
+fi
+
+# --- 11. nightly backup timer (native replacement for the old cron entry) --
+BACKUP_TIMER_SERVICE="$SYSTEMD_DIR/hikrad-backup.service"
+BACKUP_TIMER="$SYSTEMD_DIR/hikrad-backup.timer"
+cat > "$BACKUP_TIMER_SERVICE" <<'EOF'
+[Unit]
+Description=HikRAD nightly backup (FR-51.1)
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/hikrad backup now
+EOF
+cat > "$BACKUP_TIMER" <<'EOF'
+[Unit]
+Description=HikRAD nightly backup timer
+[Timer]
+OnCalendar=*-*-* 03:00:00
+RandomizedDelaySec=600
+Persistent=true
+[Install]
+WantedBy=timers.target
+EOF
+systemctl daemon-reload
+[ "$NO_START" -eq 1 ] || systemctl enable --now hikrad-backup.timer >/dev/null 2>&1 || true
+
+# --- 12. CLI wrapper -----------------------------------------------------------
+install -d -m 0755 "$PREFIX/usr/local/bin"
+install -m 0755 "$STAGE_CLI" "$PREFIX/usr/local/bin/hikrad" \
+    && log "Installed CLI wrapper: $PREFIX/usr/local/bin/hikrad" \
+    || warn "could not install $PREFIX/usr/local/bin/hikrad — copy scripts/hikrad there manually."
+
+# --- 13. install.meta (read back by `hikrad` and by this script's own -----
+# port-reuse logic above).
+cat > "$META_FILE" <<EOF
+# Written by install.sh $(date -u +%Y-%m-%dT%H:%M:%SZ) — read by /usr/local/bin/hikrad.
+HIKRAD_HTTP_PORT=$HTTP_PORT
+HIKRAD_HTTPS_PORT=$HTTPS_PORT
+HIKRAD_DELIVERY_MODE=$HIKRAD_DELIVERY_MODE
+HIKRAD_ENV_FILE=$ENV_FILE
+EOF
+
+# --- 14. Summary --------------------------------------------------------------
+PASSPHRASE="$(grep '^HIKRAD_BACKUP_PASSPHRASE=' "$ENV_FILE" | cut -d= -f2-)"
 cat <<EOF
 
 ================================================================================
  HikRAD install summary — save this somewhere safe, it is not shown again.
 ================================================================================
- Install root:        $HIKRAD_ROOT
- Backup passphrase:   $PASSPHRASE
+ Panel:               https://<this-server>:$HTTPS_PORT/
+ Config:               $ETC_DIR
+ Data:                 $VAR_DIR
+ Backups:              $BACKUP_DIR
+ Backup passphrase:    $PASSPHRASE
 
  This passphrase encrypts every backup archive (FR-51.1). It also lives in
- $HIKRAD_ROOT/.env for unattended nightly backups, but a stolen backup file
- alone decrypts nothing without it — write it down or store it in a password
- manager. If BOTH this copy and .env are lost, existing backups are
+ $ENV_FILE for unattended nightly backups, but a stolen backup file alone
+ decrypts nothing without it — write it down or store it in a password
+ manager. If BOTH this copy and hikrad.env are lost, existing backups are
  permanently unrecoverable by design (no vendor escrow).
+
+ No admin account exists yet — open the panel now and complete the
+ first-run wizard (license, admin account, branding, NAS, profile). Until
+ then the panel has no way in, which is deliberate: there is no default
+ password to change later.
 ================================================================================
 
-Next: open the panel and complete the first-run wizard.
-Manage the stack with: hikrad {up|down|status|logs|backup|restore|update|tunnel}
+Manage the stack with: hikrad {status|logs|backup|restore|update|doctor|passwd}
 EOF

@@ -1,69 +1,48 @@
-# HikRAD developer entrypoints (Phase 1, Agent A — contract: these target names
-# are frozen; CI and other agents call them).
+# HikRAD developer entrypoints (v4-2, FR-118: reworked off Docker Compose —
+# the native dev loop assumes a local PostgreSQL 16 + TimescaleDB and Redis,
+# same as production minus systemd; see docs/ops/dev-setup.md for how to get
+# those running, including inside WSL2 on Windows).
 
-COMPOSE      := docker compose --env-file deploy/.env -f deploy/compose.yml
-MIGRATE_IMG  := migrate/migrate:v4.17.1
-MODE         ?= smoke
+MODE ?= smoke
 
-.PHONY: help up down seed test migrate lint env evidence
+.PHONY: help dev-env dev-up dev-down seed test lint evidence
 
 help:
-	@echo "make up       - generate deploy/.env if missing, build and start the stack"
-	@echo "make down     - stop the stack (data under deploy/data/ is kept)"
+	@echo "make dev-env  - generate deploy/hikrad.env against your local Postgres/Redis (if missing)"
+	@echo "make dev-up   - run hikrad-api/hikrad-acct/hikrad-monitor via 'go run' (foreground; Ctrl+C stops all)"
+	@echo "make dev-down - reset the dev database to empty (drops + recreates it; see docs/ops/dev-setup.md)"
 	@echo "make seed     - load demo data (admin manager, testuser subscriber, one profile)"
 	@echo "make test     - backend unit tests + script self-tests"
-	@echo "make migrate  - apply pending DB migrations manually (they also run on api boot)"
 	@echo "make lint     - go vet + frontend lint"
-	@echo "make evidence - run the chaos/perf/sizing evidence pack (Phase 5, contract C6);"
-	@echo "                MODE=full for the 5k/2k reference scale (default: smoke)"
+	@echo "make evidence - run the chaos/perf/sizing evidence pack; MODE=full for the 5k/2k reference scale"
 
-deploy/.env:
-	./scripts/gen-env.sh deploy/.env
+deploy/hikrad.env:
+	./scripts/gen-env.sh deploy/hikrad.env
 
-env: deploy/.env
+dev-env: deploy/hikrad.env
 
-up: deploy/.env
-	$(COMPOSE) up -d --build
+dev-up: deploy/hikrad.env
+	./scripts/dev-run.sh
 
-down:
-	$(COMPOSE) down
+dev-down:
+	./scripts/dev-run.sh --reset-db-only
 
-# Convention exposed to Agent D: the hikrad-api binary accepts a `seed`
-# subcommand that loads the Phase-1 demo data (idempotent).
-seed:
-	$(COMPOSE) exec hikrad-api hikrad-api seed
+seed: deploy/hikrad.env
+	set -a && . ./deploy/hikrad.env && set +a && cd backend && go run ./cmd/hikrad-api seed
 
-# -p 1 (backend go test, below): HIKRAD_TEST_DB_URL/HIKRAD_TEST_REDIS_URL point
-# every package at ONE shared external Postgres/Redis; whole-table aggregate
-# reconciliation tests (e.g. internal/reports' revenue property test) sum
-# across the whole payments table and will intermittently pick up rows another
-# package's test committed in the same wall-clock window if packages run
-# concurrently (found live in the Phase-5 gate run — passes reliably under
-# -p 1, flakes without it). Per-test rows are already uniq()-prefixed for
-# row-level isolation; -p 1 only serializes package execution.
+# -p 1: every package shares one real Postgres/Redis here; whole-table
+# aggregate reconciliation tests need packages serialized to stay
+# deterministic (see backend/Makefile's own note on this).
 test:
 	@if [ -f backend/go.mod ]; then \
 		echo "== backend: go test =="; \
 		cd backend && go test -p 1 ./...; \
 	else \
-		echo "backend/go.mod not present yet (Agent D) — skipping Go tests"; \
+		echo "backend/go.mod not present yet — skipping Go tests"; \
 	fi
 	@echo "== scripts: gen-env self-test =="
 	./scripts/gen-env.test.sh
 
-# Manual migration run against the compose stack's postgres. Migrations are
-# forward-only (FR-51.4); hikrad-api also applies them automatically on boot.
-migrate: deploy/.env
-	docker run --rm --network hikrad_default \
-		-v "$(CURDIR)/backend/migrations:/migrations:ro" \
-		$(MIGRATE_IMG) \
-		-path=/migrations \
-		-database "$$(grep '^HIKRAD_DB_URL=' deploy/.env | cut -d= -f2-)" \
-		up
-
-# Phase 5 (Agent 2) — chaos/perf/sizing evidence pack (contract C6). Requires
-# Docker (self-provisions throwaway Postgres/Redis); MODE=full for the 5k/2k
-# reference scale. See docs/evidence/README.md.
 evidence:
 	MODE=$(MODE) sh docs/evidence/generate.sh
 
@@ -72,11 +51,11 @@ lint:
 		echo "== backend: go vet =="; \
 		cd backend && go vet ./...; \
 	else \
-		echo "backend/go.mod not present yet (Agent D) — skipping go vet"; \
+		echo "backend/go.mod not present yet — skipping go vet"; \
 	fi
 	@if [ -f frontend/package.json ]; then \
 		echo "== frontend: lint =="; \
 		cd frontend && npm run lint --workspaces --if-present; \
 	else \
-		echo "frontend/package.json not present yet (Agents E/F) — skipping frontend lint"; \
+		echo "frontend/package.json not present yet — skipping frontend lint"; \
 	fi

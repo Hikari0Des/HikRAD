@@ -12,8 +12,9 @@
 # Repo split (PRD Decision 56, amending FR-83.1): Hikari0Des/hikrad-releases
 # is a SEPARATE, intentionally public repository that contains NO HikRAD
 # source — only this thin wrapper and signed release bundle assets (compiled
-# Docker images + install scripts + migrations, never .go/.tsx source). The
-# real source tree stays in the private Hikari0Des/HikRAD repo, which
+# binaries + install scripts + migrations, never .go/.tsx source or an OCI
+# image — Docker is cancelled as the delivery mechanism, v4-2 Decision 57).
+# The real source tree stays in the private Hikari0Des/HikRAD repo, which
 # customers and resellers never get access to (FR-83.1, unchanged). If you
 # can read this comment from a git clone of the source repo, that clone
 # requires private-repo access — this script itself has none of it.
@@ -49,7 +50,7 @@ asset_url="$(curl -fsSL --connect-timeout 10 --max-time 20 "$api" 2>/dev/null \
 
 version="$(basename "$asset_url" | sed -E 's/^hikrad-(.*)\.tar$/\1/')"
 say "Latest release: HikRAD ${version}"
-say "Downloading ${asset_url##*/} — this is a full offline bundle (every image the stack needs is inside it, NFR-7), so it's several GB and may take a while…"
+say "Downloading ${asset_url##*/} — a full offline bundle (binaries, frontend build, FreeRADIUS config, migrations; NFR-7, no internet needed after this)…"
 curl -fSL --progress-bar --connect-timeout 10 --speed-limit 10240 --speed-time 60 --max-time 3600 \
   "$asset_url" -o "$workdir/hikrad.tar"
 
