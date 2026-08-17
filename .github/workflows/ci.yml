@@ -116,8 +116,9 @@ jobs:
         run: |
           bash -n scripts/gen-env.sh scripts/gen-env.test.sh scripts/install.sh scripts/hikrad \
                   scripts/migrate-to-native.sh scripts/build-release-bundle.sh scripts/dev-run.sh \
-                  scripts/uninstall.sh scripts/quick-install.sh deploy/routeros/entrypoint.sh \
-                  deploy/routeros/build.sh backend/test/harness/run-smoke.sh
+                  scripts/uninstall.sh scripts/quick-install.sh scripts/lint-release-manifest.sh \
+                  deploy/routeros/entrypoint.sh deploy/routeros/build.sh \
+                  backend/test/harness/run-smoke.sh
       - name: gen-env self-test (unique valid secrets twice)
         run: bash scripts/gen-env.test.sh
       # v4-2 (FR-118): install.sh's idempotency contract (gate item 3) —
@@ -145,6 +146,27 @@ jobs:
           after_meta="$(cat "$HIKRAD_ROOT_OVERRIDE/etc/hikrad/install.meta")"
           [ "$before" = "$after" ] || { echo "hikrad.env was modified on re-run"; exit 1; }
           [ "$before_meta" = "$after_meta" ] || { echo "install.meta (port/delivery mode) changed on re-run despite a different HIKRAD_HTTP_PORT"; exit 1; }
+
+  release-manifest:
+    name: Release bundle manifest audit (FR-126)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Assemble a rehearsal bundle
+        run: bash scripts/build-release-bundle.sh v0.0.0-ci /tmp/hikrad-bundle.tar
+      - name: Extract and audit (deny-list is a frozen contract — loosening it needs an amendment, never a local exception)
+        run: |
+          mkdir -p /tmp/hikrad-bundle-stage
+          tar -xf /tmp/hikrad-bundle.tar -C /tmp/hikrad-bundle-stage
+          bash scripts/lint-release-manifest.sh /tmp/hikrad-bundle-stage
 
   harness-smoke:
     name: RADIUS harness smoke
