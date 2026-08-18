@@ -153,6 +153,37 @@ export interface CounterSummary {
   lifetime: LifetimeCounters
 }
 
+/**
+ * Per-row list-depth data (v4-5, FR-135): daily/quota/uptime progress + days
+ * remaining + the plan-swap badge, batched onto GET /api/v1/subscribers
+ * keyed by subscriber id (see the `limits` sibling field on the list
+ * response, not embedded per-item, so the same shape and derivation as
+ * CounterSummary/CycleCounters is reused rather than duplicated per item).
+ */
+export interface PlanSwapBadge {
+  active: boolean
+  from_profile_id?: string
+  to_profile_id?: string
+  to_profile_name?: string
+}
+
+export interface LimitProgress {
+  subscriber_id: string
+  quota_mode: string
+  quota_used_bytes: number
+  quota_used_down: number
+  quota_used_up: number
+  quota_total_bytes: number
+  quota_down_bytes: number
+  quota_up_bytes: number
+  uptime_used_seconds: number
+  uptime_limit_seconds: number
+  daily_used_bytes: number
+  daily_limit_bytes: number
+  days_remaining: number | null
+  plan_swap: PlanSwapBadge
+}
+
 export interface SubscriberDetail {
   subscriber: Subscriber
   profile: ProfileSummary | null

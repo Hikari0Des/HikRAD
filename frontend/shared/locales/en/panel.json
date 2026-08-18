@@ -211,7 +211,17 @@
       "d30": "30 days"
     },
     "filterServiceType": "Service",
-    "searchName": "Search by name or username"
+    "searchName": "Search by name or username",
+    "filterOnline": "Status",
+    "onlineOption": "Online",
+    "offlineOption": "Offline",
+    "limitsColumn": "Limits",
+    "limitQuota": "Quota",
+    "limitDaily": "Daily",
+    "limitUptime": "Uptime",
+    "daysRemaining": "{days} day(s) left",
+    "planSwapHint": "This subscriber will switch plans when the current one is exhausted.",
+    "planSwapActive": "Plan swap pending"
   },
   "subscriber": {
     "username": "Username",

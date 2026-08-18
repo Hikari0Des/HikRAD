@@ -211,7 +211,17 @@
       "d30": "٣٠ يومًا"
     },
     "filterServiceType": "الخدمة",
-    "searchName": "بحث بالاسم أو اسم المستخدم"
+    "searchName": "بحث بالاسم أو اسم المستخدم",
+    "filterOnline": "الحالة",
+    "onlineOption": "متصل",
+    "offlineOption": "غير متصل",
+    "limitsColumn": "الحدود",
+    "limitQuota": "الحصة",
+    "limitDaily": "اليومي",
+    "limitUptime": "مدة الاتصال",
+    "daysRemaining": "متبقٍ {days} يوم",
+    "planSwapHint": "سيتم تحويل هذا المشترك إلى خطة أخرى عند استنفاد الخطة الحالية.",
+    "planSwapActive": "تحويل الخطة معلق"
   },
   "subscriber": {
     "username": "اسم المستخدم",

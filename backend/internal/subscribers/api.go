@@ -180,7 +180,22 @@ func (m *Module) listHandler(w http.ResponseWriter, r *http.Request) {
 		m.internalError(w, "list nas scopes", err)
 		return
 	}
-	httpapi.JSON(w, http.StatusOK, httpapi.NewListResponse(items, next))
+	// FR-135: per-row limit progress (daily/quota/uptime bars, days remaining,
+	// the plan-swap badge), batched for exactly this page's rows — never one
+	// query per row.
+	ids := make([]string, len(items))
+	for i, s := range items {
+		ids[i] = s.ID
+	}
+	limits, err := loadLimitProgress(r.Context(), m.db, ids)
+	if err != nil {
+		m.internalError(w, "list limit progress", err)
+		return
+	}
+	resp := httpapi.NewListResponse(items, next)
+	httpapi.JSON(w, http.StatusOK, map[string]any{
+		"items": resp.Items, "next_cursor": resp.NextCursor, "limits": limits,
+	})
 }
 
 func (m *Module) createHandler(w http.ResponseWriter, r *http.Request) {

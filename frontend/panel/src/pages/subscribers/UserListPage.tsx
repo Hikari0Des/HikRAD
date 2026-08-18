@@ -1,13 +1,20 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 
 import { Ltr, LoadingState, ErrorState, StatusBadge, useFormatters, useT } from '@hikrad/shared'
 
+import { openLiveStream } from '../../api/live'
 import { listProfiles } from '../../api/profiles'
 import { listManagers, type ManagerView } from '../../api/managers'
-import { listSubscribers } from '../../api/subscribers'
+import { listSubscribersWithLimits } from '../../api/subscribers'
 import { SERVICE_TYPES } from '../../api/types'
-import type { BulkFilter, Profile, Subscriber, SubscriberStatus } from '../../api/types'
+import type {
+  BulkFilter,
+  LimitProgress,
+  Profile,
+  Subscriber,
+  SubscriberStatus,
+} from '../../api/types'
 import { useAuth } from '../../auth/AuthContext'
 import { Button } from '../../components/Button'
 import { PageHeader } from '../../components/PageHeader'
@@ -17,7 +24,9 @@ import { useAsync } from '../../hooks/useAsync'
 import { useDebouncedValue } from '../../hooks/useDebouncedValue'
 import { usePaginated } from '../../hooks/usePaginated'
 import { usePersistentState } from '../../hooks/usePersistentState'
+import { BatchCreateModal } from './BatchCreateModal'
 import { BulkBar } from './BulkBar'
+import { LimitProgressCell } from './LimitProgressCell'
 import { SubscriberFormModal } from './SubscriberFormModal'
 
 const STATUSES: SubscriberStatus[] = ['active', 'expired', 'disabled']
@@ -30,6 +39,7 @@ const ALL_COLUMNS = [
   'profile',
   'expiry',
   'owner',
+  'limits',
 ] as const
 type Column = (typeof ALL_COLUMNS)[number]
 
@@ -43,6 +53,10 @@ interface Filters {
   expiringDays: string
   /** FR-61/63: how hotspot-only accounts are found in the ONE unified list. */
   serviceType: string
+  /** FR-135: online/offline is a LIVE fact, orthogonal to `status` (an active
+   *  subscriber may be online or offline right now) — client-side only,
+   *  matched against a live-session snapshot, never sent to the server. */
+  online: string
 }
 
 const EMPTY: Filters = {
@@ -52,6 +66,7 @@ const EMPTY: Filters = {
   ownerId: '',
   expiringDays: '',
   serviceType: '',
+  online: '',
 }
 
 /**
@@ -69,10 +84,11 @@ export function UserListPage() {
   // Remembered per manager until cleared (item 7).
   const [filters, setFilters] = usePersistentState<Filters>('subscribers.filters', EMPTY)
   const [columns, setColumns] = useState<Set<Column>>(
-    () => new Set<Column>(['username', 'name', 'phone', 'status', 'profile', 'expiry']),
+    () => new Set<Column>(['username', 'name', 'phone', 'status', 'profile', 'expiry', 'limits']),
   )
   const [showBulk, setShowBulk] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
+  const [batchOpen, setBatchOpen] = useState(false)
   // Ticked rows. A bulk action runs against these when any are ticked, and
   // against the server-side filter otherwise — see BulkBar.
   const [selected, setSelected] = useState<Set<string>>(() => new Set())
@@ -83,13 +99,20 @@ export function UserListPage() {
   const profiles: Profile[] = useMemo(() => profilesQ.data?.items ?? [], [profilesQ.data])
   const managers: ManagerView[] = useMemo(() => managersQ.data?.items ?? [], [managersQ.data])
 
+  // FR-135: per-subscriber limit progress, accumulated across pages as they
+  // load (usePaginated only carries {items,next_cursor} through its own
+  // state, so the `limits` sibling field is captured here as a side effect
+  // of the same fetch rather than duplicating pagination bookkeeping).
+  const [limitsById, setLimitsById] = useState<Record<string, LimitProgress>>({})
+
   // The list refetches from the server on filter change (debounced so typing in
   // the search box doesn't fire a request per keystroke), so a search matches
   // across ALL subscribers and paginates the matches — not just the loaded page.
   const debouncedFilters = useDebouncedValue(filters, 300)
   const page = usePaginated<Subscriber>(
-    (cursor) =>
-      listSubscribers({
+    async (cursor) => {
+      if (!cursor) setLimitsById({})
+      const res = await listSubscribersWithLimits({
         cursor,
         limit: 50,
         q: debouncedFilters.q.trim() || undefined,
@@ -98,9 +121,35 @@ export function UserListPage() {
         profile_id: debouncedFilters.profileId || undefined,
         owner_manager_id: debouncedFilters.ownerId || undefined,
         expiring_days: debouncedFilters.expiringDays || undefined,
-      }),
+      })
+      setLimitsById((prev) => (cursor ? { ...prev, ...res.limits } : res.limits))
+      return res
+    },
     `subscribers:${JSON.stringify(debouncedFilters)}`,
   )
+
+  // FR-135 "online" filter: a one-shot live-session snapshot on mount/refresh,
+  // never a persistent subscription — the list already re-polls on its own
+  // cadence, and a live indicator per row is LiveWidget's job on the detail
+  // page, not this list's.
+  const [onlineIds, setOnlineIds] = useState<Set<string>>(() => new Set())
+  const onlineRefresh = useRef(0)
+  useEffect(() => {
+    const gen = ++onlineRefresh.current
+    const handle = openLiveStream(
+      {},
+      {
+        onEvent: (evt) => {
+          if (evt.type === 'snapshot' && gen === onlineRefresh.current) {
+            setOnlineIds(new Set(evt.sessions.map((s) => s.subscriber_id)))
+            handle.close()
+          }
+        },
+      },
+    )
+    return () => handle.close()
+    // Re-snapshot whenever the page reloads its first page (filter change).
+  }, [debouncedFilters])
 
   const profileName = useMemo(() => {
     const map = new Map(profiles.map((p) => [p.id, p.name]))
@@ -111,7 +160,10 @@ export function UserListPage() {
     return (id: string | null) => (id ? (map.get(id) ?? id) : '—')
   }, [managers])
 
-  const filtered = useMemo(() => applyFilters(page.items, filters), [page.items, filters])
+  const filtered = useMemo(
+    () => applyFilters(page.items, filters, onlineIds),
+    [page.items, filters, onlineIds],
+  )
 
   const bulkFilter: BulkFilter = useMemo(() => {
     const f: BulkFilter = {}
@@ -140,6 +192,14 @@ export function UserListPage() {
         key: 'status',
         label: t('users.filterStatus'),
         options: STATUSES.map((s) => ({ value: s, label: t(`common.status.${s}`) })),
+      },
+      {
+        key: 'online',
+        label: t('users.filterOnline'),
+        options: [
+          { value: 'online', label: t('users.onlineOption') },
+          { value: 'offline', label: t('users.offlineOption') },
+        ],
       },
       {
         key: 'serviceType',
@@ -219,6 +279,11 @@ export function UserListPage() {
               </Link>
             )}
             {can('subscribers.create') && (
+              <Button variant="secondary" size="sm" onClick={() => setBatchOpen(true)}>
+                {t('batch.create')}
+              </Button>
+            )}
+            {can('subscribers.create') && (
               <Button size="sm" onClick={() => setCreateOpen(true)}>
                 {t('users.create')}
               </Button>
@@ -284,6 +349,7 @@ export function UserListPage() {
                 {has('profile') && <Th>{t('subscriber.profile')}</Th>}
                 {has('expiry') && <Th>{t('subscriber.expiry')}</Th>}
                 {has('owner') && <Th>{t('subscriber.owner')}</Th>}
+                {has('limits') && <Th>{t('users.limitsColumn')}</Th>}
               </tr>
             </thead>
             <tbody>
@@ -320,6 +386,11 @@ export function UserListPage() {
                     </Td>
                   )}
                   {has('owner') && <Td>{ownerName(s.owner_manager_id)}</Td>}
+                  {has('limits') && (
+                    <Td>
+                      <LimitProgressCell limits={limitsById[s.id]} />
+                    </Td>
+                  )}
                 </tr>
               ))}
             </tbody>
@@ -349,6 +420,13 @@ export function UserListPage() {
           setCreateOpen(false)
           page.reset()
         }}
+      />
+
+      <BatchCreateModal
+        open={batchOpen}
+        onOpenChange={setBatchOpen}
+        profiles={profiles}
+        onDone={page.reset}
       />
     </section>
   )
@@ -380,7 +458,7 @@ function ColumnChooser({
           {ALL_COLUMNS.map((c) => (
             <Checkbox
               key={c}
-              label={t(`subscriber.${c === 'expiry' ? 'expiry' : c}`)}
+              label={c === 'limits' ? t('users.limitsColumn') : t(`subscriber.${c}`)}
               checked={columns.has(c)}
               onChange={() => onToggle(c)}
             />
@@ -391,7 +469,7 @@ function ColumnChooser({
   )
 }
 
-function applyFilters(items: Subscriber[], f: Filters): Subscriber[] {
+function applyFilters(items: Subscriber[], f: Filters, onlineIds: Set<string>): Subscriber[] {
   let out = items
   if (f.q) {
     const q = f.q.trim().toLowerCase()
@@ -400,6 +478,8 @@ function applyFilters(items: Subscriber[], f: Filters): Subscriber[] {
     )
   }
   if (f.status) out = out.filter((s) => s.status === f.status)
+  if (f.online === 'online') out = out.filter((s) => onlineIds.has(s.id))
+  if (f.online === 'offline') out = out.filter((s) => !onlineIds.has(s.id))
   if (f.profileId) out = out.filter((s) => s.profile_id === f.profileId)
   if (f.ownerId) out = out.filter((s) => s.owner_manager_id === f.ownerId)
   if (f.serviceType) out = out.filter((s) => s.service_type === f.serviceType)

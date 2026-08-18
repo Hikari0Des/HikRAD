@@ -212,7 +212,17 @@
       "d30": "٣٠ ڕۆژ"
     },
     "filterServiceType": "خزمەتگوزاری",
-    "searchName": "گەڕان بە ناو یان ناوی بەکارهێنەر"
+    "searchName": "گەڕان بە ناو یان ناوی بەکارهێنەر",
+    "filterOnline": "دۆخ",
+    "onlineOption": "سەرهێڵ",
+    "offlineOption": "دەرهێڵ",
+    "limitsColumn": "سنوورەکان",
+    "limitQuota": "کۆتا",
+    "limitDaily": "ڕۆژانە",
+    "limitUptime": "ماوەی پەیوەندی",
+    "daysRemaining": "{days} ڕۆژ ماوە",
+    "planSwapHint": "ئەم بەکارهێنەرە کاتێک پاکێجی ئێستای تەواو بێت دەگۆڕدرێت بۆ پاکێجێکی تر.",
+    "planSwapActive": "گۆڕینی پاکێج چاوەڕوانە"
   },
   "subscriber": {
     "username": "ناوی بەکارهێنەر",
