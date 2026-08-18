@@ -75,11 +75,16 @@ func (e *engine) decide(ctx context.Context, req authorizeRequest) (authorizeRes
 	if err != nil {
 		return authorizeResponse{}, err
 	}
-	// 3b. Hotspot voucher login (FR-18): the voucher code is posted as the
-	// username. When it isn't a normal subscriber, try redeeming it as a voucher
-	// via D's seam; success authorizes the session (the voucher is the
-	// credential, so the password check is skipped).
+	// 3b. Hotspot voucher/card login (FR-18, v4-5 FR-136): the code is posted
+	// as the username. When it isn't a normal subscriber, try redeeming it as
+	// a voucher, then as a card, via their respective seams; success
+	// authorizes the session (the code IS the credential, so the password
+	// check is skipped). A card is tried only when the username isn't a
+	// voucher either — the two credential spaces don't overlap in practice
+	// (independent hash namespaces), but voucher first preserves today's
+	// exact behaviour for every existing voucher code.
 	voucherAuthed := false
+	cardAuthed := false
 	if !found && hotspot {
 		vview, ok, verr := e.tryVoucher(ctx, req.Username)
 		if verr != nil {
@@ -88,14 +93,28 @@ func (e *engine) decide(ctx context.Context, req authorizeRequest) (authorizeRes
 		if ok {
 			view, found, voucherAuthed = vview, true, true
 			ev.Checks = append(ev.Checks, "voucher")
+		} else {
+			cview, cok, cerr := e.tryCard(ctx, req.Username)
+			if cerr != nil {
+				return authorizeResponse{}, cerr
+			}
+			if cok {
+				view, found, cardAuthed = cview, true, true
+				ev.Checks = append(ev.Checks, "card")
+			}
 		}
 	}
 	if !found {
 		return e.reject(ctx, ev, ReasonUnknownUser), nil
 	}
 	ev.Checks = append(ev.Checks, "user")
+	// credentialIsCode: the code itself already fully authenticated this
+	// session (voucher or card) — every check below that exists to validate
+	// a SUBSCRIBER's account (service-type matrix, NAS scope, password) does
+	// not apply, exactly as it never applied to vouchers.
+	credentialIsCode := voucherAuthed || cardAuthed
 
-	// 4. Service-type matrix (FR-61 / C6 step 4). A redeemed voucher is
+	// 4. Service-type matrix (FR-61 / C6 step 4). A redeemed voucher/card is
 	// inherently a Hotspot credential, so it bypasses this gate (and step 5).
 	//
 	//   service_type | pppoe request | hotspot request
@@ -105,16 +124,16 @@ func (e *engine) decide(ctx context.Context, req authorizeRequest) (authorizeRes
 	//
 	// 'dual' is exactly v1's allow_hotspot=true and 'pppoe' its false, so every
 	// migrated row decides identically to v1 (C1).
-	if !voucherAuthed && !serviceTypeAllows(view.ServiceType, hotspot) {
+	if !credentialIsCode && !serviceTypeAllows(view.ServiceType, hotspot) {
 		return e.reject(ctx, ev, ReasonServiceNotAllowed), nil
 	}
 	ev.Checks = append(ev.Checks, "service")
 
 	// 5. NAS scope (FR-64 / C6 step 5) — after service-type, before credentials,
 	// per the frozen chain. An account may be scoped to SEVERAL NAS/service
-	// pairs; no scopes at all = any NAS (v1's behaviour). A voucher is not scoped
-	// to a NAS, so it bypasses this too.
-	if !voucherAuthed {
+	// pairs; no scopes at all = any NAS (v1's behaviour). A voucher/card is not
+	// scoped to a NAS, so it bypasses this too.
+	if !credentialIsCode {
 		if !scopeAllows(view.Scopes, nas.ID, instance.ID) {
 			return e.reject(ctx, ev, ReasonNASNotAllowed), nil
 		}
@@ -122,8 +141,8 @@ func (e *engine) decide(ctx context.Context, req authorizeRequest) (authorizeRes
 	}
 
 	// 6. Credentials — decryption happens ONLY here (NFR-4.2). Skipped for a
-	// voucher login, which redemption already authenticated.
-	if !voucherAuthed {
+	// voucher/card login, which redemption already authenticated.
+	if !credentialIsCode {
 		plaintext, err := e.decrypt(view.PasswordEnc)
 		if err != nil {
 			return authorizeResponse{}, err
