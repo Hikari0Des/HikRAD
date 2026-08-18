@@ -84,6 +84,12 @@ type bulkJob struct {
 	Failed    int           `json:"failed"`
 	Failures  []bulkFailure `json:"failures"`
 	StartedAt time.Time     `json:"started_at"`
+	// Passwords (FR-133 "generated" password mode only): username -> the
+	// plaintext password created for it, retrievable only through this job's
+	// status poll — the job registry's 1-hour TTL (jobRegistry.add) is the
+	// same "exists only briefly" posture billing/voucher.go's generation CSV
+	// follows, adapted to an async job instead of a one-shot download.
+	Passwords map[string]string `json:"passwords,omitempty"`
 }
 
 func (j *bulkJob) snapshot() map[string]any {
@@ -91,11 +97,19 @@ func (j *bulkJob) snapshot() map[string]any {
 	defer j.mu.Unlock()
 	fails := make([]bulkFailure, len(j.Failures))
 	copy(fails, j.Failures)
-	return map[string]any{
+	out := map[string]any{
 		"id": j.ID, "action": j.Action, "status": j.Status,
 		"total": j.Total, "done": j.Done, "succeeded": j.Succeeded,
 		"failed": j.Failed, "failures": fails, "started_at": j.StartedAt.UTC(),
 	}
+	if len(j.Passwords) > 0 {
+		pw := make(map[string]string, len(j.Passwords))
+		for k, v := range j.Passwords {
+			pw[k] = v
+		}
+		out["passwords"] = pw
+	}
+	return out
 }
 
 type jobRegistry struct {
