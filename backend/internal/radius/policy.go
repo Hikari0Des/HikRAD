@@ -430,6 +430,14 @@ func (e *engine) replyIntents(view AuthView, instance serviceRow, hotspot bool, 
 	// returns above), so this intent never collides with the redirect's use
 	// of the same MikroTik VSA. Empty ⇒ omitted (add skips empty values).
 	add(IntentAddressList, view.AddressList)
+
+	// FR-149: a static per-subscriber IPv6 prefix pin. Same normal/throttled/
+	// switch_plan-only tail as AddressList above (never modeExpiredPool,
+	// which returns before reaching here); empty ⇒ omitted, so a subscriber
+	// with no pin is unaffected and picks up a prefix dynamically from the
+	// service instance's DHCPv6-PD pool instead (router-native, no attribute
+	// needed).
+	add(IntentDelegatedPrefix, view.DelegatedPrefix)
 	return attrs
 }
 

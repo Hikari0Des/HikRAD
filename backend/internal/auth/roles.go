@@ -31,7 +31,13 @@ var permissionCatalog = []struct {
 }{
 	{"subscribers", []string{"subscribers.view", "subscribers.create", "subscribers.edit", "subscribers.delete"}},
 	{"profiles", []string{"profiles.view", "profiles.create", "profiles.edit", "profiles.delete"}},
-	{"nas", []string{"nas.view", "nas.create", "nas.edit", "nas.delete"}},
+	// nas.reboot (v4-6/FR-142) is deliberately separate from nas.edit — a
+	// router reboot is a destructive action, not a config edit, so it must be
+	// grantable (or withheld) independently. nas.update (v4-7/FR-147) is the
+	// same posture applied to installing a RouterOS update: also reboots the
+	// router, but is neither a config edit nor the reboot action itself, so
+	// it gets its own independently grantable/withholdable permission too.
+	{"nas", []string{"nas.view", "nas.create", "nas.edit", "nas.delete", "nas.reboot", "nas.update"}},
 	{"pools", []string{"pools.view", "pools.create", "pools.edit", "pools.delete"}},
 	{"billing", []string{"billing.view", "billing.create", "billing.edit",
 		"currency_rates.manage", "overheads.manage", "reseller_prices.manage",

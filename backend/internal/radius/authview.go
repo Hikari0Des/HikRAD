@@ -106,6 +106,19 @@ type AuthView struct {
 	// Empty ⇒ no address_list intent is emitted. Backward-compatible C4
 	// extension, same posture as StaticIP/BurstRate above.
 	AddressList string `json:"address_list"`
+	// DelegatedPrefix (v4-7, FR-149) is a STATIC per-subscriber IPv6 prefix
+	// pin (business accounts), sourced from subscribers.ipv6_static_prefix
+	// (migration 0611). Empty ⇒ no delegated_prefix intent is emitted and the
+	// subscriber's PPP session gets a prefix dynamically from the resolved
+	// service instance's DHCPv6-PD pool instead (a router-native allocation
+	// that needs no RADIUS attribute at all — only the STATIC override case
+	// requires one). Backward-compatible C4 extension, same posture as
+	// StaticIP/AddressList above. NOTE: the loader-side population of this
+	// field from subscribers.ipv6_static_prefix lives in the subscribers
+	// package (sub-PRD 04) and is a v4-7 follow-up — this field and its
+	// policy.go emission are the RADIUS-side half, wired and safe to merge
+	// ahead of it (an always-empty field changes no existing reply).
+	DelegatedPrefix string `json:"delegated_prefix"`
 
 	// --- v4-4 Limits engine (FR-128–131) ---------------------------------
 	//

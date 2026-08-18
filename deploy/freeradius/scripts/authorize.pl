@@ -165,6 +165,12 @@ for my $attr (@{ $decoded->{attributes} // [] }) {
         # VSA as redirect_expired; the backend emits only one per accept
         # (address_list in modeNormal/Throttled, redirect_expired in expired).
         print qq{Mikrotik-Address-List := "$value"\n};
+    } elsif ($intent eq 'delegated_prefix') {
+        # v4-7 / FR-149: a static per-subscriber IPv6 prefix pin. Standard
+        # RFC 3162 attribute, not a Mikrotik VSA (unlike every other intent
+        # above) — the one case where the vendor-neutral name IS the wire
+        # attribute name.
+        print qq{Framed-IPv6-Prefix := $value\n};
     }
 }
 exit 0;

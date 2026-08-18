@@ -17,6 +17,8 @@ const (
 	IntentRedirectExpired Intent = vendor.IntentRedirectExpired
 	IntentStaticIP        Intent = vendor.IntentStaticIP
 	IntentAddressList     Intent = vendor.IntentAddressList
+	// IntentDelegatedPrefix (v4-7, FR-149) — see AuthView.DelegatedPrefix.
+	IntentDelegatedPrefix Intent = vendor.IntentDelegatedPrefix
 )
 
 // Reject reasons, per the C4 "reason" enum (+ extensions this phase adds:

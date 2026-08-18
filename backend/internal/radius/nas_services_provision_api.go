@@ -359,6 +359,41 @@ func (m *module) adoptServiceHandler(w http.ResponseWriter, r *http.Request) {
 	httpapi.JSON(w, http.StatusOK, row.view())
 }
 
+// serviceParamsHandler implements PUT .../services/{serviceId}/params
+// (FR-145): the extended per-service parameters that are HikRAD-side
+// metadata rather than a router write (see nas_services_store.go's doc on
+// serviceRow's v4-7 fields) — a plain update, not a plan/preview/apply flow,
+// audited like any other NAS mutation.
+func (m *module) serviceParamsHandler(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	nasID, serviceID := chi.URLParam(r, "id"), chi.URLParam(r, "serviceId")
+	if _, err := getNAS(ctx, m.db, nasID); errors.Is(err, pgx.ErrNoRows) {
+		httpapi.Error(w, http.StatusNotFound, "not_found", "nas not found")
+		return
+	} else if err != nil {
+		m.internal(w, "get nas", err)
+		return
+	}
+	var req serviceParamsInput
+	if !httpapi.Bind(w, r, &req) {
+		return
+	}
+	if err := updateServiceParams(ctx, m.db, nasID, serviceID, req); errors.Is(err, errServiceNotFound) {
+		httpapi.Error(w, http.StatusNotFound, "not_found", "service not found")
+		return
+	} else if err != nil {
+		m.internal(w, "update service params", err)
+		return
+	}
+	row, err := getService(ctx, m.db, nasID, serviceID)
+	if err != nil {
+		m.internal(w, "read back service", err)
+		return
+	}
+	_ = auth.Audit(ctx, "nas.service_params", "nas", nasID, nil, map[string]any{"service_id": serviceID, "params": req})
+	httpapi.JSON(w, http.StatusOK, row.view())
+}
+
 func strOrDeref(s *string) string {
 	if s == nil {
 		return ""

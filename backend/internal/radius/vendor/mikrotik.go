@@ -9,6 +9,7 @@ import (
 	"layeh.com/radius"
 	"layeh.com/radius/rfc2865"
 	"layeh.com/radius/rfc2869"
+	"layeh.com/radius/rfc3162"
 	"layeh.com/radius/vendors/mikrotik"
 )
 
@@ -62,6 +63,17 @@ func (mikrotikAdapter) Apply(p *radius.Packet, attrs []Attr) error {
 			// single reply never carries both.
 			if err := mikrotik.MikrotikAddressList_SetString(p, a.Value); err != nil {
 				return fmt.Errorf("mikrotik: set address-list: %w", err)
+			}
+		case IntentDelegatedPrefix:
+			// FR-149: a standard RFC 3162 attribute, not a Mikrotik VSA — still
+			// mapped here, never in the RADIUS-core policy engine, so no reply
+			// attribute of any kind is assembled outside the vendor boundary.
+			_, ipnet, err := net.ParseCIDR(a.Value)
+			if err != nil {
+				return fmt.Errorf("mikrotik: delegated_prefix %q is not a valid CIDR: %w", a.Value, err)
+			}
+			if err := rfc3162.FramedIPv6Prefix_Set(p, ipnet); err != nil {
+				return fmt.Errorf("mikrotik: set framed-ipv6-prefix: %w", err)
 			}
 		}
 	}

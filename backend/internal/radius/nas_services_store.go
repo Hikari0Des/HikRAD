@@ -31,6 +31,20 @@ type serviceRow struct {
 	ManagementMode  string // router | system (FR-67 / C5)
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
+
+	// --- v4-7 (FR-145/FR-149) extended per-service parameters (0611) -------
+	// InterimIntervalSecs/HotspotUserProfile/DHCPRange are HikRAD-side
+	// metadata the FR-145 service-tab forms expose; nil/empty = use the NAS-
+	// wide default. Threading them into the router PLAN (PlanService) is a
+	// follow-up — persisted and surfaced here so the panel form has
+	// somewhere real to save to, documented as a scope decision in the gate
+	// result rather than silently claimed as router-enforced.
+	InterimIntervalSecs *int
+	HotspotUserProfile   string
+	DHCPRange            string
+	IPv6Enabled          bool
+	IPv6PrefixLen        int
+	IPv6PoolName         string
 }
 
 // serviceView is the JSON read shape embedded in nasView (C3/C9; management_mode added by v2 phase 3 C9).
@@ -47,6 +61,14 @@ type serviceView struct {
 	// LiveSessions is the FR-63 per-service session count the panel's services
 	// sub-list shows. Filled by the API layer from C's live counter.
 	LiveSessions int `json:"live_sessions"`
+
+	// v4-7 (FR-145/FR-149) extended params — see serviceRow's doc.
+	InterimIntervalSecs *int   `json:"interim_interval_secs"`
+	HotspotUserProfile  string `json:"hotspot_user_profile"`
+	DHCPRange           string `json:"dhcp_range"`
+	IPv6Enabled         bool   `json:"ipv6_enabled"`
+	IPv6PrefixLen       int    `json:"ipv6_prefix_len"`
+	IPv6PoolName        string `json:"ipv6_pool_name"`
 }
 
 func (s serviceRow) view() serviceView {
@@ -54,6 +76,8 @@ func (s serviceRow) view() serviceView {
 		ID: s.ID, Service: s.Service, Label: s.Label, InterfaceNote: s.InterfaceNote,
 		IPPoolID: s.IPPoolID, IPPoolName: s.IPPoolName,
 		ROSServerName: s.ROSServerName, Enabled: s.Enabled, ManagementMode: s.ManagementMode,
+		InterimIntervalSecs: s.InterimIntervalSecs, HotspotUserProfile: s.HotspotUserProfile,
+		DHCPRange: s.DHCPRange, IPv6Enabled: s.IPv6Enabled, IPv6PrefixLen: s.IPv6PrefixLen, IPv6PoolName: s.IPv6PoolName,
 	}
 }
 
@@ -72,13 +96,81 @@ func (s serviceInput) enabled() bool { return s.Enabled == nil || *s.Enabled }
 
 const serviceColumns = `s.id::text, s.nas_id::text, s.service, s.label, s.interface_note,
 	s.ip_pool_id::text, coalesce((SELECT name FROM ip_pools WHERE id = s.ip_pool_id), ''),
-	s.ros_server_name, s.enabled, s.management_mode, s.created_at, s.updated_at`
+	s.ros_server_name, s.enabled, s.management_mode, s.created_at, s.updated_at,
+	s.interim_interval_secs, s.hotspot_user_profile, s.dhcp_range,
+	s.ipv6_enabled, s.ipv6_prefix_len, s.ipv6_pool_name`
 
 func scanService(row pgx.Row) (serviceRow, error) {
 	var s serviceRow
 	err := row.Scan(&s.ID, &s.NASID, &s.Service, &s.Label, &s.InterfaceNote,
-		&s.IPPoolID, &s.IPPoolName, &s.ROSServerName, &s.Enabled, &s.ManagementMode, &s.CreatedAt, &s.UpdatedAt)
+		&s.IPPoolID, &s.IPPoolName, &s.ROSServerName, &s.Enabled, &s.ManagementMode, &s.CreatedAt, &s.UpdatedAt,
+		&s.InterimIntervalSecs, &s.HotspotUserProfile, &s.DHCPRange,
+		&s.IPv6Enabled, &s.IPv6PrefixLen, &s.IPv6PoolName)
 	return s, err
+}
+
+// serviceParamsInput is the FR-145 service-tab form's extended-parameters
+// body (PUT .../services/{serviceId}/params) — metadata-only fields that do
+// not require a router write (see serviceRow's doc), so this is a plain
+// HikRAD-side update, not a plan/preview/apply flow.
+type serviceParamsInput struct {
+	InterimIntervalSecs *int   `json:"interim_interval_secs"`
+	HotspotUserProfile  string `json:"hotspot_user_profile"`
+	DHCPRange           string `json:"dhcp_range"`
+	IPv6Enabled         bool   `json:"ipv6_enabled"`
+	IPv6PrefixLen       int    `json:"ipv6_prefix_len"`
+	IPv6PoolName        string `json:"ipv6_pool_name"`
+}
+
+// setServiceIPv6 updates only the IPv6 columns (the FR-144 wizard's IPv6 step
+// persists this way rather than through updateServiceParams, which would
+// otherwise clobber the service's other extended params with zero values).
+func setServiceIPv6(ctx context.Context, db *pgxpool.Pool, nasID, serviceID string, enabled bool, prefixLen int, poolName string) error {
+	if prefixLen == 0 {
+		prefixLen = 56
+	}
+	_, err := db.Exec(ctx,
+		`UPDATE nas_services SET ipv6_enabled = $3, ipv6_prefix_len = $4, ipv6_pool_name = $5, updated_at = now()
+		  WHERE id = $1::uuid AND nas_id = $2::uuid`,
+		serviceID, nasID, enabled, prefixLen, poolName)
+	return err
+}
+
+// findServiceByROSName resolves a service by its router-side name — the
+// wizard's IPv6 step addresses a service by ROSServerName (the same identity
+// PlanService/PlanIPv6 already match on), not by HikRAD's internal id.
+func findServiceByROSName(ctx context.Context, db *pgxpool.Pool, nasID, rosServerName string) (serviceRow, error) {
+	rows, err := queryServices(ctx, db,
+		`SELECT `+serviceColumns+` FROM nas_services s WHERE s.nas_id = $1::uuid AND s.ros_server_name = $2`,
+		nasID, rosServerName)
+	if err != nil {
+		return serviceRow{}, err
+	}
+	if len(rows) == 0 {
+		return serviceRow{}, errServiceNotFound
+	}
+	return rows[0], nil
+}
+
+func updateServiceParams(ctx context.Context, db *pgxpool.Pool, nasID, serviceID string, in serviceParamsInput) error {
+	prefixLen := in.IPv6PrefixLen
+	if prefixLen == 0 {
+		prefixLen = 56
+	}
+	ct, err := db.Exec(ctx,
+		`UPDATE nas_services SET
+		    interim_interval_secs = $3, hotspot_user_profile = $4, dhcp_range = $5,
+		    ipv6_enabled = $6, ipv6_prefix_len = $7, ipv6_pool_name = $8, updated_at = now()
+		  WHERE id = $1::uuid AND nas_id = $2::uuid`,
+		serviceID, nasID, in.InterimIntervalSecs, in.HotspotUserProfile, in.DHCPRange,
+		in.IPv6Enabled, prefixLen, in.IPv6PoolName)
+	if err != nil {
+		return err
+	}
+	if ct.RowsAffected() == 0 {
+		return errServiceNotFound
+	}
+	return nil
 }
 
 // listServices returns a NAS's service instances, ordered so the snippet and
