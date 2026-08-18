@@ -12,6 +12,7 @@ package main
 import (
 	_ "github.com/hikrad/hikrad/internal/auth"
 	_ "github.com/hikrad/hikrad/internal/billing"  // Phase 3
+	_ "github.com/hikrad/hikrad/internal/cards"    // v4-5
 	_ "github.com/hikrad/hikrad/internal/importer" // Phase 5
 	_ "github.com/hikrad/hikrad/internal/live"
 	_ "github.com/hikrad/hikrad/internal/monitorsvc"

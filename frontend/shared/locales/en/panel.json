@@ -56,7 +56,8 @@
     "currencyRates": "Currency rates",
     "pricingAdmin": "Overheads & reseller pricing",
     "settings": "Settings",
-    "license": "License"
+    "license": "License",
+    "cards": "Cards"
   },
   "search": {
     "label": "Global search",
@@ -2008,5 +2009,73 @@
     "creating": "Creating subscribers…",
     "summary": "{succeeded} created, {failed} failed.",
     "passwordsOnceNote": "These passwords are shown once — they are not recoverable afterwards."
+  },
+  "cards": {
+    "title": "Card groups",
+    "create": "Create group",
+    "empty": "No card groups yet.",
+    "legacyVoucher": "Migrated voucher",
+    "enabled": "Enabled",
+    "disabled": "Disabled",
+    "manage": "Manage",
+    "col": {
+      "id": "ID",
+      "name": "Name",
+      "total": "Total",
+      "unused": "Unused",
+      "active": "Active",
+      "exhausted": "Exhausted",
+      "status": "Status"
+    },
+    "state": {
+      "unused": "Unused",
+      "active": "Active",
+      "exhausted": "Exhausted",
+      "disabled": "Disabled"
+    },
+    "createTitle": "Create card group",
+    "name": "Name",
+    "count": "Count",
+    "prefix": "Username prefix",
+    "codeFormat": "Code format",
+    "format": {
+      "alphanumeric": "Letters and numbers",
+      "alpha": "Letters only",
+      "numeric": "Numbers only"
+    },
+    "codeLength": "Code length",
+    "price": "Price",
+    "rateDown": "Download rate (kbps)",
+    "rateUp": "Upload rate (kbps)",
+    "transferMode": "Data transfer",
+    "transfer": {
+      "unlimited": "Unlimited",
+      "combined": "Combined limit"
+    },
+    "transferTotalMB": "Total data (MB)",
+    "uptimeHours": "Uptime limit (hours)",
+    "uptimeHoursHint": "0 = no uptime limit.",
+    "expireAfterHours": "Expire after first login (hours)",
+    "expireAfterHoursHint": "0 = never expires after login.",
+    "validUntil": "Valid until",
+    "validUntilHint": "Shelf date — an unused card stops working after this date, regardless of login.",
+    "generate": "Generate",
+    "generatedCount": "{n} card(s) generated.",
+    "codesOnceNote": "These codes are shown once — they are not recoverable afterwards.",
+    "print": "Print",
+    "printFailed": "Could not generate the print page.",
+    "disableAll": "Disable all",
+    "enableAll": "Enable all",
+    "disableAllTitle": "Disable this card group?",
+    "disableAllBody": "Disabled cards can no longer authenticate. This can be reversed at any time.",
+    "exportUsage": "Export usage (CSV)",
+    "extend": "Extend",
+    "extended": "Shelf date extended.",
+    "addMore": "Add more",
+    "duplicate": "Duplicate group",
+    "duplicated": "Created \"{name}\".",
+    "firstLogin": "First login",
+    "usage": "Usage",
+    "resetCard": "Reset"
   }
 }

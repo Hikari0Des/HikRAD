@@ -37,6 +37,7 @@ var permissionCatalog = []struct {
 		"currency_rates.manage", "overheads.manage", "reseller_prices.manage",
 		"payment_providers.manage", "payment_tickets.verify"}},
 	{"vouchers", []string{"vouchers.view", "vouchers.create", "vouchers.edit"}},
+	{"cards", []string{"cards.view", "cards.create", "cards.edit", "cards.print"}},
 	{"monitoring", []string{"monitoring.view", "monitoring.create", "monitoring.edit", "monitoring.delete"}},
 	{"reports", []string{"reports.view"}},
 	{"settings", []string{"settings.view", "settings.edit"}},

@@ -5,6 +5,7 @@ import { RequireAuth } from './auth/AuthContext'
 import { RequirePerm } from './auth/RequirePerm'
 import {
   PERM_AUDIT_VIEW,
+  PERM_CARDS_VIEW,
   PERM_PAYMENT_TICKETS_VERIFY,
   PERM_PAYMENT_PROVIDERS_MANAGE,
   PERM_LIVE_VIEW,
@@ -35,6 +36,7 @@ import { PaymentTicketsPage } from './pages/billing/PaymentTicketsPage'
 import { PricingAdminPage } from './pages/billing/PricingAdminPage'
 import { ProviderCatalogPage } from './pages/billing/ProviderCatalogPage'
 import { VouchersPage } from './pages/billing/VouchersPage'
+import { CardsPage } from './pages/cards/CardsPage'
 import { ImportWizardPage } from './pages/import/ImportWizardPage'
 import { LicensePage } from './pages/license/LicensePage'
 import { LiveSessionsPage } from './pages/live/LiveSessionsPage'
@@ -100,6 +102,7 @@ export function App() {
           <Route path="sessions" element={guard(PERM_LIVE_VIEW, <LiveSessionsPage />)} />
           <Route path="ledger" element={guard(PERM_REPORTS_VIEW, <LedgerPage />)} />
           <Route path="vouchers" element={guard(PERM_VOUCHERS_VIEW, <VouchersPage />)} />
+          <Route path="cards" element={guard(PERM_CARDS_VIEW, <CardsPage />)} />
           <Route
             path="payment-tickets"
             element={guard(PERM_PAYMENT_TICKETS_VERIFY, <PaymentTicketsPage />)}
