@@ -1788,7 +1788,7 @@
     "title": "استيراد المشتركين",
     "subtitle": "استيراد ملف CSV من SAS4 أو نظام آخر.",
     "upload": {
-      "body": "اختر ملف CSV للبدء."
+      "body": "اختر ملفًا يطابق النظام المصدر المحدد للبدء."
     },
     "map": {
       "detected": "الترميز: {encoding} — الأعمدة: {header}",
@@ -1844,7 +1844,15 @@
       "summary": "الملخص"
     },
     "titleProfiles": "استيراد الباقات",
-    "subtitleProfiles": "استيراد قائمة باقات من ملف CSV."
+    "subtitleProfiles": "استيراد قائمة باقات من ملف CSV.",
+    "sourceSystem": {
+      "label": "النظام المصدر",
+      "hint": "اختيار نظام مصدر قديم يقوم بتحليل تنسيق التصدير الخاص بذلك النظام مباشرة — دون الحاجة لتحويل يدوي إلى CSV.",
+      "custom": "ملف CSV (SAS4 أو عام)",
+      "radius_manager": "Radius Manager (نسخة MySQL)",
+      "super_speed_radius": "Super Speed Radius (نسخة MySQL)",
+      "pro_radius": "Pro Radius (إكسل)"
+    }
   },
   "license": {
     "title": "الترخيص",

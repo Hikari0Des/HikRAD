@@ -12,6 +12,7 @@ import {
   type BatchStatus,
   type DryRunResult,
   type ImportEntity,
+  type SourceSystem,
   type UploadResult,
 } from '../../api/importer'
 import { triggerDownload } from '../../api/billing'
@@ -69,6 +70,19 @@ const REQUIRED_FIELD: Record<ImportEntity, string> = {
 
 type Step = 'upload' | 'map' | 'dryrun' | 'execute' | 'summary'
 
+// v4-5 FR-138: legacy-system pickers, each driving the file input's accept
+// filter and the upload-time source_system tag. 'custom' keeps today's
+// plain-CSV behaviour exactly (no source_system sent).
+const SOURCE_SYSTEMS: { value: SourceSystem; accept: string }[] = [
+  { value: 'custom', accept: '.csv,text/csv' },
+  { value: 'radius_manager', accept: '.sql,text/plain,text/x-sql' },
+  { value: 'super_speed_radius', accept: '.sql,text/plain,text/x-sql' },
+  {
+    value: 'pro_radius',
+    accept: '.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  },
+]
+
 /**
  * CSV import wizard (FR-6 subscribers / FR-111.3 profiles): upload → map →
  * dry-run → execute → summary, parameterized by `entity`. Every failure
@@ -87,6 +101,7 @@ export function ImportWizardPage({ entity = 'subscribers' }: { entity?: ImportEn
   const [progress, setProgress] = useState<BatchStatus | null>(null)
   const [busy, setBusy] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
+  const [sourceSystem, setSourceSystem] = useState<SourceSystem>('custom')
   const fileRef = useRef<HTMLInputElement>(null)
 
   async function onFileChosen(e: React.ChangeEvent<HTMLInputElement>) {
@@ -96,7 +111,18 @@ export function ImportWizardPage({ entity = 'subscribers' }: { entity?: ImportEn
     setUploadError(null)
     try {
       const base64 = await fileToBase64(file)
-      const res = await uploadImportFile(entity, file.name, base64, 'sas4')
+      // 'custom' keeps the historical 'sas4' preset guess as the default
+      // starting point (unchanged behaviour); a named legacy system sends
+      // its own source_system and lets the server apply that system's own
+      // preset guess instead.
+      const preset = sourceSystem === 'custom' ? 'sas4' : undefined
+      const res = await uploadImportFile(
+        entity,
+        file.name,
+        base64,
+        preset,
+        sourceSystem === 'custom' ? undefined : sourceSystem,
+      )
       setUpload(res)
       if (res.column_map) setColumnMap(res.column_map)
       setStep('map')
@@ -190,13 +216,27 @@ export function ImportWizardPage({ entity = 'subscribers' }: { entity?: ImportEn
       {step === 'upload' && (
         <div className="max-w-md space-y-3">
           <p className="text-sm text-ink-muted">{t('import.upload.body')}</p>
+          <label className="block text-xs">
+            <span className="mb-1 block text-ink-muted">{t('import.sourceSystem.label')}</span>
+            <Select
+              value={sourceSystem}
+              onChange={(e) => setSourceSystem(e.target.value as SourceSystem)}
+            >
+              {SOURCE_SYSTEMS.map((s) => (
+                <option key={s.value} value={s.value}>
+                  {t(`import.sourceSystem.${s.value}`)}
+                </option>
+              ))}
+            </Select>
+          </label>
+          <p className="text-xs text-ink-muted">{t('import.sourceSystem.hint')}</p>
           {uploadError ? (
             <div className="rounded-md bg-danger/10 p-3 text-sm text-danger">{uploadError}</div>
           ) : null}
           <input
             ref={fileRef}
             type="file"
-            accept=".csv,text/csv"
+            accept={SOURCE_SYSTEMS.find((s) => s.value === sourceSystem)?.accept}
             disabled={busy}
             onChange={(e) => void onFileChosen(e)}
           />

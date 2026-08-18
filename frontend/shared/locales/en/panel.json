@@ -1788,7 +1788,7 @@
     "title": "Import subscribers",
     "subtitle": "Import a CSV export from SAS4 or another system.",
     "upload": {
-      "body": "Choose a CSV file to get started."
+      "body": "Choose a file matching the selected source system to get started."
     },
     "map": {
       "detected": "Encoding: {encoding} — columns: {header}",
@@ -1844,7 +1844,15 @@
       "summary": "Summary"
     },
     "titleProfiles": "Import plans",
-    "subtitleProfiles": "Import a plan catalogue from a CSV file."
+    "subtitleProfiles": "Import a plan catalogue from a CSV file.",
+    "sourceSystem": {
+      "label": "Source system",
+      "hint": "Choosing a legacy source system parses that system's own export format directly — no manual CSV conversion needed.",
+      "custom": "CSV file (SAS4 or generic)",
+      "radius_manager": "Radius Manager (MySQL dump)",
+      "super_speed_radius": "Super Speed Radius (MySQL dump)",
+      "pro_radius": "Pro Radius (Excel)"
+    }
   },
   "license": {
     "title": "License",

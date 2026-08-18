@@ -71,6 +71,44 @@ var presets = map[string]map[string]map[string]string{
 			"expires_at": "ExpireDate",
 			"email":      "Email", // matched case-insensitively, only if present in the uploaded header
 		},
+		// v4-5 FR-138. Real Radius Manager / Super Speed Radius / Pro Radius
+		// schemas were not available to verify these against (the same
+		// documented uncertainty the SAS4 preset above already carries,
+		// sub-PRD 04 §7) — these are best-effort starting guesses at each
+		// product's commonly-documented column names, which the operator
+		// confirms/adjusts in the mapping step before dry-run like every
+		// other preset. They are a convenience, never a hard contract.
+		"radius_manager": {
+			"username":     "username",
+			"password":     "password",
+			"name":         "fullname",
+			"phone":        "phone",
+			"address":      "address",
+			"profile":      "planname",
+			"expires_at":   "expiration",
+			"email":        "email",
+			"service_type": "service",
+		},
+		"super_speed_radius": {
+			"username":   "username",
+			"password":   "password",
+			"name":       "full_name",
+			"phone":      "mobile",
+			"address":    "address",
+			"profile":    "plan",
+			"expires_at": "expiry_date",
+			"email":      "email",
+		},
+		"pro_radius": {
+			"username":   "Username",
+			"password":   "Password",
+			"name":       "Name",
+			"phone":      "Phone",
+			"address":    "Address",
+			"profile":    "Plan",
+			"expires_at": "ExpiryDate",
+			"email":      "Email",
+		},
 	},
 	"profiles": {
 		// A best-effort default matching common plan-export column names; the
@@ -82,6 +120,30 @@ var presets = map[string]map[string]map[string]string{
 			"duration_days":     "Days",
 			"rate_down":         "DownloadRate",
 			"rate_up":           "UploadRate",
+			"quota_total_bytes": "Quota",
+		},
+		"radius_manager": {
+			"name":              "planname",
+			"price":             "price",
+			"duration_days":     "validity",
+			"rate_down":         "downrate",
+			"rate_up":           "uprate",
+			"quota_total_bytes": "quota",
+		},
+		"super_speed_radius": {
+			"name":              "plan",
+			"price":             "price",
+			"duration_days":     "days",
+			"rate_down":         "download_speed",
+			"rate_up":           "upload_speed",
+			"quota_total_bytes": "traffic_limit",
+		},
+		"pro_radius": {
+			"name":              "Plan",
+			"price":             "Price",
+			"duration_days":     "Days",
+			"rate_down":         "Download",
+			"rate_up":           "Upload",
 			"quota_total_bytes": "Quota",
 		},
 	},

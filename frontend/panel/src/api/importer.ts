@@ -8,6 +8,16 @@ import { request } from './client'
 /** The import entity — which catalogue the wizard loads (FR-111.3). */
 export type ImportEntity = 'subscribers' | 'profiles'
 
+/**
+ * v4-5 FR-138: which legacy system a file came from, driving both the
+ * upload-time file converter (a Radius Manager/Super Speed Radius MySQL
+ * dump or a Pro Radius XLSX is converted to CSV at the edge — see
+ * backend/internal/importer/{sqldump,xlsx}.go) and the preset column-map
+ * guess. 'custom'/'sas4' read as plain CSV text exactly as before.
+ */
+export type SourceSystem =
+  'custom' | 'sas4' | 'radius_manager' | 'super_speed_radius' | 'pro_radius'
+
 export interface UploadResult {
   batch_id: string
   entity?: ImportEntity
@@ -22,10 +32,11 @@ export function uploadImportFile(
   filename: string,
   contentBase64: string,
   preset?: string,
+  sourceSystem?: SourceSystem,
 ): Promise<UploadResult> {
   return request<UploadResult>(`/import/${entity}`, {
     method: 'POST',
-    body: { filename, content_base64: contentBase64, preset },
+    body: { filename, content_base64: contentBase64, preset, source_system: sourceSystem },
   })
 }
 
@@ -98,6 +109,7 @@ export interface BatchStatus {
   header: string[]
   column_map: Record<string, string>
   preset: string
+  source_system?: SourceSystem
   row_count: number
   summary: unknown
   progress?: ImportProgress

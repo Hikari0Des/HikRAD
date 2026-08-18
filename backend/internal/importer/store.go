@@ -9,35 +9,43 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// batch is the persisted state of one import run (migration 0400; entity 0594).
+// batch is the persisted state of one import run (migration 0400; entity 0594;
+// source_system 0606).
 type batch struct {
-	ID     string
-	Entity string // subscribers | profiles (FR-111.3)
-	Filename   string
-	Encoding   string
-	Delimiter  string
-	RawCSV     []byte // decoded UTF-8 text, stored as bytes
-	Header     []string
-	ColumnMap  map[string]string
-	Preset     string
-	Status     string
-	RowCount   int
-	DryRunAt   *time.Time
-	ExecutedAt *time.Time
-	Summary    map[string]any
-	CreatedBy  string
-	CreatedAt  time.Time
+	ID           string
+	Entity       string // subscribers | profiles (FR-111.3)
+	Filename     string
+	Encoding     string
+	Delimiter    string
+	RawCSV       []byte // decoded UTF-8 CSV text, stored as bytes — every source
+	// format (SAS4 CSV, a Radius Manager/Super Speed Radius MySQL dump, a Pro
+	// Radius XLSX) is converted to this SAME canonical CSV shape at upload
+	// time (v4-5 FR-138), so everything downstream of upload — mapping,
+	// dry-run, execute — never needs to know which format the file arrived
+	// in. This is what "share the wizard rather than a fourth import path"
+	// means structurally, not just organizationally.
+	Header       []string
+	ColumnMap    map[string]string
+	Preset       string
+	SourceSystem string // custom | sas4 | radius_manager | super_speed_radius | pro_radius
+	Status       string
+	RowCount     int
+	DryRunAt     *time.Time
+	ExecutedAt   *time.Time
+	Summary      map[string]any
+	CreatedBy    string
+	CreatedAt    time.Time
 }
 
 const batchColumns = `id::text, entity, filename, encoding, delimiter, raw_csv, header, column_map,
-	COALESCE(preset,''), status, row_count, dry_run_at, executed_at, summary,
+	COALESCE(preset,''), source_system, status, row_count, dry_run_at, executed_at, summary,
 	COALESCE(created_by::text,''), created_at`
 
 func scanBatch(row pgx.Row) (batch, error) {
 	var b batch
 	var header, colmap, summary []byte
 	err := row.Scan(&b.ID, &b.Entity, &b.Filename, &b.Encoding, &b.Delimiter, &b.RawCSV, &header, &colmap,
-		&b.Preset, &b.Status, &b.RowCount, &b.DryRunAt, &b.ExecutedAt, &summary,
+		&b.Preset, &b.SourceSystem, &b.Status, &b.RowCount, &b.DryRunAt, &b.ExecutedAt, &summary,
 		&b.CreatedBy, &b.CreatedAt)
 	if err != nil {
 		return batch{}, err
@@ -50,13 +58,16 @@ func scanBatch(row pgx.Row) (batch, error) {
 }
 
 func insertBatch(ctx context.Context, db *pgxpool.Pool, entity, filename, encoding string, delimiter rune,
-	rawUTF8 []byte, header []string, createdBy string) (string, error) {
+	rawUTF8 []byte, header []string, createdBy, sourceSystem string) (string, error) {
 	headerJSON, _ := json.Marshal(header)
+	if sourceSystem == "" {
+		sourceSystem = "custom"
+	}
 	var id string
 	err := db.QueryRow(ctx,
-		`INSERT INTO import_batches (entity, filename, encoding, delimiter, raw_csv, header, created_by)
-		 VALUES ($1,$2,$3,$4,$5,$6,NULLIF($7,'')::uuid) RETURNING id::text`,
-		entity, filename, encoding, string(delimiter), rawUTF8, headerJSON, createdBy).Scan(&id)
+		`INSERT INTO import_batches (entity, filename, encoding, delimiter, raw_csv, header, created_by, source_system)
+		 VALUES ($1,$2,$3,$4,$5,$6,NULLIF($7,'')::uuid,$8) RETURNING id::text`,
+		entity, filename, encoding, string(delimiter), rawUTF8, headerJSON, createdBy, sourceSystem).Scan(&id)
 	return id, err
 }
 

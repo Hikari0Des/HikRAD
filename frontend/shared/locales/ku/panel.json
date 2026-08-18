@@ -1789,7 +1789,7 @@
     "title": "هاوردەکردنی بەشداربووان",
     "subtitle": "هاوردەکردنی CSV لە SAS4 یان سیستەمێکی تر.",
     "upload": {
-      "body": "فایلێکی CSV هەڵبژێرە بۆ دەستپێکردن."
+      "body": "پەڕگەیەک هەڵبژێرە کە لەگەڵ سیستەمی سەرچاوەی هەڵبژێردراو بگونجێت بۆ دەستپێکردن."
     },
     "map": {
       "detected": "کۆدکردن: {encoding} — ستوونەکان: {header}",
@@ -1845,7 +1845,15 @@
       "summary": "کورتە"
     },
     "titleProfiles": "هاوردەی پلانەکان",
-    "subtitleProfiles": "هاوردەی لیستی پلانەکان لە پەڕگەی CSV."
+    "subtitleProfiles": "هاوردەی لیستی پلانەکان لە پەڕگەی CSV.",
+    "sourceSystem": {
+      "label": "سیستەمی سەرچاوە",
+      "hint": "هەڵبژاردنی سیستەمی سەرچاوەی کۆن شێوازی هەناردەی تایبەت بەو سیستەمە ڕاستەوخۆ شیدەکاتەوە — پێویست بە گۆڕینی دەستی بۆ CSV ناکات.",
+      "custom": "پەڕگەی CSV (SAS4 یان گشتی)",
+      "radius_manager": "Radius Manager (کۆپیای MySQL)",
+      "super_speed_radius": "Super Speed Radius (کۆپیای MySQL)",
+      "pro_radius": "Pro Radius (ئێکسڵ)"
+    }
   },
   "license": {
     "title": "مۆڵەت",

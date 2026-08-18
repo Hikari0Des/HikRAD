@@ -26,6 +26,16 @@ type uploadRequest struct {
 	Filename      string `json:"filename"`
 	ContentBase64 string `json:"content_base64"`
 	Preset        string `json:"preset"`
+	// SourceSystem (v4-5, FR-138): custom | sas4 | radius_manager |
+	// super_speed_radius | pro_radius. Drives BOTH which converter reads the
+	// file (radius_manager/super_speed_radius are MySQL dumps, pro_radius is
+	// XLSX, everything else is read as CSV/text exactly as before) and which
+	// preset column-map defaults apply.
+	SourceSystem string `json:"source_system"`
+	// DumpTable (radius_manager/super_speed_radius only): the table name to
+	// extract from the dump when it exports more than one — optional; when
+	// empty, the FIRST INSERT INTO statement's table is used.
+	DumpTable string `json:"dump_table"`
 }
 
 // uploadHandler serves POST /api/v1/import/{entity} (subscribers | profiles,
@@ -55,27 +65,66 @@ func (m *Module) upload(w http.ResponseWriter, r *http.Request, entity string) {
 			httpapi.FieldError{Field: "content_base64", Message: "could not decode base64, or file too large"})
 		return
 	}
+	sourceSystem := strings.TrimSpace(strings.ToLower(in.SourceSystem))
 
-	encoding := detectEncoding(raw)
-	text, err := decodeToUTF8(raw, encoding)
-	if err != nil {
-		httpapi.Error(w, http.StatusUnprocessableEntity, "validation_failed", "request validation failed",
-			httpapi.FieldError{Field: "content_base64", Message: "could not decode file text"})
-		return
-	}
-	delim := detectDelimiter(firstLine(text))
+	// v4-5 FR-138: a Radius Manager / Super Speed Radius MySQL dump or a Pro
+	// Radius XLSX is converted HERE, at the edge, into the SAME canonical
+	// CSV text a plain SAS4-style upload already produces — everything from
+	// this point on (encoding/delimiter detection, mapping, dry-run,
+	// execute) is unchanged and unaware the file didn't start as a
+	// spreadsheet, which is what "share the wizard, don't fork it" means in
+	// code, not just in the routing table.
+	var text string
+	var encoding string
+	var delim rune
+	var headerRow []string
 
-	cr := csv.NewReader(strings.NewReader(text))
-	cr.Comma = delim
-	cr.FieldsPerRecord = -1
-	headerRow, err := cr.Read()
-	if err != nil {
-		httpapi.Error(w, http.StatusUnprocessableEntity, "validation_failed", "request validation failed",
-			httpapi.FieldError{Field: "content_base64", Message: "could not read a header row"})
-		return
-	}
-	for i := range headerRow {
-		headerRow[i] = strings.TrimSpace(headerRow[i])
+	switch sourceSystem {
+	case "radius_manager", "super_speed_radius":
+		res, derr := mysqlDumpToCSV(string(raw), strings.TrimSpace(in.DumpTable))
+		if derr != nil {
+			httpapi.Error(w, http.StatusUnprocessableEntity, "validation_failed", "request validation failed",
+				httpapi.FieldError{Field: "content_base64", Message: "could not read a MySQL dump: " + derr.Error()})
+			return
+		}
+		csvText, werr := writeCSV(res)
+		if werr != nil {
+			m.internalError(w, "dump to csv", werr)
+			return
+		}
+		text, encoding, delim, headerRow = csvText, "utf-8", ',', res.Header
+	case "pro_radius":
+		csvText, header, xerr := xlsxRowsToCSVText(raw)
+		if xerr != nil {
+			httpapi.Error(w, http.StatusUnprocessableEntity, "validation_failed", "request validation failed",
+				httpapi.FieldError{Field: "content_base64", Message: "could not read an XLSX file: " + xerr.Error()})
+			return
+		}
+		text, encoding, delim, headerRow = csvText, "utf-8", ',', header
+	default:
+		encoding = detectEncoding(raw)
+		decoded, derr := decodeToUTF8(raw, encoding)
+		if derr != nil {
+			httpapi.Error(w, http.StatusUnprocessableEntity, "validation_failed", "request validation failed",
+				httpapi.FieldError{Field: "content_base64", Message: "could not decode file text"})
+			return
+		}
+		text = decoded
+		delim = detectDelimiter(firstLine(text))
+
+		cr := csv.NewReader(strings.NewReader(text))
+		cr.Comma = delim
+		cr.FieldsPerRecord = -1
+		hr, herr := cr.Read()
+		if herr != nil {
+			httpapi.Error(w, http.StatusUnprocessableEntity, "validation_failed", "request validation failed",
+				httpapi.FieldError{Field: "content_base64", Message: "could not read a header row"})
+			return
+		}
+		for i := range hr {
+			hr[i] = strings.TrimSpace(hr[i])
+		}
+		headerRow = hr
 	}
 
 	mgr, _ := auth.ManagerFrom(r.Context())
@@ -83,13 +132,19 @@ func (m *Module) upload(w http.ResponseWriter, r *http.Request, entity string) {
 	if filename == "" {
 		filename = "upload.csv"
 	}
-	id, err := insertBatch(r.Context(), m.db, entity, filename, encoding, delim, []byte(text), headerRow, managerID(mgr))
+	id, err := insertBatch(r.Context(), m.db, entity, filename, encoding, delim, []byte(text), headerRow, managerID(mgr), sourceSystem)
 	if err != nil {
 		m.internalError(w, "upload", err)
 		return
 	}
 
 	preset := strings.TrimSpace(in.Preset)
+	if preset == "" && sourceSystem != "custom" && sourceSystem != "" {
+		// A named legacy system with no explicit preset override still gets
+		// its own best-effort column-map guess, exactly like choosing "sas4"
+		// would — the operator confirms/adjusts before dry-run either way.
+		preset = sourceSystem
+	}
 	resp := map[string]any{"batch_id": id, "entity": entity, "header": headerRow, "encoding": encoding, "status": "uploaded"}
 	if preset != "" {
 		if colMap := resolvePreset(entity, preset, headerRow); colMap != nil {
@@ -266,7 +321,7 @@ func (m *Module) batchStatusHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	resp := map[string]any{
 		"batch_id": id, "entity": b.Entity, "status": b.Status, "filename": b.Filename, "encoding": b.Encoding,
-		"header": b.Header, "column_map": b.ColumnMap, "preset": b.Preset,
+		"header": b.Header, "column_map": b.ColumnMap, "preset": b.Preset, "source_system": b.SourceSystem,
 		"row_count": b.RowCount, "summary": b.Summary,
 	}
 	if prog, ok := m.jobs.get(id); ok {
