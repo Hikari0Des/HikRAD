@@ -182,6 +182,13 @@ func (s *Service) processMessage(ctx context.Context, m redis.XMessage) (ack boo
 	// instance; the session is still recorded (M2 outranks attribution).
 	service, serviceID := nas.resolveService(rec)
 	sub := subscriberByUsername(ctx, s.db, rec.Username)
+	// v4-5 FR-136/137: a card-hotspot login posts its code as the username
+	// exactly like a voucher; tried only when it isn't a subscriber, so a
+	// card code can never shadow a real username.
+	cardID := ""
+	if sub == "" {
+		cardID = cardIDByUsername(ctx, s.db, rec.Username)
+	}
 
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
@@ -212,7 +219,7 @@ func (s *Service) processMessage(ctx context.Context, m redis.XMessage) (ack boo
 	// (b/c) Session upsert + usage point.
 	res, err := upsertSession(ctx, tx, rec, binding{
 		NASID: nas.ID, Service: service, ServiceID: serviceID,
-		ServiceName: nas.serviceName(serviceID), SubscriberID: sub,
+		ServiceName: nas.serviceName(serviceID), SubscriberID: sub, CardID: cardID,
 	})
 	if err != nil {
 		return false, err

@@ -8,7 +8,10 @@ package accounting
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
+	"strings"
 	"sync"
 	"time"
 
@@ -17,6 +20,24 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+// cardCodeHash is the IDENTICAL normalize+hash scheme internal/cards/hash.go
+// uses (and, before it, billing/voucher.go for vouchers): upper-case, strip
+// everything outside [A-Z0-9], sha256 hex. Duplicated here rather than
+// imported — an 8-line pure function does not justify accounting importing
+// a domain package it otherwise has zero dependency on (the established
+// per-package duplication convention: profiles/subscribers/billing/cards
+// each already carry their own copy of similarly small pure helpers).
+func cardCodeHash(code string) string {
+	var b strings.Builder
+	for _, r := range strings.ToUpper(code) {
+		if (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+		}
+	}
+	sum := sha256.Sum256([]byte(b.String()))
+	return hex.EncodeToString(sum[:])
+}
 
 // nasInfo is the slice of B's nas row the pipeline needs, plus the NAS's
 // enabled service instances (FR-62). Until v2 phase 1 a NAS had a single `type`
@@ -190,6 +211,27 @@ func subscriberByUsername(ctx context.Context, db *pgxpool.Pool, username string
 	}
 	var id string
 	err := db.QueryRow(ctx, `SELECT id::text FROM subscribers WHERE username = $1`, username).Scan(&id)
+	if err != nil {
+		return ""
+	}
+	return id
+}
+
+// cardIDByUsername maps a card-hotspot login (v4-5, FR-136/137) to a cards.id,
+// or "" when the username isn't a known card code. Only tried by the caller
+// when subscriberByUsername already came up empty — a card login posts its
+// code as the RADIUS username exactly like a voucher, so this hashes it the
+// same way cards/auth.go's AuthenticateCard does and looks up the match.
+// Matched regardless of card state: a session that started before the card
+// exhausted still needs its trailing accounting records attributed, and
+// judging whether the card SHOULD have been allowed is auth-time's job
+// (radius/cardauth.go), never accounting's.
+func cardIDByUsername(ctx context.Context, db *pgxpool.Pool, username string) string {
+	if db == nil || username == "" {
+		return ""
+	}
+	var id string
+	err := db.QueryRow(ctx, `SELECT id::text FROM cards WHERE code_hash = $1`, cardCodeHash(username)).Scan(&id)
 	if err != nil {
 		return ""
 	}
