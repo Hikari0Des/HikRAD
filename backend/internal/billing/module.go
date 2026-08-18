@@ -18,6 +18,7 @@ import (
 	"github.com/hikrad/hikrad/internal/httpapi"
 	"github.com/hikrad/hikrad/internal/platform"
 	"github.com/hikrad/hikrad/internal/radius"
+	"github.com/hikrad/hikrad/internal/subscribers"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 )
@@ -135,6 +136,10 @@ func (m *Module) Register(r chi.Router, d httpapi.Deps) {
 		if p := m.getString(context.Background(), keyVoucherPrefix, ""); p != "" {
 			radius.SetVoucherPrefix(p)
 		}
+		// v4-5 FR-133: the batch-creation endpoint's invoicing choice runs
+		// through THIS package's renewal path — subscribers never imports
+		// billing (same seam discipline as the voucher authenticator above).
+		subscribers.SetInvoicer(&batchInvoicer{m: m})
 	})
 }
 

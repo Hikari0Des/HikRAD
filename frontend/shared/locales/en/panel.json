@@ -296,7 +296,8 @@
       "totalTime": "Total connected time",
       "firstSeen": "First seen",
       "lastSeen": "Last seen"
-    }
+    },
+    "autoRenew": "Auto-renew"
   },
   "profiles": {
     "add": "Add profile",
@@ -1974,5 +1975,28 @@
       "service": "Service",
       "advanced": "Advanced"
     }
+  },
+  "batch": {
+    "title": "Batch create subscribers",
+    "create": "Batch create",
+    "prefix": "Username prefix",
+    "startIndex": "Start index",
+    "count": "Count",
+    "digitPadding": "Digit padding",
+    "digitPaddingHint": "Pad the numeric suffix with leading zeros (0 = no padding).",
+    "passwordMode": "Password",
+    "passwordGenerated": "Generate a password per subscriber",
+    "passwordShared": "Use one shared password",
+    "invoicing": "Invoicing",
+    "invoicingHint": "How to charge for this batch, if at all.",
+    "invoiceNone": "Don't invoice",
+    "invoiceEach": "Invoice each subscriber",
+    "invoiceBatch": "Invoice once for the whole batch",
+    "previewDryRun": "Preview",
+    "dryRunSummary": "{total} usernames, {collisions} collision(s).",
+    "confirmCreate": "Create batch",
+    "creating": "Creating subscribers…",
+    "summary": "{succeeded} created, {failed} failed.",
+    "passwordsOnceNote": "These passwords are shown once — they are not recoverable afterwards."
   }
 }

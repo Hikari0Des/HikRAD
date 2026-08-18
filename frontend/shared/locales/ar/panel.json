@@ -296,7 +296,8 @@
       "totalTime": "إجمالي وقت الاتصال",
       "firstSeen": "أول ظهور",
       "lastSeen": "آخر ظهور"
-    }
+    },
+    "autoRenew": "التجديد التلقائي"
   },
   "profiles": {
     "add": "إضافة باقة",
@@ -1974,5 +1975,28 @@
       "service": "الخدمة",
       "advanced": "متقدم"
     }
+  },
+  "batch": {
+    "title": "إنشاء مشتركين دفعة واحدة",
+    "create": "إنشاء دفعة",
+    "prefix": "بادئة اسم المستخدم",
+    "startIndex": "رقم البداية",
+    "count": "العدد",
+    "digitPadding": "حشو الأرقام",
+    "digitPaddingHint": "إضافة أصفار بادئة إلى اللاحقة الرقمية (0 = بدون حشو).",
+    "passwordMode": "كلمة المرور",
+    "passwordGenerated": "إنشاء كلمة مرور لكل مشترك",
+    "passwordShared": "استخدام كلمة مرور مشتركة",
+    "invoicing": "الفوترة",
+    "invoicingHint": "كيفية محاسبة هذه الدفعة، إن وُجدت.",
+    "invoiceNone": "بدون فاتورة",
+    "invoiceEach": "فاتورة لكل مشترك",
+    "invoiceBatch": "فاتورة واحدة للدفعة بأكملها",
+    "previewDryRun": "معاينة",
+    "dryRunSummary": "{total} اسم مستخدم، {collisions} تعارض.",
+    "confirmCreate": "إنشاء الدفعة",
+    "creating": "جارٍ إنشاء المشتركين…",
+    "summary": "تم إنشاء {succeeded}، وفشل {failed}.",
+    "passwordsOnceNote": "تُعرض كلمات المرور هذه مرة واحدة فقط — ولا يمكن استرجاعها لاحقًا."
   }
 }

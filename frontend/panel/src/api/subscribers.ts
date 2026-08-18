@@ -5,6 +5,7 @@ import type {
   BulkFilter,
   BulkJob,
   BulkRequest,
+  LimitProgress,
   SearchHit,
   Subscriber,
   SubscriberDetail,
@@ -12,7 +13,7 @@ import type {
   SubscriberWrite,
 } from './types'
 
-export function listSubscribers(params: {
+export interface SubscriberListParams {
   cursor?: string
   limit?: number
   // Server-side filters (mirror the FilterBar) so a search/filter matches across
@@ -23,9 +24,23 @@ export function listSubscribers(params: {
   profile_id?: string
   owner_manager_id?: string
   expiring_days?: string
-}): Promise<Page<Subscriber>> {
+}
+
+export function listSubscribers(params: SubscriberListParams): Promise<Page<Subscriber>> {
   const { cursor, limit, ...filters } = params
   return listPage<Subscriber>('/subscribers', { cursor, limit }, filters)
+}
+
+/** FR-135: the same list endpoint, also carrying the batched `limits` map. */
+export interface SubscriberListPage extends Page<Subscriber> {
+  limits: Record<string, LimitProgress>
+}
+
+export function listSubscribersWithLimits(
+  params: SubscriberListParams,
+): Promise<SubscriberListPage> {
+  const { cursor, limit, ...filters } = params
+  return request<SubscriberListPage>('/subscribers', { query: { ...filters, cursor, limit } })
 }
 
 export function getSubscriber(id: string): Promise<SubscriberDetail> {
@@ -63,6 +78,54 @@ export function startBulk(body: BulkRequest): Promise<BulkJob> {
 
 export function getBulkJob(id: string): Promise<BulkJob> {
   return request<BulkJob>(`/subscribers/bulk/${id}`)
+}
+
+// --- Batch / numbered creation (v4-5, FR-133) ------------------------------
+
+export interface BatchInput {
+  prefix: string
+  start_index: number
+  count: number
+  digit_padding?: number
+  password_mode: 'shared' | 'generated'
+  shared_password?: string
+  profile_id: string
+  expires_at?: string | null
+  auto_renew?: boolean
+  owner_manager_id?: string
+  service_type?: 'pppoe' | 'hotspot' | 'dual'
+  invoicing?: 'each' | 'batch' | 'none'
+  dry_run?: boolean
+}
+
+export interface BatchDryRunResult {
+  usernames: string[]
+  collisions: string[]
+  total: number
+  cap_blocked: boolean
+  cap_message?: string
+}
+
+export interface BatchJob extends BulkJob {
+  passwords?: Record<string, string>
+}
+
+export function dryRunBatch(body: BatchInput): Promise<BatchDryRunResult> {
+  return request<BatchDryRunResult>('/subscribers/batch', {
+    method: 'POST',
+    body: { ...body, dry_run: true },
+  })
+}
+
+export function startBatch(body: BatchInput): Promise<BatchJob> {
+  return request<BatchJob>('/subscribers/batch', {
+    method: 'POST',
+    body: { ...body, dry_run: false },
+  })
+}
+
+export function getBatchJob(id: string): Promise<BatchJob> {
+  return request<BatchJob>(`/subscribers/batch/${id}`)
 }
 
 /**

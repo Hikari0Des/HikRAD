@@ -59,6 +59,13 @@ func (m *Module) Register(r chi.Router, d httpapi.Deps) {
 	r.With(auth.Require("subscribers.view")).Post("/api/v1/subscribers/bulk", m.bulkHandler)
 	r.With(auth.Require("subscribers.view")).Get("/api/v1/subscribers/bulk/{id}", m.bulkStatusHandler)
 
+	// Batch/numbered creation (FR-133) — a create verb, so it needs
+	// subscribers.create like the single-row endpoint; the job-status poll
+	// reuses the same registry/route shape as bulk actions above (a job id is
+	// a job id regardless of which endpoint created it).
+	r.With(auth.Require("subscribers.create")).Post("/api/v1/subscribers/batch", m.batchHandler)
+	r.With(auth.Require("subscribers.create")).Get("/api/v1/subscribers/batch/{id}", m.bulkStatusHandler)
+
 	// Global search (C7-D).
 	r.With(auth.Require("subscribers.view")).Get("/api/v1/search", m.searchHandler)
 
