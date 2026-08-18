@@ -72,6 +72,7 @@ const NAV_GROUPS: readonly NavGroup[] = [
     titleKey: 'nav.group.network',
     items: [
       { key: 'nav.nas', to: '/nas', perm: PERM_NAS_VIEW },
+      { key: 'nav.deviceMonitor', to: '/nas/monitor', perm: PERM_NAS_VIEW },
       { key: 'nav.pools', to: '/pools', perm: PERM_POOLS_VIEW },
       { key: 'nav.devices', to: '/devices', perm: PERM_MONITORING_VIEW },
       { key: 'nav.alerts', to: '/alerts', perm: PERM_MONITORING_VIEW },

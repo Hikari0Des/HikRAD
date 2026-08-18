@@ -1,5 +1,7 @@
 import { useState } from 'react'
 
+import { useNavigate } from 'react-router-dom'
+
 import { Card, Ltr, ErrorState, LoadingState, useT } from '@hikrad/shared'
 
 import { adoptService, deleteNas, listNas, probeNas } from '../../api/nas'
@@ -14,6 +16,7 @@ import { Pill } from '../../components/Pill'
 import { useToast } from '../../components/Toast'
 import { useAsync } from '../../hooks/useAsync'
 import { DiscoverModal } from './DiscoverModal'
+import { HotspotPageModal } from './HotspotPageModal'
 import { NasAutoSetupModal } from './NasAutoSetupModal'
 import { NasWizardModal, type NasPrefill } from './NasWizardModal'
 import { ServiceProvisionModal } from './ServiceProvisionModal'
@@ -22,6 +25,7 @@ import { SnippetModal } from './SnippetModal'
 /** NAS device management (FR-13/14) — persona Ali's copy-paste onboarding. */
 export function NasListPage() {
   const t = useT()
+  const navigate = useNavigate()
   const { can } = useAuth()
   const { toast } = useToast()
   const { data, error, loading, reload } = useAsync(() => listNas(), [])
@@ -41,6 +45,11 @@ export function NasListPage() {
   const [serviceModalEditing, setServiceModalEditing] = useState<NasService | undefined>(undefined)
   const [adoptTarget, setAdoptTarget] = useState<{ nas: Nas; service: NasService } | null>(null)
   const [adopting, setAdopting] = useState(false)
+  // v4-7 / FR-148: hotspot login page management, scoped to one service.
+  const [hotspotPageTarget, setHotspotPageTarget] = useState<{
+    nasId: string
+    service: NasService
+  } | null>(null)
 
   const canEdit = can('nas.edit')
   const canCreate = can('nas.create')
@@ -193,6 +202,15 @@ export function NasListPage() {
                         {t('nas.serviceSessions', { count: s.live_sessions })}
                       </span>
                       {!s.enabled && <Pill tone="muted">{t('nas.disabledTag')}</Pill>}
+                      {canEdit && s.service === 'hotspot' && (
+                        <button
+                          type="button"
+                          className="text-brand-strong hover:underline"
+                          onClick={() => setHotspotPageTarget({ nasId: n.id, service: s })}
+                        >
+                          {t('nas.hotspotPage.title')}
+                        </button>
+                      )}
                       {/* v2 phase 2 / FR-67: management-mode badge + the
                           mode-appropriate action. */}
                       <Pill tone={s.management_mode === 'system' ? 'brand' : 'muted'}>
@@ -269,12 +287,28 @@ export function NasListPage() {
                 </div>
               </dl>
               <div className="mt-3 flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => navigate(`/nas/${n.id}/device`)}
+                >
+                  {t('nas.device.link')}
+                </Button>
                 <Button size="sm" variant="secondary" onClick={() => setSnippetFor(n)}>
                   {t('nas.snippet')}
                 </Button>
                 {canEdit && (
                   <Button size="sm" variant="secondary" onClick={() => setAutoSetupFor(n)}>
                     {t('nas.autoSetup.button')}
+                  </Button>
+                )}
+                {canEdit && (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => navigate(`/nas/${n.id}/wizard`)}
+                  >
+                    {t('nas.wizard.button')}
                   </Button>
                 )}
                 {canEdit && (
@@ -331,6 +365,20 @@ export function NasListPage() {
             setAutoSetupFor(null)
             setSnippetFor(n)
           }}
+        />
+      )}
+
+      {hotspotPageTarget && (
+        <HotspotPageModal
+          nasId={hotspotPageTarget.nasId}
+          serviceId={hotspotPageTarget.service.id}
+          serviceLabel={serviceLabel(
+            hotspotPageTarget.service.label,
+            hotspotPageTarget.service.ros_server_name,
+            t('nas.typeName.hotspot'),
+          )}
+          open={hotspotPageTarget !== null}
+          onOpenChange={(o) => !o && setHotspotPageTarget(null)}
         />
       )}
 

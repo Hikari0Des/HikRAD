@@ -14,6 +14,7 @@ import type {
   NasStatus,
   NasWrite,
   ServiceApplyResult,
+  ServiceParamsRequest,
   ServiceProvisionRequest,
   ServiceRouterConfig,
 } from './types'
@@ -160,5 +161,22 @@ export function adoptService(nasId: string, serviceId: string): Promise<NasServi
   return request<NasService>(`/nas/${nasId}/services/${serviceId}/adopt`, {
     method: 'POST',
     body: { confirm: true },
+  })
+}
+
+/**
+ * v4-7 FR-145: the extended per-service parameters (accounting interim,
+ * hotspot user profile, DHCP range, IPv6 delegation). HikRAD-side metadata
+ * only — a plain save, deliberately NOT a plan/preview/apply flow, because
+ * nothing here is written to the router.
+ */
+export function updateServiceParams(
+  nasId: string,
+  serviceId: string,
+  body: ServiceParamsRequest,
+): Promise<NasService> {
+  return request<NasService>(`/nas/${nasId}/services/${serviceId}/params`, {
+    method: 'PUT',
+    body,
   })
 }

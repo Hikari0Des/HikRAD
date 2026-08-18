@@ -464,6 +464,13 @@ export interface NasService {
   enabled: boolean
   live_sessions: number
   management_mode: NasServiceManagementMode
+  /** v4-7 FR-145 extended parameters — HikRAD-side metadata, no router write. */
+  interim_interval_secs?: number | null
+  hotspot_user_profile?: string
+  dhcp_range?: string
+  ipv6_enabled?: boolean
+  ipv6_prefix_len?: number
+  ipv6_pool_name?: string
 }
 
 /**
@@ -785,4 +792,401 @@ export interface AuditEntry {
   ip: string
   ua: string
   at: string
+}
+
+// --- Router manager I (v4-6, FR-139-143) ----------------------------------
+
+/** One row of the FR-139 monitor grid — a NAS or a generic monitored device. */
+export interface DeviceMonitorRow {
+  id: string
+  /** "nas" | "monitor" — the NAS-vs-monitor tag. */
+  kind: 'nas' | 'monitor'
+  name: string
+  ip: string
+  enabled: boolean
+  /** Whether the device worker has ever produced a sample for this device. */
+  sampled: boolean
+  has_api_credentials: boolean
+  reachable?: boolean
+  ros_version?: string
+  cpu_percent?: number
+  cpu_cores?: number
+  mem_percent?: number
+  session_count?: number
+  uptime_secs?: number
+  last_sample_at?: string
+}
+
+/** Ownership badge vocabulary (router-ownership principle). */
+export type DeviceOwnership = 'system' | 'router' | 'mixed'
+
+/** Frozen FR-140 shape every /nas/{id}/device/{tab} read returns. */
+export interface DeviceTabEnvelope<T> {
+  data: T | null
+  read_at: string | null
+  stale: boolean
+  ownership: DeviceOwnership
+  no_api_credentials: boolean
+}
+
+export interface DeviceHistoryPoint {
+  time: string
+  reachable: boolean
+  cpu_percent: number
+  mem_percent: number
+  session_count: number
+}
+
+export interface DeviceOverview {
+  identity: string
+  board_name: string
+  ros_version: string
+  serial_number: string
+  reachable: boolean
+  cpu_percent: number
+  cpu_cores: number
+  mem_percent: number
+  session_count: number
+  uptime_secs: number
+  history: DeviceHistoryPoint[]
+}
+
+export interface DeviceInterface {
+  name: string
+  type: string
+  running: boolean
+  disabled: boolean
+  mac_address: string
+  mtu: number
+  comment: string
+  rx_bps: number
+  tx_bps: number
+  ownership: DeviceOwnership
+}
+
+export interface DeviceTrafficPoint {
+  time: string
+  rx_bps: number
+  tx_bps: number
+}
+
+export interface DeviceInterfaces {
+  interfaces: DeviceInterface[]
+  selected_iface?: string
+  traffic_history?: DeviceTrafficPoint[]
+}
+
+export interface DeviceGeneral {
+  identity: string
+  time_zone: string
+  time: string
+  date: string
+  ntp_enabled: boolean
+  ntp_mode: string
+  ntp_servers: string[] | null
+}
+
+export interface DeviceBridgePort {
+  interface: string
+  pvid: number
+}
+
+export interface DeviceBridge {
+  name: string
+  comment: string
+  ports: DeviceBridgePort[] | null
+}
+
+export interface DeviceVlan {
+  name: string
+  vlan_id: number
+  interface: string
+  comment: string
+}
+
+/** Bridge/VLAN cache rows carry a per-item ownership badge (always "router" this phase). */
+export interface DeviceOwnedItem<T> {
+  item: T
+  ownership: DeviceOwnership
+}
+
+export interface DeviceIpAddress {
+  address: string
+  interface: string
+  comment: string
+  disabled: boolean
+}
+
+export interface DeviceDhcpClient {
+  interface: string
+  status: string
+  address: string
+  gateway: string
+}
+
+export interface DeviceDhcpServer {
+  name: string
+  interface: string
+  pool_name: string
+  disabled: boolean
+}
+
+export interface DeviceDhcpLease {
+  address: string
+  mac: string
+  hostname: string
+  server: string
+  status: string
+  expires_in: string
+}
+
+export interface DeviceIpTab {
+  snapshot: {
+    addresses: DeviceIpAddress[] | null
+    dhcp_clients: DeviceDhcpClient[] | null
+    dhcp_servers: DeviceDhcpServer[] | null
+    leases: DeviceDhcpLease[] | null
+  }
+  /** DHCP server name -> "system" | "router" (FR-108 pool-ownership badge). */
+  dhcp_server_ownership: Record<string, DeviceOwnership> | null
+}
+
+export interface DeviceDnsStaticEntry {
+  name: string
+  address: string
+  comment: string
+}
+
+export interface DeviceDns {
+  servers: string[] | null
+  allow_remote_requests: boolean
+  cache_size: number
+  cache_used: number
+  static: DeviceDnsStaticEntry[] | null
+}
+
+export interface DevicePingResult {
+  sent: number
+  received: number
+  packet_loss_percent: number
+  min_rtt_ms: number
+  avg_rtt_ms: number
+  max_rtt_ms: number
+}
+
+// --- v4-7 Router manager II (FR-144-149) ------------------------------------
+
+/**
+ * The wizard's whole accumulating form (FR-144). One object, PUT to
+ * wizard/state on every step transition and POSTed verbatim to wizard/plan —
+ * so "what the review step previews" and "what was saved for resume" can
+ * never drift apart.
+ */
+export interface WizardFormData {
+  bridge?: WizardBridgeInput | null
+  dns?: WizardDnsInput | null
+  ntp?: WizardNtpInput | null
+  wan?: WizardWanInput[]
+  values?: AutoSetupValues
+  services?: WizardServiceInput[]
+  firewall?: WizardFirewallInput | null
+  ipv6?: WizardIpv6Input[]
+}
+
+export interface WizardBridgeInput {
+  name: string
+  ports: string[]
+}
+
+export interface WizardDnsInput {
+  servers: string[]
+  allow_remote_requests: boolean
+  cache_size: number
+}
+
+export interface WizardNtpInput {
+  servers: string[]
+}
+
+export type WanMode = 'static' | 'dhcp' | 'pppoe'
+
+export interface WizardWanInput {
+  interface: string
+  label: string
+  mode: WanMode
+  address?: string
+  gateway?: string
+  pppoe_user?: string
+  pppoe_password?: string
+}
+
+export interface WizardServiceInput {
+  service_id?: string
+  service: NasType
+  label: string
+  interface: string
+  ros_server_name: string
+  ip_pool_id?: string | null
+  local_address?: string
+  address_range?: string
+}
+
+export interface WizardExpiredPoolInput {
+  pool_name: string
+  ranges: string[]
+  redirect_url: string
+}
+
+export interface WizardFirewallInput {
+  nat_out_interfaces: string[]
+  expired_pool?: WizardExpiredPoolInput | null
+}
+
+/** FR-149 opt-in dual-stack, one entry per service instance that opts in. */
+export interface WizardIpv6Input {
+  enabled: boolean
+  ros_server_name: string
+  prefix: string
+  prefix_len: number
+  pool_name: string
+}
+
+/** The plan/apply body; apply adds preview_hash. `resolutions` absent = abort. */
+export interface WizardPlanRequest extends WizardFormData {
+  values: AutoSetupValues
+  resolutions?: Record<string, AutoSetupResolution>
+}
+
+export interface WizardState {
+  step: number
+  form_data: WizardFormData
+  completed: boolean
+}
+
+/** One step's detect verdict — `already_correct` is what lets a step be skipped. */
+export interface WizardStepStatus {
+  already_correct: boolean
+  summary: string
+}
+
+export interface WizardDetection {
+  bridge: WizardStepStatus
+  dns: WizardStepStatus
+  ntp: WizardStepStatus
+  wan: WizardStepStatus
+  radius: WizardStepStatus
+  services: WizardStepStatus
+}
+
+export interface WizardApplyResult {
+  results: AutoSetupApplyResultItem[]
+  all_ok: boolean
+}
+
+/** FR-145 Internet tab row. `management_mode: 'router'` = read-only reference. */
+export interface WanUplink {
+  interface: string
+  mode: WanMode
+  address: string
+  gateway: string
+  status?: string
+  comment?: string
+  management_mode: NasServiceManagementMode
+}
+
+export interface WanAdoptResult {
+  adopted: number
+  total: number
+}
+
+/** FR-146 firewall rule. `ownership: 'router'` rules are not editable by HikRAD. */
+export interface FirewallRule {
+  id: string
+  chain: string
+  table: FirewallTable
+  action: string
+  src_address?: string
+  dst_address?: string
+  out_interface?: string
+  in_interface?: string
+  protocol?: string
+  dst_port?: string
+  comment?: string
+  disabled: boolean
+  ownership: 'system' | 'router'
+}
+
+export type FirewallTable = 'filter' | 'nat'
+
+export interface FirewallChangeRequest {
+  rule_id?: string
+  table: FirewallTable
+  fields: Record<string, string>
+  description?: string
+}
+
+/** Present on an apply that has something to revert — drives the countdown banner. */
+export interface FirewallRevertInfo {
+  snapshot_id: string
+  deadline: string
+}
+
+export interface FirewallApplyResult {
+  results: AutoSetupApplyResultItem[]
+  all_ok: boolean
+  revert?: FirewallRevertInfo
+}
+
+export interface FirewallPendingChange {
+  id: string
+  description: string
+  deadline: string
+  created_at: string
+}
+
+/** FR-147 Update tab read. */
+export interface RouterUpdateInfo {
+  channel: string
+  installed_version: string
+  latest_version: string
+  update_available: boolean
+  packages: RouterPackage[] | null
+}
+
+export interface RouterPackage {
+  name: string
+  version: string
+  enabled: boolean
+}
+
+/** FR-145 metadata-only per-service parameters (no router write). */
+export interface ServiceParamsRequest {
+  interim_interval_secs?: number | null
+  hotspot_user_profile: string
+  dhcp_range: string
+  ipv6_enabled: boolean
+  ipv6_prefix_len: number
+  ipv6_pool_name: string
+}
+
+/** FR-148 hotspot login page design + push state. */
+export type HotspotPageMode = 'router_default' | 'branded_template' | 'custom'
+
+export type HotspotPageStaleReason = 'never_pushed' | 'unpushed_edit' | 'ros_upgraded_since_push'
+
+export interface HotspotPage {
+  mode: HotspotPageMode
+  design_version: number
+  pushed_version: number | null
+  pushed_at: string | null
+  pushed_ros_version?: string
+  stale: boolean
+  stale_reason?: HotspotPageStaleReason
+  custom_html?: string
+}
+
+export interface HotspotPagePushResult {
+  status: string
+  design_version: number
+  ros_version: string
 }

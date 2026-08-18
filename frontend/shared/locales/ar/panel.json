@@ -57,7 +57,8 @@
     "pricingAdmin": "المصاريف وأسعار الموزّعين",
     "settings": "الإعدادات",
     "license": "الترخيص",
-    "cards": "البطاقات"
+    "cards": "البطاقات",
+    "deviceMonitor": "مراقبة الأجهزة"
   },
   "search": {
     "label": "بحث شامل",
@@ -171,6 +172,8 @@
     "apply": "تطبيق",
     "next": "التالي",
     "back": "رجوع",
+    "continue": "متابعة",
+    "enabled": "مفعّل",
     "select": "اختر…",
     "working": "جارٍ التنفيذ…",
     "copy": "نسخ",
@@ -190,7 +193,8 @@
     "ok": "موافق",
     "collapse": "طيّ",
     "expand": "توسيع",
-    "search": "بحث"
+    "search": "بحث",
+    "retry": "إعادة المحاولة"
   },
   "users": {
     "create": "إضافة مشترك",
@@ -605,6 +609,329 @@
       "adoptHint": "سيتولى HikRAD إدارة هذه الخدمة من الآن. لا يتغيّر شيء على الموجّه — فقط سجل HikRAD الخاص.",
       "adoptConfirm": "تبنّي",
       "adoptOk": "تم تبنّي الخدمة — يمكنك الآن تعديلها من HikRAD."
+    },
+    "device": {
+      "link": "الجهاز",
+      "refreshNow": "تحديث الآن",
+      "noCredsShort": "لا توجد بيانات اعتماد API",
+      "neverSampled": "لم تُقرأ بعد",
+      "readAt": "قُرئت {when}",
+      "stale": "قديمة — آخر قراءة {when}",
+      "noApiCredentials": "لا تملك HikRAD بيانات اعتماد RouterOS API محفوظة لهذا الجهاز بعد. أضِفها في نموذج NAS لتفعيل المراقبة.",
+      "neverSampledBody": "لم تتم قراءة هذا الجهاز بعد. سيظهر هنا بعد الدورة التالية للعامل الخلفي، أو اضغط تحديث الآن.",
+      "noHistory": "لا يوجد سجل كافٍ بعد.",
+      "uptimeDays": "{d} يوم {h} س",
+      "uptimeHours": "{h} س {m} د",
+      "ownership": {
+        "system": "تديره HikRAD",
+        "router": "متبنّى من الموجّه",
+        "mixed": "مختلط"
+      },
+      "group": {
+        "monitoring": "المراقبة",
+        "manager": "الإدارة",
+        "network": "الشبكة"
+      },
+      "tab": {
+        "overview": "نظرة عامة",
+        "interfaces": "الواجهات",
+        "general": "عام",
+        "bridge": "الجسر",
+        "vlan": "VLAN",
+        "ip": "IP",
+        "dns": "DNS",
+        "update": "التحديث",
+        "internet": "الإنترنت",
+        "firewall": "جدار الحماية"
+      },
+      "monitor": {
+        "title": "مراقبة الأجهزة",
+        "empty": "لا توجد أجهزة بعد.",
+        "tagNas": "NAS",
+        "tagMonitor": "مراقبة",
+        "cpuValue": "{pct}٪ ({cores} أنوية)",
+        "col": {
+          "device": "الجهاز",
+          "kind": "النوع",
+          "rosVersion": "RouterOS",
+          "cpu": "المعالج",
+          "mem": "الذاكرة",
+          "sessions": "الجلسات",
+          "uptime": "مدة التشغيل"
+        }
+      },
+      "overview": {
+        "identity": "الهوية",
+        "model": "الطراز",
+        "rosVersion": "إصدار RouterOS",
+        "serial": "الرقم التسلسلي",
+        "cpu": "المعالج",
+        "mem": "الذاكرة",
+        "sessions": "الجلسات",
+        "uptime": "مدة التشغيل",
+        "historyTitle": "السجل",
+        "cpuMemChart": "سجل المعالج والذاكرة",
+        "sessionsChart": "سجل عدد الجلسات"
+      },
+      "interfaces": {
+        "download": "تنزيل",
+        "upload": "رفع",
+        "peak": "الذروة",
+        "trafficChart": "سجل حركة الواجهة",
+        "disabled": "معطّلة",
+        "running": "تعمل",
+        "notRunning": "لا تعمل",
+        "historyFor": "سجل الحركة — {iface}",
+        "historyHint": "اختر واجهة لعرض سجل حركتها.",
+        "col": {
+          "name": "الاسم",
+          "type": "النوع",
+          "state": "الحالة",
+          "mac": "عنوان MAC",
+          "mtu": "MTU",
+          "rx": "تنزيل",
+          "tx": "رفع"
+        }
+      },
+      "general": {
+        "identity": "الهوية",
+        "timeZone": "المنطقة الزمنية",
+        "time": "وقت الموجّه",
+        "ntp": "عميل NTP",
+        "ntpServers": "خوادم NTP",
+        "pingTitle": "Ping",
+        "pingHint": "يُنفّذ ping محدود من الموجّه نفسه — مفيد لفحص وصلته الصاعدة، وليس فقط إمكانية الوصول إليه من HikRAD.",
+        "pingTarget": "المضيف أو عنوان IP الهدف",
+        "pingRun": "Ping",
+        "pingSentReceived": "المستلم / المُرسل",
+        "pingLoss": "فقدان الحزم",
+        "pingAvg": "متوسط زمن الاستجابة",
+        "pingMinMax": "أدنى / أقصى زمن استجابة",
+        "rebootTitle": "إعادة تشغيل الموجّه",
+        "rebootHint": "يعيد تشغيل الموجّه. سيُقطع اتصال كل مشترك متصل حتى يعود للعمل.",
+        "rebootButton": "إعادة تشغيل الموجّه",
+        "rebootConfirm1Title": "إعادة تشغيل هذا الموجّه؟",
+        "rebootConfirm1Body": "سيُقطع اتصال كل مشترك متصل حاليًا عبره. سيتعذّر الوصول إلى الموجّه حتى ينتهي من إعادة التشغيل.",
+        "rebootConfirm2Title": "هل أنت متأكد؟",
+        "rebootConfirm2Body": "لا يمكن التراجع عن هذا الإجراء بعد إرساله. سيُعيد الموجّه التشغيل فورًا.",
+        "rebootConfirm2Button": "نعم، أعد التشغيل الآن",
+        "rebootSent": "تم إرسال أمر إعادة التشغيل."
+      },
+      "bridge": {
+        "empty": "لا توجد جسور مُهيّأة.",
+        "noPorts": "لا توجد منافذ أعضاء.",
+        "pvid": "PVID {pvid}"
+      },
+      "vlan": {
+        "empty": "لا توجد واجهات VLAN مُهيّأة.",
+        "col": {
+          "name": "الاسم",
+          "id": "معرّف VLAN",
+          "interface": "الواجهة",
+          "comment": "ملاحظة",
+          "ownership": "الملكية"
+        }
+      },
+      "ip": {
+        "addressesTitle": "العناوين الثابتة",
+        "addressesEmpty": "لا توجد عناوين ثابتة.",
+        "dhcpClientTitle": "عميل DHCP",
+        "dhcpClientEmpty": "لا توجد إيجارات عميل DHCP.",
+        "dhcpServersTitle": "خوادم DHCP",
+        "dhcpServersEmpty": "لا توجد خوادم DHCP مُهيّأة.",
+        "pool": "المجمّع",
+        "leasesTitle": "إيجارات DHCP",
+        "leasesHint": "جدول الإيجارات الحي الخاص بالموجّه نفسه — الإجابة عن سؤال \"أي جهاز هذا؟\"",
+        "leasesEmpty": "لا توجد إيجارات نشطة.",
+        "col": {
+          "address": "العنوان",
+          "interface": "الواجهة",
+          "comment": "ملاحظة",
+          "status": "الحالة",
+          "mac": "عنوان MAC",
+          "hostname": "اسم المضيف",
+          "server": "الخادم"
+        }
+      },
+      "dns": {
+        "servers": "المحلّلات",
+        "allowRemote": "السماح بالطلبات البعيدة",
+        "cacheUsed": "الذاكرة المؤقتة المستخدمة",
+        "staticTitle": "المدخلات الثابتة",
+        "staticEmpty": "لا توجد مدخلات DNS ثابتة.",
+        "col": {
+          "name": "الاسم",
+          "address": "العنوان",
+          "comment": "ملاحظة"
+        }
+      }
+    },
+    "plan": {
+      "previewButton": "معاينة",
+      "applyButton": "تطبيق",
+      "nothingToDo": "الراوتر مطابق بالفعل — لا حاجة لأي تغيير.",
+      "conflictAbortOnly": "لم يُكتب شيء. ألغِ وعدّل، أو عالج التعارض على الراوتر نفسه.",
+      "notResolvable": "لا يوجد حل تلقائي آمن لهذا — لم يُكتب شيء.",
+      "currentState": "الحالي",
+      "existing": "الموجود",
+      "abortedConflict": "يملك الراوتر إعداداً موجوداً يحتاج للتغيير — لم يُكتب شيء."
+    },
+    "internet": {
+      "hint": "وصلات الإنترنت (WAN) على هذا الراوتر. ما أنشأه HikRAD قابل للتعديل؛ الوصلات المكتشفة سابقاً للقراءة فقط حتى تُعتمد.",
+      "addUplink": "إضافة وصلة",
+      "adoptButton": "اعتماد الموجود",
+      "empty": "لا توجد وصلات إنترنت على هذا الراوتر بعد.",
+      "readOnly": "تُدار من الراوتر (للقراءة فقط)",
+      "address": "العنوان",
+      "gateway": "البوابة",
+      "status": "الحالة",
+      "comment": "ملاحظة",
+      "adoptTitle": "اعتماد وصلات الإنترنت؟",
+      "adoptBody": "يستورد كل وصلة يبلّغ عنها هذا الراوتر ({count} معروفة) كمرجع للقراءة فقط. لا يُكتب شيء على الراوتر.",
+      "adoptConfirm": "اعتماد",
+      "adoptOk": "تم اعتماد {count} من أصل {total} وصلة.",
+      "applyOk": "تم حفظ وصلة الإنترنت.",
+      "editTitle": "تعديل وصلة الإنترنت",
+      "createTitle": "إضافة وصلة إنترنت",
+      "interface": "الواجهة",
+      "fromRouterHint": "الاقتراحات من هذا الراوتر؛ يمكنك أيضاً كتابة اسم جديد.",
+      "label": "التسمية",
+      "modeLabel": "النمط",
+      "mode": {
+        "dhcp": "عميل DHCP",
+        "static": "عنوان ثابت",
+        "pppoe": "عميل PPPoE"
+      },
+      "pppoeUser": "اسم مستخدم PPPoE",
+      "pppoePassword": "كلمة مرور PPPoE"
+    },
+    "firewall": {
+      "hint": "قواعد جدار الحماية على هذا الراوتر. تعديل قاعدة يديرها HikRAD يأخذ لقطة أولاً ويتراجع تلقائياً إن لم يُؤكَّد في الوقت المحدد.",
+      "addRule": "إضافة قاعدة",
+      "empty": "لا توجد قواعد جدار حماية على هذا الراوتر بعد.",
+      "disabled": "معطّلة",
+      "ownership": {
+        "system": "تُدار من HikRAD",
+        "router": "تُدار من الراوتر"
+      },
+      "readOnly": "تُدار من الراوتر — يلزم الاعتماد للتعديل",
+      "editTitle": "تعديل قاعدة جدار الحماية",
+      "createTitle": "إضافة قاعدة جدار حماية",
+      "table": "الجدول",
+      "tableFilter": "تصفية",
+      "tableNat": "NAT",
+      "chain": "السلسلة",
+      "action": "الإجراء",
+      "description": "الوصف",
+      "applyOkWithRevert": "تم تطبيق التغيير. أكّده قبل انتهاء العد التنازلي، وإلا سيُتراجع عنه تلقائياً.",
+      "revert": {
+        "title": "تغيير جدار الحماية بانتظار التأكيد",
+        "body": "سيُتراجع عن هذا التغيير تلقائياً إن لم يُؤكَّد قبل وصول العد التنازلي للصفر — شبكة الأمان لتغيير قد يقفل عليك هذا الراوتر.",
+        "reverting": "جارٍ التراجع…",
+        "confirmButton": "تأكيد هذا التغيير",
+        "confirmed": "تم تأكيد التغيير — لن يُتراجع عنه."
+      }
+    },
+    "update": {
+      "channel": "قناة التحديث",
+      "installed": "الإصدار المثبت",
+      "latest": "أحدث إصدار متاح",
+      "available": "يوجد تحديث",
+      "upToDate": "محدَّث",
+      "packagesTitle": "الحزم المثبتة",
+      "noPackages": "لا توجد معلومات حزم بعد.",
+      "disabled": "معطّلة",
+      "checkButton": "التحقق من وجود تحديثات",
+      "applyButton": "تثبيت التحديث",
+      "rebootWarning": "تثبيت تحديث يعيد تشغيل الراوتر ويقطع كل الجلسات النشطة.",
+      "confirm1Title": "تثبيت تحديث RouterOS هذا؟",
+      "confirm1Body": "سيعيد الراوتر تشغيل نفسه بعد تثبيت التحديث. سيُقطع كل مشترك متصل حتى تكتمل إعادة التشغيل.",
+      "confirm2Title": "هل أنت متأكد؟",
+      "confirm2Body": "لا يمكن التراجع عن هذا الإجراء بعد إرساله. سيثبّت الراوتر التحديث ويعيد التشغيل.",
+      "confirm2Button": "نعم، ثبّت وأعد التشغيل",
+      "installingSent": "تم إرسال أمر تثبيت التحديث."
+    },
+    "hotspotPage": {
+      "title": "صفحة تسجيل الدخول للهوتسبوت",
+      "hint": "اختر صفحة الراوتر الافتراضية، أو قالب HikRAD المصمم جاهزاً، أو تصميماً مخصصاً.",
+      "mode": {
+        "router_default": "افتراضي الراوتر",
+        "branded_template": "قالب مصمم",
+        "custom": "HTML مخصص"
+      },
+      "customHtml": "HTML مخصص",
+      "saveButton": "حفظ التصميم",
+      "pushButton": "دفع إلى الراوتر",
+      "saveOk": "تم حفظ التصميم.",
+      "pushOk": "تم الدفع إلى الراوتر (الإصدار {version}).",
+      "designVersion": "إصدار التصميم {version}",
+      "pushedVersion": "الإصدار المدفوع {version}",
+      "neverPushed": "لم يُدفع لهذا الراوتر من قبل.",
+      "stale": {
+        "never_pushed": "لم يُدفع هذا التصميم إلى الراوتر من قبل.",
+        "unpushed_edit": "لديك تغييرات غير محفوظة لم تُدفع إلى الراوتر بعد.",
+        "ros_upgraded_since_push": "تم تحديث RouterOS منذ آخر دفع لهذه الصفحة — صفحات تسجيل دخول الهوتسبوت تعيش على ذاكرة الراوتر وربما مُسحت. أعد الدفع لاستعادتها."
+      },
+      "errNothingToPush": "تستخدم هذه النسخة صفحة الراوتر الافتراضية — اختر قالباً مصمماً أو تصميماً مخصصاً أولاً."
+    },
+    "wizard": {
+      "button": "معالج الإعداد",
+      "title": "معالج الإعداد — {name}",
+      "stepOf": "الخطوة {step} من {total}",
+      "step": {
+        "detect": "الكشف",
+        "bridge": "الجسر",
+        "bridgePorts": "منافذ الجسر",
+        "dns": "DNS",
+        "ntp": "NTP",
+        "wan": "الإنترنت",
+        "radius": "RADIUS",
+        "services": "الخدمات",
+        "firewall": "التفاصيل وجدار الحماية",
+        "review": "المراجعة والدفع"
+      },
+      "detectHint": "يقرأ الإعدادات الحالية للراوتر حتى تُتخطى الخطوات الصحيحة مسبقاً بدلاً من إعادة دفعها.",
+      "detectOk": "مُعدّ مسبقاً",
+      "detectMissing": "غير مُعدّ بعد",
+      "startButton": "بدء",
+      "alreadyCorrect": "مُعدّ مسبقاً على الراوتر:",
+      "skipStep": "تخطي هذه الخطوة — مُعدّة مسبقاً على الراوتر",
+      "commaSeparatedHint": "مفصولة بفواصل.",
+      "bridgeHint": "واجهة الجسر التي سيستخدمها HikRAD لجانب الشبكة المحلية لهذا الراوتر.",
+      "bridgeName": "اسم الجسر",
+      "bridgePorts": "المنافذ",
+      "bridgePortsHint": "الواجهات المراد إضافتها كأعضاء في هذا الجسر.",
+      "bridgePortsSkippedHint": "تم تخطي خطوة الجسر، فلا يوجد جسر لتعيين منافذ له.",
+      "dnsHint": "خوادم DNS التي يستخدمها الراوتر نفسه للتحليل.",
+      "dnsPreset": "إعداد جاهز",
+      "dnsCustom": "مخصص",
+      "dnsServers": "خوادم DNS",
+      "dnsAllowRemote": "السماح بطلبات DNS عن بُعد (تقديم DNS للعملاء)",
+      "ntpHint": "يحافظ على دقة ساعة الراوتر — مهم لمهلات الجلسات والسجلات.",
+      "ntpServers": "خوادم NTP",
+      "wanHint": "وصلة الراوتر إلى الإنترنت.",
+      "radiusHint": "يوجّه هذا الراوتر إلى HikRAD للمصادقة والمحاسبة و CoA.",
+      "radiusServerPlaceholder": "افتراضياً عنوان خادم HikRAD هذا",
+      "servicesHint": "خادم PPPoE أو منطقة الهوتسبوت التي سيتصل بها المشتركون.",
+      "ipv6Enable": "تفعيل IPv6 المزدوج (DHCPv6-PD) لهذه الخدمة",
+      "ipv6Prefix": "البادئة الأساسية المفوَّضة",
+      "ipv6PrefixLen": "طول البادئة لكل مشترك",
+      "ipv6PoolName": "اسم مجمع IPv6",
+      "firewallStepHint": "ترجمة NAT لمشاركة الإنترنت لوصلة (وصلات) الإنترنت، ومجمع اختياري للمشتركين المنتهين مع إعادة توجيه للتجديد.",
+      "natInterfaces": "واجهة (واجهات) NAT الصادرة",
+      "expiredPoolEnable": "إنشاء مجمع للمشتركين المنتهين مع إعادة توجيه للتجديد",
+      "expiredPoolName": "اسم المجمع",
+      "expiredPoolRanges": "نطاقات العناوين",
+      "expiredRedirectUrl": "مضيف إعادة توجيه التجديد",
+      "reviewHint": "هذه هي الأوامر الفعلية التي ستُنفَّذ على الراوتر. لن يُكتب شيء حتى تضغط دفع.",
+      "pushButton": "دفع إلى الراوتر",
+      "applyOk": "تم تطبيق الإعداد على الراوتر.",
+      "completeToast": "اكتمل المعالج.",
+      "finishButton": "إنهاء",
+      "dnsProviderGoogle": "Google",
+      "dnsProviderCloudflare": "Cloudflare",
+      "dnsProviderQuad9": "Quad9",
+      "ipv6PrefixPlaceholder": "2001:db8::/32"
     }
   },
   "pools": {

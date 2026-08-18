@@ -57,7 +57,8 @@
     "pricingAdmin": "Overheads & reseller pricing",
     "settings": "Settings",
     "license": "License",
-    "cards": "Cards"
+    "cards": "Cards",
+    "deviceMonitor": "Device monitor"
   },
   "search": {
     "label": "Global search",
@@ -171,6 +172,8 @@
     "apply": "Apply",
     "next": "Next",
     "back": "Back",
+    "continue": "Continue",
+    "enabled": "Enabled",
     "select": "Choose…",
     "working": "Working…",
     "copy": "Copy",
@@ -190,7 +193,8 @@
     "ok": "OK",
     "collapse": "Collapse",
     "expand": "Expand",
-    "search": "Search"
+    "search": "Search",
+    "retry": "Retry"
   },
   "users": {
     "create": "Add subscriber",
@@ -605,6 +609,329 @@
       "adoptHint": "HikRAD will manage this service from now on. Nothing on the router changes — only HikRAD's own record.",
       "adoptConfirm": "Adopt",
       "adoptOk": "Service adopted — you can now edit it from HikRAD."
+    },
+    "device": {
+      "link": "Device",
+      "refreshNow": "Refresh now",
+      "noCredsShort": "No API credentials",
+      "neverSampled": "Never sampled",
+      "readAt": "Read {when}",
+      "stale": "Stale — last read {when}",
+      "noApiCredentials": "HikRAD has no saved RouterOS API credentials for this device yet. Add them on the NAS form to enable monitoring.",
+      "neverSampledBody": "This device hasn't been sampled yet. It will appear here after the next worker cycle, or click Refresh now.",
+      "noHistory": "Not enough history yet.",
+      "uptimeDays": "{d}d {h}h",
+      "uptimeHours": "{h}h {m}m",
+      "ownership": {
+        "system": "HikRAD-managed",
+        "router": "Router-adopted",
+        "mixed": "Mixed"
+      },
+      "group": {
+        "monitoring": "Monitoring",
+        "manager": "Manager",
+        "network": "Network"
+      },
+      "tab": {
+        "overview": "Overview",
+        "interfaces": "Interfaces",
+        "general": "General",
+        "bridge": "Bridge",
+        "vlan": "VLAN",
+        "ip": "IP",
+        "dns": "DNS",
+        "update": "Update",
+        "internet": "Internet",
+        "firewall": "Firewall"
+      },
+      "monitor": {
+        "title": "Device monitor",
+        "empty": "No devices yet.",
+        "tagNas": "NAS",
+        "tagMonitor": "Monitor",
+        "cpuValue": "{pct}% ({cores} cores)",
+        "col": {
+          "device": "Device",
+          "kind": "Kind",
+          "rosVersion": "RouterOS",
+          "cpu": "CPU",
+          "mem": "Memory",
+          "sessions": "Sessions",
+          "uptime": "Uptime"
+        }
+      },
+      "overview": {
+        "identity": "Identity",
+        "model": "Model",
+        "rosVersion": "RouterOS version",
+        "serial": "Serial number",
+        "cpu": "CPU",
+        "mem": "Memory",
+        "sessions": "Sessions",
+        "uptime": "Uptime",
+        "historyTitle": "History",
+        "cpuMemChart": "CPU and memory history",
+        "sessionsChart": "Session count history"
+      },
+      "interfaces": {
+        "download": "Download",
+        "upload": "Upload",
+        "peak": "peak",
+        "trafficChart": "Interface traffic history",
+        "disabled": "Disabled",
+        "running": "Running",
+        "notRunning": "Not running",
+        "historyFor": "Traffic history — {iface}",
+        "historyHint": "Select an interface to see its traffic history.",
+        "col": {
+          "name": "Name",
+          "type": "Type",
+          "state": "State",
+          "mac": "MAC address",
+          "mtu": "MTU",
+          "rx": "Download",
+          "tx": "Upload"
+        }
+      },
+      "general": {
+        "identity": "Identity",
+        "timeZone": "Time zone",
+        "time": "Router time",
+        "ntp": "NTP client",
+        "ntpServers": "NTP servers",
+        "pingTitle": "Ping",
+        "pingHint": "Runs a bounded ping from the router itself — useful for checking its uplink, not just its reachability from HikRAD.",
+        "pingTarget": "Target host or IP",
+        "pingRun": "Ping",
+        "pingSentReceived": "Received / sent",
+        "pingLoss": "Packet loss",
+        "pingAvg": "Average RTT",
+        "pingMinMax": "Min / max RTT",
+        "rebootTitle": "Reboot router",
+        "rebootHint": "Restarts the router. Every connected subscriber will be disconnected until it comes back up.",
+        "rebootButton": "Reboot router",
+        "rebootConfirm1Title": "Reboot this router?",
+        "rebootConfirm1Body": "This will disconnect every subscriber currently connected through it. The router will be unreachable until it finishes restarting.",
+        "rebootConfirm2Title": "Are you sure?",
+        "rebootConfirm2Body": "This action cannot be undone once sent. The router will reboot immediately.",
+        "rebootConfirm2Button": "Yes, reboot now",
+        "rebootSent": "Reboot command sent."
+      },
+      "bridge": {
+        "empty": "No bridges configured.",
+        "noPorts": "No member ports.",
+        "pvid": "PVID {pvid}"
+      },
+      "vlan": {
+        "empty": "No VLAN interfaces configured.",
+        "col": {
+          "name": "Name",
+          "id": "VLAN ID",
+          "interface": "Interface",
+          "comment": "Comment",
+          "ownership": "Ownership"
+        }
+      },
+      "ip": {
+        "addressesTitle": "Static addresses",
+        "addressesEmpty": "No static addresses.",
+        "dhcpClientTitle": "DHCP client",
+        "dhcpClientEmpty": "No DHCP client leases.",
+        "dhcpServersTitle": "DHCP servers",
+        "dhcpServersEmpty": "No DHCP servers configured.",
+        "pool": "pool",
+        "leasesTitle": "DHCP leases",
+        "leasesHint": "The router's own live lease table — the answer to \"which device is that?\"",
+        "leasesEmpty": "No active leases.",
+        "col": {
+          "address": "Address",
+          "interface": "Interface",
+          "comment": "Comment",
+          "status": "Status",
+          "mac": "MAC address",
+          "hostname": "Hostname",
+          "server": "Server"
+        }
+      },
+      "dns": {
+        "servers": "Resolvers",
+        "allowRemote": "Allow remote requests",
+        "cacheUsed": "Cache used",
+        "staticTitle": "Static entries",
+        "staticEmpty": "No static DNS entries.",
+        "col": {
+          "name": "Name",
+          "address": "Address",
+          "comment": "Comment"
+        }
+      }
+    },
+    "plan": {
+      "previewButton": "Preview",
+      "applyButton": "Apply",
+      "nothingToDo": "The router already matches — nothing to change.",
+      "conflictAbortOnly": "Nothing was written. Cancel and adjust, or resolve the conflict on the router itself.",
+      "notResolvable": "No safe automatic fix exists for this — nothing was written.",
+      "currentState": "Current",
+      "existing": "Existing",
+      "abortedConflict": "The router has existing configuration that would need to change — nothing was written."
+    },
+    "internet": {
+      "hint": "The router's WAN uplinks. Ones HikRAD created are editable; discovered pre-existing uplinks are read-only until adopted.",
+      "addUplink": "Add uplink",
+      "adoptButton": "Adopt existing",
+      "empty": "No WAN uplinks found on this router yet.",
+      "readOnly": "Router-managed (read-only)",
+      "address": "Address",
+      "gateway": "Gateway",
+      "status": "Status",
+      "comment": "Comment",
+      "adoptTitle": "Adopt WAN uplinks?",
+      "adoptBody": "Imports every uplink this router already reports ({count} known) as a read-only reference. Nothing is written to the router.",
+      "adoptConfirm": "Adopt",
+      "adoptOk": "Adopted {count} of {total} uplink(s).",
+      "applyOk": "WAN uplink saved.",
+      "editTitle": "Edit WAN uplink",
+      "createTitle": "Add WAN uplink",
+      "interface": "Interface",
+      "fromRouterHint": "Suggestions come from this router; you can still type a new name.",
+      "label": "Label",
+      "modeLabel": "Mode",
+      "mode": {
+        "dhcp": "DHCP client",
+        "static": "Static address",
+        "pppoe": "PPPoE client"
+      },
+      "pppoeUser": "PPPoE username",
+      "pppoePassword": "PPPoE password"
+    },
+    "firewall": {
+      "hint": "Firewall rules on this router. Editing an existing HikRAD-managed rule snapshots it first and auto-reverts if not confirmed in time.",
+      "addRule": "Add rule",
+      "empty": "No firewall rules found on this router yet.",
+      "disabled": "Disabled",
+      "ownership": {
+        "system": "HikRAD-managed",
+        "router": "Router-managed"
+      },
+      "readOnly": "Router-managed — adopt required to edit",
+      "editTitle": "Edit firewall rule",
+      "createTitle": "Add firewall rule",
+      "table": "Table",
+      "tableFilter": "Filter",
+      "tableNat": "NAT",
+      "chain": "Chain",
+      "action": "Action",
+      "description": "Description",
+      "applyOkWithRevert": "Change applied. Confirm it before the countdown ends, or it will be reverted automatically.",
+      "revert": {
+        "title": "Firewall change pending confirmation",
+        "body": "This change will be automatically reverted if not confirmed before the countdown reaches zero — the safety net for a change that could lock you out of this router.",
+        "reverting": "Reverting…",
+        "confirmButton": "Confirm this change",
+        "confirmed": "Change confirmed — it will not be reverted."
+      }
+    },
+    "update": {
+      "channel": "Update channel",
+      "installed": "Installed version",
+      "latest": "Latest available",
+      "available": "Update available",
+      "upToDate": "Up to date",
+      "packagesTitle": "Installed packages",
+      "noPackages": "No package information yet.",
+      "disabled": "disabled",
+      "checkButton": "Check for updates",
+      "applyButton": "Install update",
+      "rebootWarning": "Installing an update reboots the router and drops every active session.",
+      "confirm1Title": "Install this RouterOS update?",
+      "confirm1Body": "The router will reboot once the update is installed. Every connected subscriber will be disconnected until it comes back up.",
+      "confirm2Title": "Are you sure?",
+      "confirm2Body": "This action cannot be undone once sent. The router will install the update and reboot.",
+      "confirm2Button": "Yes, install and reboot",
+      "installingSent": "Update install command sent."
+    },
+    "hotspotPage": {
+      "title": "Hotspot login page",
+      "hint": "Choose the router's own default page, HikRAD's built-in branded template, or a custom design.",
+      "mode": {
+        "router_default": "Router default",
+        "branded_template": "Branded template",
+        "custom": "Custom HTML"
+      },
+      "customHtml": "Custom HTML",
+      "saveButton": "Save design",
+      "pushButton": "Push to router",
+      "saveOk": "Design saved.",
+      "pushOk": "Pushed to the router (version {version}).",
+      "designVersion": "Design version {version}",
+      "pushedVersion": "Pushed version {version}",
+      "neverPushed": "Never pushed to this router.",
+      "stale": {
+        "never_pushed": "This design has never been pushed to the router.",
+        "unpushed_edit": "You have unsaved changes that haven't been pushed to the router yet.",
+        "ros_upgraded_since_push": "RouterOS was upgraded since this page was last pushed — hotspot login pages live on router flash and may have been wiped. Re-push to restore it."
+      },
+      "errNothingToPush": "This instance uses the router's own default page — choose a branded or custom design first."
+    },
+    "wizard": {
+      "button": "Setup wizard",
+      "title": "Setup wizard — {name}",
+      "stepOf": "Step {step} of {total}",
+      "step": {
+        "detect": "Detect",
+        "bridge": "Bridge",
+        "bridgePorts": "Bridge ports",
+        "dns": "DNS",
+        "ntp": "NTP",
+        "wan": "Internet",
+        "radius": "RADIUS",
+        "services": "Services",
+        "firewall": "Details & firewall",
+        "review": "Review & push"
+      },
+      "detectHint": "Reads the router's current configuration so already-correct steps can be skipped instead of re-pushed.",
+      "detectOk": "Already configured",
+      "detectMissing": "Not configured yet",
+      "startButton": "Start",
+      "alreadyCorrect": "Already configured on the router:",
+      "skipStep": "Skip this step — already configured on the router",
+      "commaSeparatedHint": "Comma-separated.",
+      "bridgeHint": "The bridge interface HikRAD will use for this router's LAN side.",
+      "bridgeName": "Bridge name",
+      "bridgePorts": "Ports",
+      "bridgePortsHint": "Interfaces to add as members of this bridge.",
+      "bridgePortsSkippedHint": "The bridge step was skipped, so there is no bridge to assign ports to.",
+      "dnsHint": "DNS servers the router itself resolves through.",
+      "dnsPreset": "Preset",
+      "dnsCustom": "Custom",
+      "dnsServers": "DNS servers",
+      "dnsAllowRemote": "Allow remote DNS requests (serve DNS to clients)",
+      "ntpHint": "Keeps the router's clock accurate — matters for session timeouts and logs.",
+      "ntpServers": "NTP servers",
+      "wanHint": "The router's uplink to the internet.",
+      "radiusHint": "Points this router at HikRAD for authentication, accounting, and CoA.",
+      "radiusServerPlaceholder": "Defaults to this HikRAD server's address",
+      "servicesHint": "The PPPoE server or hotspot zone subscribers will connect through.",
+      "ipv6Enable": "Enable IPv6 dual-stack (DHCPv6-PD) for this service",
+      "ipv6Prefix": "Delegated base prefix",
+      "ipv6PrefixLen": "Per-subscriber prefix length",
+      "ipv6PoolName": "IPv6 pool name",
+      "firewallStepHint": "Internet-sharing NAT for the WAN uplink(s), and an optional expired-subscriber walled-garden pool.",
+      "natInterfaces": "NAT out interface(s)",
+      "expiredPoolEnable": "Create an expired-subscriber pool with a renewal redirect",
+      "expiredPoolName": "Pool name",
+      "expiredPoolRanges": "Address ranges",
+      "expiredRedirectUrl": "Renewal redirect host",
+      "reviewHint": "These are the exact commands that will run on the router. Nothing is written until you press Push.",
+      "pushButton": "Push to router",
+      "applyOk": "Setup applied to the router.",
+      "completeToast": "Wizard complete.",
+      "finishButton": "Finish",
+      "dnsProviderGoogle": "Google",
+      "dnsProviderCloudflare": "Cloudflare",
+      "dnsProviderQuad9": "Quad9",
+      "ipv6PrefixPlaceholder": "2001:db8::/32"
     }
   },
   "pools": {

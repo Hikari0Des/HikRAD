@@ -92,6 +92,13 @@ const PATHS: Record<string, ReactNode> = {
       <path d="M6 6.5h.01M6 17.5h.01" />
     </>
   ),
+  'nav.deviceMonitor': (
+    <>
+      <rect x="2" y="4" width="20" height="13" rx="1.5" />
+      <path d="M8 21h8M12 17v4" />
+      <path d="m5 12 2.5-4L11 14l2.5-5L16 12h3" />
+    </>
+  ),
   'nav.pools': (
     <>
       <circle cx="6" cy="6" r="3" />

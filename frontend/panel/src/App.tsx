@@ -11,6 +11,7 @@ import {
   PERM_LIVE_VIEW,
   PERM_MANAGERS_VIEW,
   PERM_MONITORING_VIEW,
+  PERM_NAS_EDIT,
   PERM_NAS_VIEW,
   PERM_POOLS_VIEW,
   PERM_PROFILES_VIEW,
@@ -45,7 +46,10 @@ import { DeviceStatusPage } from './pages/monitoring/DeviceStatusPage'
 import { DevicesPage } from './pages/monitoring/DevicesPage'
 import { HealthPage } from './pages/monitoring/HealthPage'
 import { NasStatusPage } from './pages/monitoring/NasStatusPage'
+import { DeviceMonitorPage } from './pages/nas/DeviceMonitorPage'
+import { DevicePage } from './pages/nas/device/DevicePage'
 import { NasListPage } from './pages/nas/NasListPage'
+import { SetupWizardPage } from './pages/nas/wizard/SetupWizardPage'
 import { PoolsPage } from './pages/pools/PoolsPage'
 import { MyAccountPage } from './pages/MyAccountPage'
 import { MyPreferencesPage } from './pages/preferences/MyPreferencesPage'
@@ -97,7 +101,10 @@ export function App() {
           />
           <Route path="profiles" element={guard(PERM_PROFILES_VIEW, <ProfilesPage />)} />
           <Route path="nas" element={guard(PERM_NAS_VIEW, <NasListPage />)} />
+          <Route path="nas/monitor" element={guard(PERM_NAS_VIEW, <DeviceMonitorPage />)} />
           <Route path="nas/:id/status" element={guard(PERM_NAS_VIEW, <NasStatusPage />)} />
+          <Route path="nas/:id/device/*" element={guard(PERM_NAS_VIEW, <DevicePage />)} />
+          <Route path="nas/:id/wizard" element={guard(PERM_NAS_EDIT, <SetupWizardPage />)} />
           <Route path="pools" element={guard(PERM_POOLS_VIEW, <PoolsPage />)} />
           <Route path="sessions" element={guard(PERM_LIVE_VIEW, <LiveSessionsPage />)} />
           <Route path="ledger" element={guard(PERM_REPORTS_VIEW, <LedgerPage />)} />

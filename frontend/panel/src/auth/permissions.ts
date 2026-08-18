@@ -44,6 +44,14 @@ export const PERM_PAYMENT_TICKETS_VERIFY = 'payment_tickets.verify'
 export const PERM_PAYMENT_PROVIDERS_MANAGE = 'payment_providers.manage'
 export const PERM_SUBSCRIBERS_CREATE = 'subscribers.create'
 export const PERM_NAS_EDIT = 'nas.edit'
+/** v4-6 (FR-142): router reboot is a destructive action, gated separately from nas.edit. */
+export const PERM_NAS_REBOOT = 'nas.reboot'
+/**
+ * v4-7 (FR-147): installing a RouterOS upgrade. Separate from both nas.edit
+ * and nas.reboot — it is neither a config edit nor the reboot action itself,
+ * even though it also reboots the router and drops every live session.
+ */
+export const PERM_NAS_UPDATE = 'nas.update'
 /** v2 phase 7 (FR-87.1): one-click panel update, admin-only by default. */
 export const PERM_SYSTEM_UPDATE = 'system.update'
 
