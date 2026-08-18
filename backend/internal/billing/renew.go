@@ -317,6 +317,18 @@ func (m *Module) renewInTx(ctx context.Context, tx pgx.Tx, dbNow time.Time, p re
 		return renewResult{}, err
 	}
 
+	// v4-5 FR-134: a renewal is also a fresh uptime cycle (subscriber_counters,
+	// v4-4's RESETTABLE table — never subscriber_billing_counters, the lifetime
+	// one). Deferred by v4-4's own gate note ("wired in v4-5/billing, not
+	// here"); completed here alongside the rest of the counter-model split.
+	if _, err := tx.Exec(ctx,
+		`INSERT INTO subscriber_counters (subscriber_id, uptime_cycle_anchor)
+		 VALUES ($1::uuid, now())
+		 ON CONFLICT (subscriber_id) DO UPDATE SET uptime_cycle_anchor = EXCLUDED.uptime_cycle_anchor`,
+		p.subscriberID); err != nil {
+		return renewResult{}, err
+	}
+
 	// Receipt + payment (gross revenue recorded here, decoupled from balance).
 	receiptNo, err := nextReceiptNo(ctx, tx, p.receiptPrefix)
 	if err != nil {

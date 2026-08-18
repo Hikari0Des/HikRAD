@@ -44,6 +44,9 @@ type binding struct {
 	ServiceID    string // nas_services.id; "" when unresolved (unregistered NAS)
 	ServiceName  string // display name of that instance; "" when unresolved
 	SubscriberID string
+	// CardID (v4-5, FR-136/137): set instead of SubscriberID when the login
+	// resolved to a card code, never both — a card is not a subscriber.
+	CardID string
 }
 
 // upsertSession applies one accounting record to the sessions table and inserts
@@ -110,8 +113,29 @@ func upsertSession(ctx context.Context, tx pgx.Tx, rec Record, b binding) (apply
 	// Usage point keyed by NAS event time (FR-37.4 out-of-order tolerance). Skip
 	// empty deltas (a typical Start) to keep the hypertable lean.
 	if dUp > 0 || dDown > 0 {
-		if err := insertUsagePoint(ctx, tx, evt, subscriberID, nasID, dDown, dUp, service); err != nil {
+		if err := insertUsagePoint(ctx, tx, evt, subscriberID, b.CardID, nasID, dDown, dUp, service); err != nil {
 			return applyResult{}, err
+		}
+		// v4-5 FR-134: lifetime billing counters accrue the identical deltas, in
+		// the same transaction, so they can never drift from the usage_points
+		// they are the running sum of.
+		if err := incrementLifetimeBytes(ctx, tx, subscriberID, dDown, dUp, evt); err != nil {
+			return applyResult{}, err
+		}
+	}
+
+	// Lifetime connected-time accrues once, at Stop, over the session's full
+	// span (started_at unknown on an orphan stop → zero duration, correct: we
+	// never saw this session's start, so nothing is attributable to it).
+	if rec.RecordType == RecordStop {
+		start := evt
+		if startedAt != nil {
+			start = (*startedAt).UTC()
+		}
+		if d := evt.Sub(start); d > 0 {
+			if err := incrementLifetimeSeconds(ctx, tx, subscriberID, int64(d.Seconds()), evt); err != nil {
+				return applyResult{}, err
+			}
 		}
 	}
 
@@ -162,8 +186,8 @@ func writeStart(ctx context.Context, tx pgx.Tx, rec Record, b binding, in, out u
 	_, err := tx.Exec(ctx,
 		`INSERT INTO sessions
 		   (nas_id, acct_session_id, subscriber_id, username, ip, mac, started_at,
-		    last_interim_at, stopped_at, bytes_in, bytes_out, service, nas_service_id, stale, reaped)
-		 VALUES ($1,$2,$3,$4,NULLIF($5::text,'')::inet,$6,$7,$8,NULL,$9,$10,$11,$12::uuid,false,false)
+		    last_interim_at, stopped_at, bytes_in, bytes_out, service, nas_service_id, stale, reaped, card_id)
+		 VALUES ($1,$2,$3,$4,NULLIF($5::text,'')::inet,$6,$7,$8,NULL,$9,$10,$11,$12::uuid,false,false,$13::uuid)
 		 ON CONFLICT (nas_id, acct_session_id) DO UPDATE SET
 		    subscriber_id = EXCLUDED.subscriber_id,
 		    username = EXCLUDED.username,
@@ -178,9 +202,10 @@ func writeStart(ctx context.Context, tx pgx.Tx, rec Record, b binding, in, out u
 		    service = EXCLUDED.service,
 		    nas_service_id = EXCLUDED.nas_service_id,
 		    stale = false,
-		    reaped = false`,
+		    reaped = false,
+		    card_id = EXCLUDED.card_id`,
 		b.NASID, rec.AcctSessionID, nullUUID(b.SubscriberID), rec.Username, rec.FramedIP, rec.CallingStationID,
-		evt, rec.ReceiptTime, int64(in), int64(out), b.Service, nullUUID(b.ServiceID))
+		evt, rec.ReceiptTime, int64(in), int64(out), b.Service, nullUUID(b.ServiceID), nullUUID(b.CardID))
 	return err
 }
 
@@ -190,11 +215,11 @@ func writeInterim(ctx context.Context, tx pgx.Tx, rec Record, b binding, in, out
 		_, err := tx.Exec(ctx,
 			`INSERT INTO sessions
 			   (nas_id, acct_session_id, subscriber_id, username, ip, mac, started_at,
-			    last_interim_at, bytes_in, bytes_out, service, nas_service_id, stale, reaped)
-			 VALUES ($1,$2,$3,$4,NULLIF($5::text,'')::inet,$6,$7,$8,$9,$10,$11,$12::uuid,false,false)
+			    last_interim_at, bytes_in, bytes_out, service, nas_service_id, stale, reaped, card_id)
+			 VALUES ($1,$2,$3,$4,NULLIF($5::text,'')::inet,$6,$7,$8,$9,$10,$11,$12::uuid,false,false,$13::uuid)
 			 ON CONFLICT (nas_id, acct_session_id) DO NOTHING`,
 			b.NASID, rec.AcctSessionID, nullUUID(b.SubscriberID), rec.Username, rec.FramedIP, rec.CallingStationID,
-			evt, rec.ReceiptTime, int64(in), int64(out), b.Service, nullUUID(b.ServiceID))
+			evt, rec.ReceiptTime, int64(in), int64(out), b.Service, nullUUID(b.ServiceID), nullUUID(b.CardID))
 		return err
 	}
 	_, err := tx.Exec(ctx,
@@ -208,10 +233,11 @@ func writeInterim(ctx context.Context, tx pgx.Tx, rec Record, b binding, in, out
 		    bytes_in = $8,
 		    bytes_out = $9,
 		    stale = false,
-		    reaped = false
+		    reaped = false,
+		    card_id = COALESCE($10::uuid, card_id)
 		  WHERE nas_id = $1 AND acct_session_id = $2`,
 		b.NASID, rec.AcctSessionID, nullUUID(b.SubscriberID), rec.Username, rec.FramedIP, rec.CallingStationID,
-		rec.ReceiptTime, int64(in), int64(out))
+		rec.ReceiptTime, int64(in), int64(out), nullUUID(b.CardID))
 	return err
 }
 
@@ -221,11 +247,11 @@ func writeStop(ctx context.Context, tx pgx.Tx, rec Record, b binding, in, out ui
 		_, err := tx.Exec(ctx,
 			`INSERT INTO sessions
 			   (nas_id, acct_session_id, subscriber_id, username, ip, mac, started_at,
-			    last_interim_at, stopped_at, terminate_cause, bytes_in, bytes_out, service, nas_service_id, stale, reaped)
-			 VALUES ($1,$2,$3,$4,NULLIF($5::text,'')::inet,$6,$7,$8,$9,$10,$11,$12,$13,$14::uuid,false,false)
+			    last_interim_at, stopped_at, terminate_cause, bytes_in, bytes_out, service, nas_service_id, stale, reaped, card_id)
+			 VALUES ($1,$2,$3,$4,NULLIF($5::text,'')::inet,$6,$7,$8,$9,$10,$11,$12,$13,$14::uuid,false,false,$15::uuid)
 			 ON CONFLICT (nas_id, acct_session_id) DO NOTHING`,
 			b.NASID, rec.AcctSessionID, nullUUID(b.SubscriberID), rec.Username, rec.FramedIP, rec.CallingStationID,
-			evt, rec.ReceiptTime, evt, rec.TerminateCause, int64(in), int64(out), b.Service, nullUUID(b.ServiceID))
+			evt, rec.ReceiptTime, evt, rec.TerminateCause, int64(in), int64(out), b.Service, nullUUID(b.ServiceID), nullUUID(b.CardID))
 		return err
 	}
 	// A Stop does not rewrite identity fields (username/ip/mac) — only closes the
@@ -240,18 +266,19 @@ func writeStop(ctx context.Context, tx pgx.Tx, rec Record, b binding, in, out ui
 		    bytes_in = $7,
 		    bytes_out = $8,
 		    stale = false,
-		    reaped = false
+		    reaped = false,
+		    card_id = COALESCE($9::uuid, card_id)
 		  WHERE nas_id = $1 AND acct_session_id = $2`,
 		b.NASID, rec.AcctSessionID, nullUUID(b.SubscriberID),
-		evt, rec.TerminateCause, rec.ReceiptTime, int64(in), int64(out))
+		evt, rec.TerminateCause, rec.ReceiptTime, int64(in), int64(out), nullUUID(b.CardID))
 	return err
 }
 
-func insertUsagePoint(ctx context.Context, tx pgx.Tx, evt time.Time, sub, nasID string, dDown, dUp uint64, service string) error {
+func insertUsagePoint(ctx context.Context, tx pgx.Tx, evt time.Time, sub, cardID, nasID string, dDown, dUp uint64, service string) error {
 	_, err := tx.Exec(ctx,
-		`INSERT INTO usage_points (time, subscriber_id, nas_id, delta_down, delta_up, exempt, service)
-		 VALUES ($1, $2, $3, $4, $5, false, $6)`,
-		evt, nullUUID(sub), nasID, int64(dDown), int64(dUp), service)
+		`INSERT INTO usage_points (time, subscriber_id, nas_id, delta_down, delta_up, exempt, service, card_id)
+		 VALUES ($1, $2, $3, $4, $5, false, $6, $7)`,
+		evt, nullUUID(sub), nasID, int64(dDown), int64(dUp), service, nullUUID(cardID))
 	return err
 }
 

@@ -128,6 +128,31 @@ export interface LiveFlag {
   sessions: number
 }
 
+/** This-cycle (resettable) usage — derived live, moves to zero on a reset. */
+export interface CycleCounters {
+  quota_used_bytes: number
+  uptime_used_seconds: number
+  daily_used_bytes: number
+}
+
+/**
+ * Lifetime billing totals (v4-5, FR-134) — never written by a reset. Kept
+ * visually and structurally distinct from CycleCounters so an operator never
+ * has to guess which figure a reset would affect.
+ */
+export interface LifetimeCounters {
+  bytes_down: number
+  bytes_up: number
+  session_seconds: number
+  first_seen_at: string | null
+  last_seen_at: string | null
+}
+
+export interface CounterSummary {
+  cycle: CycleCounters
+  lifetime: LifetimeCounters
+}
+
 export interface SubscriberDetail {
   subscriber: Subscriber
   profile: ProfileSummary | null
@@ -135,6 +160,7 @@ export interface SubscriberDetail {
   live: LiveFlag
   overrides: OverrideBadges
   links: Record<string, string>
+  counters: CounterSummary
 }
 
 /** update returns the subscriber plus an optional CoA-disconnect offer (FR-1.2). */

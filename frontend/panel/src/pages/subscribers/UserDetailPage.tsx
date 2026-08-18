@@ -7,7 +7,7 @@ import { disconnectSession, openLiveStream } from '../../api/live'
 import { listProfiles } from '../../api/profiles'
 import { listManagers, type ManagerView } from '../../api/managers'
 import { deleteSubscriber, getSubscriber, resetMac } from '../../api/subscribers'
-import type { LiveSession, Profile, SubscriberDetail } from '../../api/types'
+import type { CounterSummary, LiveSession, Profile, SubscriberDetail } from '../../api/types'
 import { ApiError } from '../../api/client'
 import { useAuth } from '../../auth/AuthContext'
 import { PERM_DISCONNECT, PERM_RENEW } from '../../auth/permissions'
@@ -16,6 +16,7 @@ import { ConfirmDialog } from '../../components/ConfirmDialog'
 import { PageHeader } from '../../components/PageHeader'
 import { useToast } from '../../components/Toast'
 import { useAsync } from '../../hooks/useAsync'
+import { formatBytes } from '../../lib/units'
 import { AuditTrail } from './AuditTrail'
 import { LiveWidget } from './LiveWidget'
 import { RedeemVoucherModal } from './RedeemVoucherModal'
@@ -196,6 +197,13 @@ export function UserDetailPage() {
         )}
       </div>
 
+      {/* Counters (v4-5, FR-134): "this cycle" (resettable) vs. "lifetime"
+          (billing) shown side by side, distinctly labelled, so a reset never
+          reads as ambiguous. */}
+      <Section title={t('subscriber.counters.title')}>
+        <CountersPanel counters={data.counters} />
+      </Section>
+
       {/* Live widget */}
       <Section title={t('subscriber.liveNow')}>
         <LiveWidget subscriberId={id} />
@@ -361,6 +369,93 @@ function DisconnectOffer({
       onConfirm={dropAll}
     />
   )
+}
+
+/**
+ * "This cycle" vs. "Lifetime" counters (FR-134 gate item 1): two visually
+ * separate cards so a reset — which only ever moves the left card's numbers —
+ * can never be mistaken for touching the right one.
+ */
+function CountersPanel({ counters }: { counters: CounterSummary }) {
+  const t = useT()
+  const { formatNumber, formatDate } = useFormatters()
+  const bytes = (n: number) => formatBytes(n, formatNumber)
+  const duration = (seconds: number) => formatDuration(seconds, formatNumber)
+
+  return (
+    <div className="grid gap-3 sm:grid-cols-2">
+      <div className="rounded-md border border-border p-3">
+        <p className="text-xs font-semibold text-ink-muted">{t('subscriber.counters.cycle')}</p>
+        <p className="mb-2 text-xs text-ink-muted">{t('subscriber.counters.cycleHint')}</p>
+        <dl className="space-y-1 text-sm">
+          <Row
+            label={t('subscriber.counters.quotaUsed')}
+            value={bytes(counters.cycle.quota_used_bytes)}
+          />
+          <Row
+            label={t('subscriber.counters.uptimeUsed')}
+            value={duration(counters.cycle.uptime_used_seconds)}
+          />
+          <Row
+            label={t('subscriber.counters.dailyUsed')}
+            value={bytes(counters.cycle.daily_used_bytes)}
+          />
+        </dl>
+      </div>
+      <div className="rounded-md border border-border bg-surface-raised p-3">
+        <p className="text-xs font-semibold text-ink-muted">{t('subscriber.counters.lifetime')}</p>
+        <p className="mb-2 text-xs text-ink-muted">{t('subscriber.counters.lifetimeHint')}</p>
+        <dl className="space-y-1 text-sm">
+          <Row
+            label={t('subscriber.counters.download')}
+            value={bytes(counters.lifetime.bytes_down)}
+          />
+          <Row label={t('subscriber.counters.upload')} value={bytes(counters.lifetime.bytes_up)} />
+          <Row
+            label={t('subscriber.counters.totalTime')}
+            value={duration(counters.lifetime.session_seconds)}
+          />
+          {counters.lifetime.first_seen_at && (
+            <Row
+              label={t('subscriber.counters.firstSeen')}
+              value={formatDate(counters.lifetime.first_seen_at, { timeStyle: undefined })}
+            />
+          )}
+          {counters.lifetime.last_seen_at && (
+            <Row
+              label={t('subscriber.counters.lastSeen')}
+              value={formatDate(counters.lifetime.last_seen_at, { timeStyle: undefined })}
+            />
+          )}
+        </dl>
+      </div>
+    </div>
+  )
+}
+
+function Row({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-baseline justify-between gap-2">
+      <dt className="text-ink-muted">{label}</dt>
+      <dd className="font-medium">{value}</dd>
+    </div>
+  )
+}
+
+/** Render whole seconds as a compact "1d 2h 3m" duration, locale digits only. */
+function formatDuration(
+  totalSeconds: number,
+  formatNumber: (v: number, opts?: Intl.NumberFormatOptions) => string,
+): string {
+  const s = Math.max(0, Math.floor(totalSeconds))
+  const days = Math.floor(s / 86400)
+  const hours = Math.floor((s % 86400) / 3600)
+  const minutes = Math.floor((s % 3600) / 60)
+  const parts: string[] = []
+  if (days > 0) parts.push(`${formatNumber(days)}d`)
+  if (hours > 0 || days > 0) parts.push(`${formatNumber(hours)}h`)
+  parts.push(`${formatNumber(minutes)}m`)
+  return parts.join(' ')
 }
 
 function Card({ label, children }: { label: string; children: React.ReactNode }) {

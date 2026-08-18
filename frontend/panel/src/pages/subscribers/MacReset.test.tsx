@@ -67,6 +67,16 @@ const detail: SubscriberDetail = {
   live: { online: false, sessions: 0 },
   overrides: { rate: false, price: false, session_limit: false, static_ip: false },
   links: {},
+  counters: {
+    cycle: { quota_used_bytes: 0, uptime_used_seconds: 0, daily_used_bytes: 0 },
+    lifetime: {
+      bytes_down: 0,
+      bytes_up: 0,
+      session_seconds: 0,
+      first_seen_at: null,
+      last_seen_at: null,
+    },
+  },
 }
 
 function renderPage() {

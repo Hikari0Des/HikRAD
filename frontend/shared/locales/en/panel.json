@@ -281,7 +281,22 @@
     "disableDisconnectBody": "This subscriber is online. Drop their live sessions now via CoA, rather than waiting for the next re-authentication?",
     "disconnectedCount": "Disconnected {count} session(s).",
     "serviceType": "Service",
-    "serviceTypeHint": "Which service this account may log in on. Hotspot-only accounts are full subscribers — their plan, quota and session limit all apply."
+    "serviceTypeHint": "Which service this account may log in on. Hotspot-only accounts are full subscribers — their plan, quota and session limit all apply.",
+    "counters": {
+      "title": "Counters",
+      "cycle": "This cycle",
+      "cycleHint": "Resettable usage — returns to zero at the next reset.",
+      "quotaUsed": "Quota used",
+      "dailyUsed": "Daily used",
+      "uptimeUsed": "Uptime used",
+      "lifetime": "Lifetime",
+      "lifetimeHint": "Total since this subscriber's first session — never affected by a reset.",
+      "download": "Downloaded",
+      "upload": "Uploaded",
+      "totalTime": "Total connected time",
+      "firstSeen": "First seen",
+      "lastSeen": "Last seen"
+    }
   },
   "profiles": {
     "add": "Add profile",

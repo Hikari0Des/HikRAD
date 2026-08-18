@@ -15,9 +15,11 @@ package accounting
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/hikrad/hikrad/internal/live/livestate"
+	"github.com/jackc/pgx/v5"
 )
 
 func (s *Service) runReaper(ctx context.Context) {
@@ -47,7 +49,7 @@ func (s *Service) reapOnce(ctx context.Context, now time.Time) error {
 
 	rows, err := s.db.Query(ctx,
 		`SELECT nas_id::text, acct_session_id, COALESCE(subscriber_id::text,''), service,
-		        last_interim_at, stale
+		        last_interim_at, stale, started_at
 		   FROM sessions
 		  WHERE stopped_at IS NULL`)
 	if err != nil {
@@ -57,11 +59,12 @@ func (s *Service) reapOnce(ctx context.Context, now time.Time) error {
 		nasID, acctID, sub, service string
 		lastInterim                 *time.Time
 		stale                       bool
+		startedAt                   *time.Time
 	}
 	var open []openSession
 	for rows.Next() {
 		var o openSession
-		if err := rows.Scan(&o.nasID, &o.acctID, &o.sub, &o.service, &o.lastInterim, &o.stale); err != nil {
+		if err := rows.Scan(&o.nasID, &o.acctID, &o.sub, &o.service, &o.lastInterim, &o.stale, &o.startedAt); err != nil {
 			rows.Close()
 			return err
 		}
@@ -80,7 +83,7 @@ func (s *Service) reapOnce(ctx context.Context, now time.Time) error {
 		age := now.Sub(last)
 		switch {
 		case age >= reapAfter:
-			if err := s.reapSession(ctx, now, o.nasID, o.acctID, o.sub, o.service); err != nil {
+			if err := s.reapSession(ctx, now, o.nasID, o.acctID, o.sub, o.service, o.startedAt); err != nil {
 				s.log.Warn("acct reaper: reap failed", "error", err, "acct_session_id", o.acctID)
 			}
 		case age >= staleAfter && !o.stale:
@@ -115,21 +118,35 @@ func (s *Service) markStale(ctx context.Context, nasID, acctID, sub, service str
 
 // reapSession closes a long-silent session with a synthesized Stop (FR-38.2):
 // reaped=true, usage frozen at the last interim, removed from the live feed.
-func (s *Service) reapSession(ctx context.Context, now time.Time, nasID, acctID, sub, service string) error {
-	ct, err := s.db.Exec(ctx,
+// v4-5 FR-134: a reaped close is still a real Stop for lifetime-uptime
+// purposes (the subscriber really was connected for that span) — crediting it
+// only on a clean Stop would silently under-count every session a NAS or the
+// server lost contact with before it could send one.
+func (s *Service) reapSession(ctx context.Context, now time.Time, nasID, acctID, sub, service string, startedAt *time.Time) error {
+	var stoppedAt time.Time
+	err := s.db.QueryRow(ctx,
 		`UPDATE sessions SET
 		    stopped_at = COALESCE(last_interim_at, started_at, $3::timestamptz),
 		    terminate_cause = 'Reaper-Timeout',
 		    stale = true,
 		    reaped = true
-		  WHERE nas_id = $1 AND acct_session_id = $2 AND stopped_at IS NULL`,
-		nasID, acctID, now)
+		  WHERE nas_id = $1 AND acct_session_id = $2 AND stopped_at IS NULL
+		  RETURNING stopped_at`,
+		nasID, acctID, now).Scan(&stoppedAt)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil // already closed by a concurrent real Stop; nothing to reap
+		}
 		return err
 	}
-	if ct.RowsAffected() > 0 {
-		s.counters.reaped.Add(1)
-		bumpCounterDurable(ctx, s.db, "reaped")
+	s.counters.reaped.Add(1)
+	bumpCounterDurable(ctx, s.db, "reaped")
+	if sub != "" && startedAt != nil {
+		if d := stoppedAt.UTC().Sub((*startedAt).UTC()); d > 0 {
+			if terr := incrementLifetimeSeconds(ctx, s.db, sub, int64(d.Seconds()), stoppedAt.UTC()); terr != nil {
+				s.log.Warn("acct reaper: lifetime-seconds credit failed", "error", terr, "acct_session_id", acctID)
+			}
+		}
 	}
 	if s.rdb != nil {
 		_ = livestate.Remove(ctx, s.rdb, nasID, acctID, sub, service)

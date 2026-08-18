@@ -48,6 +48,10 @@ type detailResponse struct {
 	Live       liveFlag          `json:"live"`
 	Overrides  overrideBadges    `json:"overrides"`
 	Links      map[string]string `json:"links"`
+	// Counters (v4-5, FR-134 gate item 1): the resettable "this cycle" figures
+	// and the lifetime billing totals, labelled distinctly — never conflated
+	// into one number.
+	Counters counterSummary `json:"counters"`
 }
 
 type liveFlag struct {
@@ -96,6 +100,7 @@ func (m *Module) detailHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	n := live.Count(s.ID, "")
 	resp.Live = liveFlag{Online: n > 0, Sessions: n}
+	resp.Counters = m.loadCounters(r.Context(), s.ID)
 
 	httpapi.JSON(w, http.StatusOK, resp)
 }
