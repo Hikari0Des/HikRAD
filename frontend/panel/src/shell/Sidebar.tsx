@@ -10,6 +10,7 @@ import { usePersistentState } from '../hooks/usePersistentState'
 import { NavIcon } from './navIcons'
 import {
   PERM_AUDIT_VIEW,
+  PERM_CARDS_VIEW,
   PERM_PAYMENT_TICKETS_VERIFY,
   PERM_PAYMENT_PROVIDERS_MANAGE,
   PERM_LIVE_VIEW,
@@ -54,6 +55,7 @@ const NAV_GROUPS: readonly NavGroup[] = [
     items: [
       { key: 'nav.ledger', to: '/ledger', perm: PERM_REPORTS_VIEW },
       { key: 'nav.vouchers', to: '/vouchers', perm: PERM_VOUCHERS_VIEW },
+      { key: 'nav.cards', to: '/cards', perm: PERM_CARDS_VIEW },
       { key: 'nav.paymentTickets', to: '/payment-tickets', perm: PERM_PAYMENT_TICKETS_VERIFY },
       {
         key: 'nav.paymentProviders',

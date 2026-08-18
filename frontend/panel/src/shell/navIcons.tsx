@@ -41,6 +41,13 @@ const PATHS: Record<string, ReactNode> = {
       <path d="M13 5v14" />
     </>
   ),
+  'nav.cards': (
+    <>
+      <rect x="2" y="5" width="20" height="14" rx="2" />
+      <path d="M2 10h20" />
+      <path d="M6 15h4" />
+    </>
+  ),
   'nav.paymentTickets': (
     <>
       <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z" />
