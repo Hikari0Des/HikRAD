@@ -49,8 +49,37 @@ type Profile struct {
 	// their own. EMPTY = any NAS (the v1 default).
 	NASScopes []radius.NASScope `json:"nas_scopes"`
 	Archived  bool              `json:"archived"`
-	CreatedAt string            `json:"created_at"`
-	UpdatedAt string            `json:"updated_at"`
+
+	// --- v4-4 Limits engine (FR-128–131) ----------------------------------
+	// ExpiryBehavior/QuotaBehavior above widen additively to also accept
+	// "throttle" (expiry only — quota already had it) and "switch_plan".
+	// Each limit's ExhaustTarget's meaning depends on its own action: a rate
+	// string for throttle, a target profile id for switch_plan, a pool-name
+	// override for expired_pool ("" = the global purpose='expired' pool).
+	UptimeLimitSeconds  *int64 `json:"uptime_limit_seconds"`
+	DailyLimitBytes     *int64 `json:"daily_limit_bytes"`
+	DailyResetMin       int    `json:"daily_reset_min"`
+	ExpiryExhaustTarget string `json:"expiry_exhaust_target"`
+	QuotaExhaustTarget  string `json:"quota_exhaust_target"`
+	UptimeExhaustAction string `json:"uptime_exhaust_action"`
+	UptimeExhaustTarget string `json:"uptime_exhaust_target"`
+	DailyExhaustAction  string `json:"daily_exhaust_action"`
+	DailyExhaustTarget  string `json:"daily_exhaust_target"`
+	// SpeedWindowCount (FR-132, list/get only): populated alongside
+	// SubscriberCount by attachCounts — the actual window rows live behind
+	// GET /profiles/{id}/speed-windows (speedwindows.go), same separation
+	// tod.go's windows already use.
+	SpeedWindowCount int `json:"speed_window_count"`
+
+	// AutoRenewDefault (FR-132): the plan's default auto-renew posture for
+	// subscribers placed on it; propagated to existing subscribers only via
+	// the explicit propagate-auto-renew action, never silently.
+	AutoRenewDefault bool `json:"auto_renew_default"`
+	// SubscriberCount (FR-132, list/get only): zero on a bare create scan.
+	SubscriberCount int `json:"subscriber_count"`
+
+	CreatedAt string `json:"created_at"`
+	UpdatedAt string `json:"updated_at"`
 }
 
 const profileColumns = `id::text, name, price, currency, duration_days, rate_down_kbps, rate_up_kbps,
@@ -59,6 +88,11 @@ const profileColumns = `id::text, name, price, currency, duration_days, rate_dow
 	hotspot_rate_down_kbps, hotspot_rate_up_kbps,
 	burst_rate, burst_threshold, burst_time, rate_priority, min_rate,
 	address_list,
+	uptime_limit_seconds, daily_limit_bytes, daily_reset_min,
+	expiry_exhaust_target, quota_exhaust_target,
+	uptime_exhaust_action, uptime_exhaust_target,
+	daily_exhaust_action, daily_exhaust_target,
+	auto_renew_default,
 	archived,
 	to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
 	to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')`
@@ -71,6 +105,11 @@ func scanProfile(row pgx.Row) (Profile, error) {
 		&p.HotspotRateDownKbps, &p.HotspotRateUpKbps,
 		&p.BurstRate, &p.BurstThreshold, &p.BurstTime, &p.RatePriority, &p.MinRate,
 		&p.AddressList,
+		&p.UptimeLimitSeconds, &p.DailyLimitBytes, &p.DailyResetMin,
+		&p.ExpiryExhaustTarget, &p.QuotaExhaustTarget,
+		&p.UptimeExhaustAction, &p.UptimeExhaustTarget,
+		&p.DailyExhaustAction, &p.DailyExhaustTarget,
+		&p.AutoRenewDefault,
 		&p.Archived, &p.CreatedAt, &p.UpdatedAt)
 	// Scopes live in their own table; the caller attaches them. Default to empty
 	// (= any NAS) so an un-enriched row never serializes as null.
@@ -135,6 +174,9 @@ func listProfiles(ctx context.Context, db *pgxpool.Pool, includeArchived bool) (
 	if err := attachScopes(ctx, db, out); err != nil {
 		return nil, err
 	}
+	if err := attachCounts(ctx, db, out); err != nil {
+		return nil, err
+	}
 	return out, nil
 }
 
@@ -148,7 +190,11 @@ func getProfile(ctx context.Context, db *pgxpool.Pool, id string) (Profile, erro
 		return Profile{}, err
 	}
 	p.NASScopes = orEmptyScopes(scopes)
-	return p, nil
+	items := []Profile{p}
+	if err := attachCounts(ctx, db, items); err != nil {
+		return Profile{}, err
+	}
+	return items[0], nil
 }
 
 // insertProfile and updateProfile take a transaction, not the pool: the profile
@@ -161,14 +207,25 @@ func insertProfile(ctx context.Context, tx pgx.Tx, in profileInput) (Profile, er
 		    session_limit_default, quota_mode, quota_total_bytes, quota_down_bytes,
 		    quota_up_bytes, throttle_rate, expiry_behavior, quota_behavior,
 		    hotspot_rate_down_kbps, hotspot_rate_up_kbps,
-		    burst_rate, burst_threshold, burst_time, rate_priority, min_rate, address_list)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7::uuid,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)
+		    burst_rate, burst_threshold, burst_time, rate_priority, min_rate, address_list,
+		    uptime_limit_seconds, daily_limit_bytes, daily_reset_min,
+		    expiry_exhaust_target, quota_exhaust_target,
+		    uptime_exhaust_action, uptime_exhaust_target,
+		    daily_exhaust_action, daily_exhaust_target,
+		    auto_renew_default)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7::uuid,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,
+		    $24,$25,$26,$27,$28,$29,$30,$31,$32,$33)
 		 RETURNING `+profileColumns,
 		in.Name, in.Price, in.Currency, in.DurationDays, in.RateDownKbps, in.RateUpKbps, in.PoolID,
 		in.SessionLimitDefault, in.QuotaMode, in.QuotaTotalBytes, in.QuotaDownBytes,
 		in.QuotaUpBytes, in.ThrottleRate, in.ExpiryBehavior, in.QuotaBehavior,
 		in.HotspotRateDownKbps, in.HotspotRateUpKbps,
-		in.BurstRate, in.BurstThreshold, in.BurstTime, in.RatePriority, in.MinRate, in.AddressList))
+		in.BurstRate, in.BurstThreshold, in.BurstTime, in.RatePriority, in.MinRate, in.AddressList,
+		in.UptimeLimitSeconds, in.DailyLimitBytes, in.DailyResetMin,
+		in.ExpiryExhaustTarget, in.QuotaExhaustTarget,
+		in.UptimeExhaustAction, in.UptimeExhaustTarget,
+		in.DailyExhaustAction, in.DailyExhaustTarget,
+		in.AutoRenewDefault))
 }
 
 func updateProfile(ctx context.Context, tx pgx.Tx, id string, in profileInput) (Profile, error) {
@@ -180,6 +237,11 @@ func updateProfile(ctx context.Context, tx pgx.Tx, id string, in profileInput) (
 		    quota_behavior=$16, hotspot_rate_down_kbps=$17, hotspot_rate_up_kbps=$18,
 		    burst_rate=$20, burst_threshold=$21, burst_time=$22, rate_priority=$23, min_rate=$24,
 		    address_list=$25,
+		    uptime_limit_seconds=$26, daily_limit_bytes=$27, daily_reset_min=$28,
+		    expiry_exhaust_target=$29, quota_exhaust_target=$30,
+		    uptime_exhaust_action=$31, uptime_exhaust_target=$32,
+		    daily_exhaust_action=$33, daily_exhaust_target=$34,
+		    auto_renew_default=$35,
 		    archived=$19
 		  WHERE id=$1::uuid
 		 RETURNING `+profileColumns,
@@ -187,7 +249,62 @@ func updateProfile(ctx context.Context, tx pgx.Tx, id string, in profileInput) (
 		in.SessionLimitDefault, in.QuotaMode, in.QuotaTotalBytes, in.QuotaDownBytes,
 		in.QuotaUpBytes, in.ThrottleRate, in.ExpiryBehavior, in.QuotaBehavior,
 		in.HotspotRateDownKbps, in.HotspotRateUpKbps, in.Archived,
-		in.BurstRate, in.BurstThreshold, in.BurstTime, in.RatePriority, in.MinRate, in.AddressList))
+		in.BurstRate, in.BurstThreshold, in.BurstTime, in.RatePriority, in.MinRate, in.AddressList,
+		in.UptimeLimitSeconds, in.DailyLimitBytes, in.DailyResetMin,
+		in.ExpiryExhaustTarget, in.QuotaExhaustTarget,
+		in.UptimeExhaustAction, in.UptimeExhaustTarget,
+		in.DailyExhaustAction, in.DailyExhaustTarget,
+		in.AutoRenewDefault))
+}
+
+// attachCounts fills SubscriberCount/SpeedWindowCount for a page of profiles
+// in two grouped queries rather than N+1 (FR-132 "subscriber count... and
+// windows at a glance").
+func attachCounts(ctx context.Context, db *pgxpool.Pool, items []Profile) error {
+	if len(items) == 0 {
+		return nil
+	}
+	ids := make([]string, 0, len(items))
+	idx := make(map[string]int, len(items))
+	for i, p := range items {
+		ids = append(ids, p.ID)
+		idx[p.ID] = i
+	}
+	subRows, err := db.Query(ctx,
+		`SELECT profile_id::text, count(*) FROM subscribers WHERE profile_id = ANY($1::uuid[]) GROUP BY profile_id`, ids)
+	if err != nil {
+		return err
+	}
+	defer subRows.Close()
+	for subRows.Next() {
+		var id string
+		var n int
+		if err := subRows.Scan(&id, &n); err != nil {
+			return err
+		}
+		items[idx[id]].SubscriberCount = n
+	}
+	if err := subRows.Err(); err != nil {
+		return err
+	}
+	subRows.Close()
+
+	winRows, err := db.Query(ctx,
+		`SELECT profile_id::text, count(*) FROM profile_speed_windows
+		  WHERE profile_id = ANY($1::uuid[]) AND enabled GROUP BY profile_id`, ids)
+	if err != nil {
+		return err
+	}
+	defer winRows.Close()
+	for winRows.Next() {
+		var id string
+		var n int
+		if err := winRows.Scan(&id, &n); err != nil {
+			return err
+		}
+		items[idx[id]].SpeedWindowCount = n
+	}
+	return winRows.Err()
 }
 
 // profileInUse reports whether anything references this plan. Checked before a
@@ -211,7 +328,16 @@ func profileInUse(ctx context.Context, db *pgxpool.Pool, id string) (bool, error
 	err := db.QueryRow(ctx,
 		`SELECT EXISTS (SELECT 1 FROM subscribers WHERE profile_id = $1::uuid OR pending_profile_id = $1::uuid)
 		     OR EXISTS (SELECT 1 FROM voucher_batches WHERE profile_id = $1::uuid)
-		     OR EXISTS (SELECT 1 FROM payment_tickets WHERE profile_id = $1::uuid)`,
+		     OR EXISTS (SELECT 1 FROM payment_tickets WHERE profile_id = $1::uuid)
+		     -- v4-4 (FR-130): a profile named as another profile's switch_plan
+		     -- target is a live reference too — deleting it would leave that
+		     -- other profile's exhausted subscribers silently falling back to
+		     -- full rate (limits.go's documented "missing target" degrade).
+		     OR EXISTS (SELECT 1 FROM profiles WHERE
+		         (expiry_behavior = 'switch_plan' AND expiry_exhaust_target = $1::text) OR
+		         (quota_behavior  = 'switch_plan' AND quota_exhaust_target  = $1::text) OR
+		         (uptime_exhaust_action = 'switch_plan' AND uptime_exhaust_target = $1::text) OR
+		         (daily_exhaust_action  = 'switch_plan' AND daily_exhaust_target  = $1::text))`,
 		id).Scan(&inUse)
 	return inUse, err
 }

@@ -106,6 +106,64 @@ type AuthView struct {
 	// Empty ⇒ no address_list intent is emitted. Backward-compatible C4
 	// extension, same posture as StaticIP/BurstRate above.
 	AddressList string `json:"address_list"`
+
+	// --- v4-4 Limits engine (FR-128–131) ---------------------------------
+	//
+	// Backward-compatible C4 extension, same posture as StaticIP/BurstRate:
+	// every new field defaults to its zero value, which decodes safely from a
+	// cached pre-v4-4 JSON blob and means "no limit configured" — so every
+	// pre-existing AuthView (including every fixture in authorize_test.go
+	// that never sets these) keeps deciding exactly as it did (gate item 12).
+	//
+	// ExpiryBehavior/QuotaBehavior widen additively (FR-130) to also accept
+	// "throttle" (expiry only — quota already had it) and "switch_plan";
+	// their existing target fields (ThrottleRate, ExpiredPoolName) keep their
+	// exact pre-v4-4 meaning. The fields below are ONLY consulted for the
+	// specific action they belong to, resolved once by the loader
+	// (subscribers/authview.go) so the RADIUS engine never touches the DB.
+	ExpiryThrottleRate string `json:"expiry_throttle_rate"` // ExpiryBehavior == "throttle"
+	ExpiryPoolOverride string `json:"expiry_pool_override"` // ExpiryBehavior == "expired_pool"; "" = ExpiredPoolName
+	ExpirySwitchRate   string `json:"expiry_switch_rate"`   // ExpiryBehavior == "switch_plan"
+	ExpirySwitchPool   string `json:"expiry_switch_pool"`
+
+	QuotaPoolOverride string `json:"quota_pool_override"` // QuotaBehavior == "expired_pool"; "" = ExpiredPoolName
+	QuotaSwitchRate   string `json:"quota_switch_rate"`   // QuotaBehavior == "switch_plan"
+	QuotaSwitchPool   string `json:"quota_switch_pool"`
+
+	// UptimeLimitSeconds (FR-128): cumulative connected-time ceiling: zero =
+	// unlimited (no check). UptimeUsedSeconds is computed live by the loader
+	// from subscriber_counters.uptime_cycle_anchor — derived on every load,
+	// never stored-and-edited, the same posture accounting/quota.go already
+	// uses for quota.
+	UptimeLimitSeconds  int64  `json:"uptime_limit_seconds"`
+	UptimeUsedSeconds   int64  `json:"uptime_used_seconds"`
+	UptimeExhaustAction string `json:"uptime_exhaust_action"` // block | throttle | expired_pool | switch_plan
+	UptimeThrottleRate  string `json:"uptime_throttle_rate"`
+	UptimePoolOverride  string `json:"uptime_pool_override"`
+	UptimeSwitchRate    string `json:"uptime_switch_rate"`
+	UptimeSwitchPool    string `json:"uptime_switch_pool"`
+
+	// DailyLimitBytes (FR-129): per-day byte cap, resetting at DailyResetMin
+	// (minutes since local midnight, server timezone Asia/Baghdad — matches
+	// the FR-11 TOD sweep convention). Zero limit = unlimited. The default
+	// exhaustion is THROTTLE, not block — the commercial point of the
+	// feature — and it self-restores at the next reset with no operator
+	// action (radius/limitsworker.go). DailyUsedBytes is likewise derived
+	// live from subscriber_counters.daily_period_start.
+	DailyLimitBytes    int64  `json:"daily_limit_bytes"`
+	DailyUsedBytes     int64  `json:"daily_used_bytes"`
+	DailyResetMin      int    `json:"daily_reset_min"`
+	DailyExhaustAction string `json:"daily_exhaust_action"` // block | throttle | expired_pool | switch_plan
+	DailyThrottleRate  string `json:"daily_throttle_rate"`
+	DailyPoolOverride  string `json:"daily_pool_override"`
+	DailySwitchRate    string `json:"daily_switch_rate"`
+	DailySwitchPool    string `json:"daily_switch_pool"`
+
+	// SpeedWindows (FR-131): this subscriber's profile's time-of-day rate
+	// overrides. A separate mechanism from the older FR-11
+	// profile_tod_windows (radius/tod.go), which this phase leaves untouched
+	// — see radius/limits.go's package doc for why they don't merge.
+	SpeedWindows []SpeedWindow `json:"speed_windows"`
 }
 
 // PolicyProvider is D's C4 read-model, injected into the authorize path.

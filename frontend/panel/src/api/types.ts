@@ -209,8 +209,36 @@ export interface SearchHit {
 // --- profiles (C7-D) ------------------------------------------------------
 
 export type QuotaMode = 'unlimited' | 'total' | 'split'
-export type ExpiryBehavior = 'block' | 'expired_pool'
-export type QuotaBehavior = 'block' | 'throttle' | 'expired_pool'
+// v4-4 (FR-130): the unified exhaustion action set — expiry/quota widen
+// additively (existing values are an exact subset), uptime/daily are new.
+export type ExhaustAction = 'block' | 'throttle' | 'expired_pool' | 'switch_plan'
+export type ExpiryBehavior = ExhaustAction
+export type QuotaBehavior = ExhaustAction
+
+/** FR-131: a profile's time-of-day rate override. days_mask bit N = day N
+ * (0=Sunday..6=Saturday); 0 = every day. */
+export interface SpeedWindow {
+  id: string
+  profile_id: string
+  label: string
+  days_mask: number
+  start_min: number
+  end_min: number
+  rate_down_kbps: number
+  rate_up_kbps: number
+  enabled: boolean
+  created_at: string
+}
+
+export interface SpeedWindowWrite {
+  label?: string
+  days_mask: number
+  start_min: number
+  end_min: number
+  rate_down_kbps: number
+  rate_up_kbps: number
+  enabled?: boolean
+}
 
 export interface Profile {
   id: string
@@ -236,6 +264,26 @@ export interface Profile {
   /** FR-64 scope inherited by this profile's subscribers; [] = any NAS. */
   nas_scopes: NasScope[]
   archived: boolean
+
+  // --- v4-4 Limits engine (FR-128–131) -----------------------------------
+  uptime_limit_seconds: number | null
+  daily_limit_bytes: number | null
+  /** Minutes since local (server timezone) midnight. */
+  daily_reset_min: number
+  /** Meaning depends on the paired action: a rate string for throttle, a
+   * target profile id for switch_plan, an optional pool-name override for
+   * expired_pool ("" = the global expired pool). */
+  expiry_exhaust_target: string
+  quota_exhaust_target: string
+  uptime_exhaust_action: ExhaustAction
+  uptime_exhaust_target: string
+  daily_exhaust_action: ExhaustAction
+  daily_exhaust_target: string
+  /** FR-132: subscriber/window counts, list/get only. */
+  subscriber_count: number
+  speed_window_count: number
+  auto_renew_default: boolean
+
   created_at: string
   updated_at: string
 }
@@ -263,6 +311,18 @@ export interface ProfileWrite {
   /** FR-64 scope; an empty array means "any NAS". */
   nas_scopes?: NasScope[]
   archived?: boolean
+
+  // --- v4-4 Limits engine (FR-128–131) -----------------------------------
+  uptime_limit_seconds?: number | null
+  daily_limit_bytes?: number | null
+  daily_reset_min?: number
+  expiry_exhaust_target?: string
+  quota_exhaust_target?: string
+  uptime_exhaust_action?: ExhaustAction
+  uptime_exhaust_target?: string
+  daily_exhaust_action?: ExhaustAction
+  daily_exhaust_target?: string
+  auto_renew_default?: boolean
 }
 
 // --- profile bulk (FR-111.2) ----------------------------------------------

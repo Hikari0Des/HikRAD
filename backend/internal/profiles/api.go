@@ -46,6 +46,24 @@ type profileInput struct {
 	NASScopes []radius.NASScope `json:"nas_scopes"`
 	// Archived is only honored on update (create always makes an active profile).
 	Archived bool `json:"archived"`
+
+	// --- v4-4 Limits engine (FR-128–131) ----------------------------------
+	// UptimeLimitSeconds/DailyLimitBytes: nil or <=0 = no limit (unlimited).
+	UptimeLimitSeconds *int64 `json:"uptime_limit_seconds"`
+	DailyLimitBytes    *int64 `json:"daily_limit_bytes"`
+	// DailyResetMin: minutes since local (server timezone) midnight.
+	DailyResetMin int `json:"daily_reset_min"`
+	// ExhaustTarget per limit: a rate string for throttle, a target profile
+	// id for switch_plan, an optional pool-name override for expired_pool.
+	ExpiryExhaustTarget string `json:"expiry_exhaust_target"`
+	QuotaExhaustTarget  string `json:"quota_exhaust_target"`
+	UptimeExhaustAction string `json:"uptime_exhaust_action"`
+	UptimeExhaustTarget string `json:"uptime_exhaust_target"`
+	DailyExhaustAction  string `json:"daily_exhaust_action"`
+	DailyExhaustTarget  string `json:"daily_exhaust_target"`
+
+	// AutoRenewDefault (FR-132): the plan's default auto-renew posture.
+	AutoRenewDefault bool `json:"auto_renew_default"`
 }
 
 // nasScopeChanged reports whether an update moved the profile's FR-64 scope set.
@@ -118,21 +136,73 @@ func (in *profileInput) validate() []httpapi.FieldError {
 	if in.ExpiryBehavior == "" {
 		in.ExpiryBehavior = "block"
 	}
-	if in.ExpiryBehavior != "block" && in.ExpiryBehavior != "expired_pool" {
-		add("expiry_behavior", "must be one of: block expired_pool")
+	// FR-130: widened additively — expiry now also accepts throttle/switch_plan.
+	switch in.ExpiryBehavior {
+	case "block", "expired_pool", "throttle", "switch_plan":
+	default:
+		add("expiry_behavior", "must be one of: block expired_pool throttle switch_plan")
+	}
+	if in.ExpiryBehavior == "throttle" && in.ExpiryExhaustTarget == "" {
+		add("expiry_exhaust_target", "required rate string when expiry_behavior is 'throttle'")
+	}
+	if in.ExpiryBehavior == "switch_plan" && in.ExpiryExhaustTarget == "" {
+		add("expiry_exhaust_target", "required target profile id when expiry_behavior is 'switch_plan'")
 	}
 	if in.QuotaBehavior == "" {
 		in.QuotaBehavior = "block"
 	}
+	// FR-130: widened additively — quota now also accepts switch_plan.
 	switch in.QuotaBehavior {
-	case "block", "throttle", "expired_pool":
+	case "block", "throttle", "expired_pool", "switch_plan":
 	default:
-		add("quota_behavior", "must be one of: block throttle expired_pool")
+		add("quota_behavior", "must be one of: block throttle expired_pool switch_plan")
 	}
 	if in.QuotaBehavior == "throttle" && (in.ThrottleRate == nil || *in.ThrottleRate == "") {
 		add("throttle_rate", "required when quota_behavior is 'throttle'")
 	}
+	if in.QuotaBehavior == "switch_plan" && in.QuotaExhaustTarget == "" {
+		add("quota_exhaust_target", "required target profile id when quota_behavior is 'switch_plan'")
+	}
+
+	in.validateLimit(&fe, "uptime", in.UptimeLimitSeconds != nil && *in.UptimeLimitSeconds > 0, &in.UptimeExhaustAction, in.UptimeExhaustTarget, "block")
+	if in.UptimeLimitSeconds != nil && *in.UptimeLimitSeconds < 0 {
+		add("uptime_limit_seconds", "must not be negative")
+	}
+	in.validateLimit(&fe, "daily", in.DailyLimitBytes != nil && *in.DailyLimitBytes > 0, &in.DailyExhaustAction, in.DailyExhaustTarget, "throttle")
+	if in.DailyLimitBytes != nil && *in.DailyLimitBytes < 0 {
+		add("daily_limit_bytes", "must not be negative")
+	}
+	if in.DailyResetMin < 0 || in.DailyResetMin > 1439 {
+		add("daily_reset_min", "must be 0..1439 (minutes since local midnight)")
+	}
 	return fe
+}
+
+// validateLimit is the shared FR-130 validator for the two NEW limits
+// (uptime/daily): defaults the action, checks it's one of the unified set,
+// and requires a target when the action needs one — same rules FR-8's
+// existing quota_behavior validation above applies, generalized so uptime
+// and daily don't each reinvent it.
+func (in *profileInput) validateLimit(fe *[]httpapi.FieldError, name string, limited bool, action *string, target, defaultAction string) {
+	add := func(f, m string) { *fe = append(*fe, httpapi.FieldError{Field: f, Message: m}) }
+	if *action == "" {
+		*action = defaultAction
+	}
+	switch *action {
+	case "block", "throttle", "expired_pool", "switch_plan":
+	default:
+		add(name+"_exhaust_action", "must be one of: block throttle expired_pool switch_plan")
+		return
+	}
+	if !limited {
+		return
+	}
+	if *action == "throttle" && target == "" {
+		add(name+"_exhaust_target", "required rate string when "+name+"_exhaust_action is 'throttle'")
+	}
+	if *action == "switch_plan" && target == "" {
+		add(name+"_exhaust_target", "required target profile id when "+name+"_exhaust_action is 'switch_plan'")
+	}
 }
 
 func (m *Module) listHandler(w http.ResponseWriter, r *http.Request) {

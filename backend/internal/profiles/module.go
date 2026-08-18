@@ -51,6 +51,16 @@ func (m *Module) Register(r chi.Router, d httpapi.Deps) {
 	r.With(auth.Require("profiles.edit")).Post("/api/v1/profiles/{id}/tod-windows", m.createTODHandler)
 	r.With(auth.Require("profiles.edit")).Delete("/api/v1/profiles/{id}/tod-windows/{wid}", m.deleteTODHandler)
 
+	// Speed windows (v4-4, FR-131) — a separate mechanism from the FR-11 TOD
+	// windows above; see speedwindows.go's package doc for why.
+	r.With(auth.Require("profiles.view")).Get("/api/v1/profiles/{id}/speed-windows", m.listSpeedWindowsHandler)
+	r.With(auth.Require("profiles.edit")).Post("/api/v1/profiles/{id}/speed-windows", m.createSpeedWindowHandler)
+	r.With(auth.Require("profiles.edit")).Delete("/api/v1/profiles/{id}/speed-windows/{wid}", m.deleteSpeedWindowHandler)
+
+	// Plan ergonomics (v4-4, FR-132).
+	r.With(auth.Require("profiles.create")).Post("/api/v1/profiles/{id}/duplicate", m.duplicateHandler)
+	r.With(auth.Require("profiles.edit")).Post("/api/v1/profiles/{id}/propagate-auto-renew", m.propagateAutoRenewHandler)
+
 	// Wire D's TOD read-model into B's boundary-sweep engine (once, at boot).
 	radius.SetTODProvider(&todProvider{db: d.DB})
 }

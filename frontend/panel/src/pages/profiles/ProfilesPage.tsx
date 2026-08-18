@@ -22,12 +22,18 @@ import { listPools } from '../../api/pools'
 import {
   archiveProfile,
   createProfile,
+  createSpeedWindow,
   deleteProfile,
+  deleteSpeedWindow,
+  duplicateProfile,
   listProfiles,
+  listSpeedWindows,
+  propagateAutoRenew,
   updateProfile,
 } from '../../api/profiles'
 import { ApiError } from '../../api/client'
 import type {
+  ExhaustAction,
   ExpiryBehavior,
   NasScope,
   Pool,
@@ -36,6 +42,7 @@ import type {
   ProfileWrite,
   QuotaBehavior,
   QuotaMode,
+  SpeedWindow,
 } from '../../api/types'
 import { useAuth } from '../../auth/AuthContext'
 import { PERM_PROFILES_CREATE } from '../../auth/permissions'
@@ -54,8 +61,10 @@ import { formatKbps } from '../../lib/units'
 import { ProfileBulkBar } from './ProfileBulkBar'
 
 const QUOTA_MODES: QuotaMode[] = ['unlimited', 'total', 'split']
-const EXPIRY: ExpiryBehavior[] = ['block', 'expired_pool']
-const QUOTA_BEH: QuotaBehavior[] = ['block', 'throttle', 'expired_pool']
+const EXPIRY: ExpiryBehavior[] = ['block', 'expired_pool', 'throttle', 'switch_plan']
+// FR-130: the unified action set, shared by all four limits' selectors.
+const EXHAUST_ACTIONS: ExhaustAction[] = ['block', 'throttle', 'expired_pool', 'switch_plan']
+const DAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'] as const
 
 interface Filters {
   q: string
@@ -201,6 +210,18 @@ export function ProfilesPage() {
     }
   }
 
+  /** One-click duplication (FR-132): copies the plan (limits, scopes, speed
+   * windows) into a new "<name> (copy)" row, archived=false. */
+  async function doDuplicate(p: Profile) {
+    try {
+      const copy = await duplicateProfile(p.id)
+      toast(t('profiles.duplicated', { name: p.name, newName: copy.name }), 'ok')
+      reload()
+    } catch (err) {
+      toast(err instanceof Error ? err.message : t('common.error.body'), 'danger')
+    }
+  }
+
   return (
     <section>
       <PageHeaderRow>
@@ -288,6 +309,10 @@ export function ProfilesPage() {
                 <th className="px-3 py-2 text-start font-medium">{t('profiles.duration')}</th>
                 <th className="px-3 py-2 text-start font-medium">{t('profiles.rate')}</th>
                 <th className="px-3 py-2 text-start font-medium">{t('profiles.quota')}</th>
+                <th className="px-3 py-2 text-start font-medium">{t('profiles.limitsColumn')}</th>
+                <th className="px-3 py-2 text-start font-medium">
+                  {t('profiles.subscribersColumn')}
+                </th>
                 <th className="px-3 py-2 text-end font-medium">{t('ui.actions')}</th>
               </tr>
             </thead>
@@ -308,6 +333,8 @@ export function ProfilesPage() {
                   canDelete={canDelete}
                   onDelete={() => setDeleteTarget(p)}
                   onCost={() => setCostTarget(p)}
+                  canDuplicate={canCreate}
+                  onDuplicate={() => void doDuplicate(p)}
                 />
               ))}
             </tbody>
@@ -319,6 +346,7 @@ export function ProfilesPage() {
         open={formOpen}
         onOpenChange={setFormOpen}
         existing={editing}
+        allProfiles={all}
         onSaved={() => {
           setFormOpen(false)
           reload()
@@ -391,6 +419,8 @@ function ProfileRow({
   canDelete,
   onDelete,
   onCost,
+  canDuplicate,
+  onDuplicate,
 }: {
   profile: Profile
   showBulk: boolean
@@ -402,6 +432,8 @@ function ProfileRow({
   canDelete: boolean
   onDelete: () => void
   onCost: () => void
+  canDuplicate: boolean
+  onDuplicate: () => void
 }) {
   const t = useT()
   const { formatNumber } = useFormatters()
@@ -439,6 +471,23 @@ function ProfileRow({
       <td className="whitespace-nowrap px-3 py-2">
         <Pill tone="muted">{t(`profiles.quotaMode.${p.quota_mode}`)}</Pill>
       </td>
+      <td className="whitespace-nowrap px-3 py-2">
+        {/* FR-132: active-limits-and-windows-at-a-glance. */}
+        <span className="inline-flex flex-wrap gap-1">
+          {p.uptime_limit_seconds != null && p.uptime_limit_seconds > 0 && (
+            <Pill tone="muted">{t('profiles.uptimeBadge')}</Pill>
+          )}
+          {p.daily_limit_bytes != null && p.daily_limit_bytes > 0 && (
+            <Pill tone="muted">{t('profiles.dailyBadge')}</Pill>
+          )}
+          {p.speed_window_count > 0 && (
+            <Pill tone="muted">{t('profiles.windowsBadge', { count: p.speed_window_count })}</Pill>
+          )}
+        </span>
+      </td>
+      <td className="whitespace-nowrap px-3 py-2" dir="ltr">
+        {p.subscriber_count}
+      </td>
       <td className="whitespace-nowrap px-3 py-2 text-end">
         {canEdit && !p.archived && (
           <>
@@ -452,6 +501,11 @@ function ProfileRow({
               {t('profiles.archive')}
             </Button>
           </>
+        )}
+        {canDuplicate && (
+          <Button size="sm" variant="ghost" onClick={onDuplicate}>
+            {t('profiles.duplicate')}
+          </Button>
         )}
         {/* Delete stays available on an ARCHIVED plan too: archiving a
             never-used plan created by mistake is the likeliest way to end up
@@ -470,16 +524,23 @@ function ProfileFormModal({
   open,
   onOpenChange,
   existing,
+  allProfiles,
   onSaved,
 }: {
   open: boolean
   onOpenChange: (o: boolean) => void
   existing?: Profile
+  allProfiles: Profile[]
   onSaved: () => void
 }) {
   const t = useT()
   const { toast } = useToast()
   const editing = Boolean(existing)
+  // Switch-plan targets (FR-130): every OTHER non-archived plan.
+  const switchTargets = useMemo(
+    () => allProfiles.filter((p) => p.id !== existing?.id && !p.archived),
+    [allProfiles, existing?.id],
+  )
   const [f, setF] = useState(() => initial(existing))
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [busy, setBusy] = useState(false)
@@ -513,6 +574,26 @@ function ProfileFormModal({
       rateErrors.hotspot_rate_up_kbps = t('rate.invalid')
     if (f.quotaBehavior === 'throttle' && normalizeRatePair(f.throttleRate) === null)
       rateErrors.throttle_rate = t('rate.invalid')
+    // v4-4 (FR-130): a throttle action's own target must be a valid rate;
+    // a switch_plan action's own target must name a chosen plan.
+    if (f.expiryBehavior === 'throttle' && normalizeRatePair(f.expiryTarget) === null)
+      rateErrors.expiry_exhaust_target = t('rate.invalid')
+    if (f.expiryBehavior === 'switch_plan' && f.expiryTarget.trim() === '')
+      rateErrors.expiry_exhaust_target = t('profiles.targetRequired')
+    if (f.quotaBehavior === 'switch_plan' && f.quotaTarget.trim() === '')
+      rateErrors.quota_exhaust_target = t('profiles.targetRequired')
+    if (f.uptimeLimit.trim() !== '') {
+      if (f.uptimeAction === 'throttle' && normalizeRatePair(f.uptimeTarget) === null)
+        rateErrors.uptime_exhaust_target = t('rate.invalid')
+      if (f.uptimeAction === 'switch_plan' && f.uptimeTarget.trim() === '')
+        rateErrors.uptime_exhaust_target = t('profiles.targetRequired')
+    }
+    if (f.dailyLimit.trim() !== '') {
+      if (f.dailyAction === 'throttle' && normalizeRatePair(f.dailyTarget) === null)
+        rateErrors.daily_exhaust_target = t('rate.invalid')
+      if (f.dailyAction === 'switch_plan' && f.dailyTarget.trim() === '')
+        rateErrors.daily_exhaust_target = t('profiles.targetRequired')
+    }
     if (Object.keys(rateErrors).length > 0) {
       setErrors(rateErrors)
       return
@@ -670,14 +751,21 @@ function ProfileFormModal({
                 value={f.expiryBehavior}
                 onChange={(e) => set('expiryBehavior', e.target.value as ExpiryBehavior)}
               >
-                {EXPIRY.map((b) => (
+                {EXHAUST_ACTIONS.map((b) => (
                   <option key={b} value={b}>
-                    {t(`profiles.expiry.${b}`)}
+                    {t(`profiles.exhaustAction.${b}`)}
                   </option>
                 ))}
               </Select>
             )}
           </FormField>
+          <LimitTargetField
+            action={f.expiryBehavior}
+            value={f.expiryTarget}
+            onChange={(v) => set('expiryTarget', v)}
+            error={errors.expiry_exhaust_target}
+            switchTargets={switchTargets}
+          />
           <FormField label={t('profiles.quotaBehavior')}>
             {(id) => (
               <Select
@@ -685,9 +773,9 @@ function ProfileFormModal({
                 value={f.quotaBehavior}
                 onChange={(e) => set('quotaBehavior', e.target.value as QuotaBehavior)}
               >
-                {QUOTA_BEH.map((b) => (
+                {EXHAUST_ACTIONS.map((b) => (
                   <option key={b} value={b}>
-                    {t(`profiles.quotaBeh.${b}`)}
+                    {t(`profiles.exhaustAction.${b}`)}
                   </option>
                 ))}
               </Select>
@@ -709,6 +797,132 @@ function ProfileFormModal({
               )}
             </FormField>
           )}
+          {f.quotaBehavior === 'expired_pool' && (
+            <LimitTargetField
+              action={f.quotaBehavior}
+              value={f.quotaTarget}
+              onChange={(v) => set('quotaTarget', v)}
+              error={errors.quota_exhaust_target}
+              switchTargets={switchTargets}
+            />
+          )}
+          {f.quotaBehavior === 'switch_plan' && (
+            <LimitTargetField
+              action={f.quotaBehavior}
+              value={f.quotaTarget}
+              onChange={(v) => set('quotaTarget', v)}
+              error={errors.quota_exhaust_target}
+              switchTargets={switchTargets}
+            />
+          )}
+        </FormSection>
+
+        {/* v4-4 Limits engine (FR-128/FR-129): uptime + daily, the two limits
+            HikRAD gains parity with SAMM on. */}
+        <FormSection title={t('profiles.limitsSection')}>
+          <FormField
+            label={t('profiles.uptimeLimit')}
+            hint={t('profiles.uptimeLimitHint')}
+            error={errors.uptime_limit_seconds}
+          >
+            {(id) => (
+              <TextInput
+                id={id}
+                type="number"
+                dir="ltr"
+                value={f.uptimeLimit}
+                onChange={(e) => set('uptimeLimit', e.target.value)}
+              />
+            )}
+          </FormField>
+          {f.uptimeLimit.trim() !== '' && (
+            <>
+              <FormField label={t('profiles.uptimeAction')}>
+                {(id) => (
+                  <Select
+                    id={id}
+                    value={f.uptimeAction}
+                    onChange={(e) => set('uptimeAction', e.target.value as ExhaustAction)}
+                  >
+                    {EXHAUST_ACTIONS.map((b) => (
+                      <option key={b} value={b}>
+                        {t(`profiles.exhaustAction.${b}`)}
+                      </option>
+                    ))}
+                  </Select>
+                )}
+              </FormField>
+              <LimitTargetField
+                action={f.uptimeAction}
+                value={f.uptimeTarget}
+                onChange={(v) => set('uptimeTarget', v)}
+                error={errors.uptime_exhaust_target}
+                switchTargets={switchTargets}
+              />
+            </>
+          )}
+          <FormField
+            label={t('profiles.dailyLimit')}
+            hint={t('profiles.bytesHint')}
+            error={errors.daily_limit_bytes}
+          >
+            {(id) => (
+              <TextInput
+                id={id}
+                type="number"
+                dir="ltr"
+                value={f.dailyLimit}
+                onChange={(e) => set('dailyLimit', e.target.value)}
+              />
+            )}
+          </FormField>
+          {f.dailyLimit.trim() !== '' && (
+            <>
+              <FormField label={t('profiles.dailyResetTime')} hint={t('profiles.dailyResetHint')}>
+                {(id) => (
+                  <TextInput
+                    id={id}
+                    type="time"
+                    dir="ltr"
+                    value={f.dailyResetTime}
+                    onChange={(e) => set('dailyResetTime', e.target.value)}
+                  />
+                )}
+              </FormField>
+              <FormField label={t('profiles.dailyAction')}>
+                {(id) => (
+                  <Select
+                    id={id}
+                    value={f.dailyAction}
+                    onChange={(e) => set('dailyAction', e.target.value as ExhaustAction)}
+                  >
+                    {EXHAUST_ACTIONS.map((b) => (
+                      <option key={b} value={b}>
+                        {t(`profiles.exhaustAction.${b}`)}
+                      </option>
+                    ))}
+                  </Select>
+                )}
+              </FormField>
+              <LimitTargetField
+                action={f.dailyAction}
+                value={f.dailyTarget}
+                onChange={(v) => set('dailyTarget', v)}
+                error={errors.daily_exhaust_target}
+                switchTargets={switchTargets}
+              />
+            </>
+          )}
+          {/* FR-132: plan-level auto-renew default + one-click bulk propagation. */}
+          <Field label={t('profiles.autoRenewDefault')} htmlFor="profile-auto-renew">
+            <Checkbox
+              id="profile-auto-renew"
+              checked={f.autoRenewDefault}
+              onChange={() => set('autoRenewDefault', !f.autoRenewDefault)}
+            />
+          </Field>
+          {editing && existing && <PropagateAutoRenewButton profileId={existing.id} />}
+          {editing && existing && <SpeedWindowsEditor profileId={existing.id} />}
         </FormSection>
 
         <FormSection
@@ -780,6 +994,39 @@ interface ProfileForm {
   throttleRate: string
   addressList: string
   nasScopes: NasScope[]
+  // v4-4 Limits engine (FR-128–131).
+  expiryTarget: string
+  quotaTarget: string
+  uptimeLimit: string // hours; blank = unlimited
+  uptimeAction: ExhaustAction
+  uptimeTarget: string
+  dailyLimit: string // bytes; blank = unlimited
+  dailyResetTime: string // "HH:MM", server timezone
+  dailyAction: ExhaustAction
+  dailyTarget: string
+  autoRenewDefault: boolean
+}
+
+/** Renders "HH:MM" from minutes-since-midnight (FR-129's daily_reset_min). */
+function minutesToTime(min: number): string {
+  const h = Math.floor(min / 60) % 24
+  const m = min % 60
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+}
+
+function timeToMinutes(s: string): number {
+  const [h, m] = s.split(':').map((n) => Number(n) || 0)
+  const hours = ((h % 24) + 24) % 24
+  const mins = ((m % 60) + 60) % 60
+  return hours * 60 + mins
+}
+
+/** A throttle target is a rate pair; every other action's target is free text
+ * (a target profile id for switch_plan, an optional pool-name override for
+ * expired_pool). */
+function resolveTargetForWrite(action: ExhaustAction, raw: string): string {
+  if (action === 'throttle') return normalizeRatePair(raw) || ''
+  return raw.trim()
 }
 
 function initial(p?: Profile): ProfileForm {
@@ -802,6 +1049,20 @@ function initial(p?: Profile): ProfileForm {
     throttleRate: p?.throttle_rate ?? '',
     addressList: p?.address_list ?? '',
     nasScopes: p?.nas_scopes ?? [],
+    expiryTarget: p?.expiry_exhaust_target ?? '',
+    quotaTarget: p?.quota_exhaust_target ?? '',
+    uptimeLimit:
+      p?.uptime_limit_seconds != null && p.uptime_limit_seconds > 0
+        ? String(Math.round(p.uptime_limit_seconds / 3600))
+        : '',
+    uptimeAction: p?.uptime_exhaust_action ?? 'block',
+    uptimeTarget: p?.uptime_exhaust_target ?? '',
+    dailyLimit:
+      p?.daily_limit_bytes != null && p.daily_limit_bytes > 0 ? String(p.daily_limit_bytes) : '',
+    dailyResetTime: minutesToTime(p?.daily_reset_min ?? 0),
+    dailyAction: p?.daily_exhaust_action ?? 'throttle',
+    dailyTarget: p?.daily_exhaust_target ?? '',
+    autoRenewDefault: p?.auto_renew_default ?? false,
   }
 }
 
@@ -834,7 +1095,261 @@ function toWrite(f: ProfileForm): ProfileWrite {
     // An empty set = any NAS (FR-64), which is what the picker yields when the
     // operator selects nothing.
     nas_scopes: f.nasScopes,
+    // v4-4 Limits engine (FR-128–131).
+    expiry_exhaust_target: resolveTargetForWrite(f.expiryBehavior, f.expiryTarget),
+    quota_exhaust_target: resolveTargetForWrite(f.quotaBehavior, f.quotaTarget),
+    uptime_limit_seconds: f.uptimeLimit.trim() === '' ? null : (Number(f.uptimeLimit) || 0) * 3600,
+    uptime_exhaust_action: f.uptimeAction,
+    uptime_exhaust_target: resolveTargetForWrite(f.uptimeAction, f.uptimeTarget),
+    daily_limit_bytes: f.dailyLimit.trim() === '' ? null : Number(f.dailyLimit) || 0,
+    daily_reset_min: timeToMinutes(f.dailyResetTime),
+    daily_exhaust_action: f.dailyAction,
+    daily_exhaust_target: resolveTargetForWrite(f.dailyAction, f.dailyTarget),
+    auto_renew_default: f.autoRenewDefault,
   }
+}
+
+/**
+ * LimitTargetField (v4-4, FR-130): the ONE place all four limits' exhaust-
+ * target inputs are rendered, since the right input shape depends only on
+ * the action, not on which limit it belongs to — throttle needs a rate,
+ * switch_plan needs a plan picker, expired_pool takes an optional pool-name
+ * override, and block needs nothing at all.
+ */
+function LimitTargetField({
+  action,
+  value,
+  onChange,
+  error,
+  switchTargets,
+}: {
+  action: ExhaustAction
+  value: string
+  onChange: (v: string) => void
+  error?: string
+  switchTargets: Profile[]
+}) {
+  const t = useT()
+  if (action === 'block') return null
+  if (action === 'throttle') {
+    return (
+      <FormField label={t('profiles.targetRateLabel')} error={error}>
+        {(id) => <RateInput id={id} pair value={value} onChange={onChange} />}
+      </FormField>
+    )
+  }
+  if (action === 'switch_plan') {
+    return (
+      <FormField label={t('profiles.targetPlanLabel')} error={error}>
+        {(id) => (
+          <Select id={id} value={value} onChange={(e) => onChange(e.target.value)}>
+            <option value="">{t('profiles.targetPlanPlaceholder')}</option>
+            {switchTargets.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </Select>
+        )}
+      </FormField>
+    )
+  }
+  // expired_pool
+  return (
+    <FormField
+      label={t('profiles.targetPoolLabel')}
+      hint={t('profiles.targetPoolHint')}
+      error={error}
+    >
+      {(id) => (
+        <TextInput id={id} dir="ltr" value={value} onChange={(e) => onChange(e.target.value)} />
+      )}
+    </FormField>
+  )
+}
+
+/** FR-132: one-click bulk propagation of the plan's auto-renew default onto
+ * every subscriber already on it. */
+function PropagateAutoRenewButton({ profileId }: { profileId: string }) {
+  const t = useT()
+  const { toast } = useToast()
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const [busy, setBusy] = useState(false)
+
+  async function run() {
+    setBusy(true)
+    try {
+      const res = await propagateAutoRenew(profileId)
+      toast(t('profiles.propagateAutoRenewDone', { count: res.subscribers_updated }), 'ok')
+    } catch (err) {
+      toast(err instanceof Error ? err.message : t('common.error.body'), 'danger')
+    } finally {
+      setBusy(false)
+      setConfirmOpen(false)
+    }
+  }
+
+  return (
+    <div>
+      <Button size="sm" variant="secondary" disabled={busy} onClick={() => setConfirmOpen(true)}>
+        {t('profiles.propagateAutoRenew')}
+      </Button>
+      <ConfirmDialog
+        open={confirmOpen}
+        onOpenChange={setConfirmOpen}
+        title={t('profiles.propagateAutoRenewConfirmTitle')}
+        body={t('profiles.propagateAutoRenewConfirmBody')}
+        confirmLabel={t('profiles.propagateAutoRenew')}
+        onConfirm={run}
+      />
+    </div>
+  )
+}
+
+/**
+ * SpeedWindowsEditor (v4-4, FR-131): a compact add/list/remove editor for one
+ * profile's time-of-day rate overrides. Only rendered while editing an
+ * existing plan — a speed window belongs to a saved profile id, so a
+ * brand-new plan must be saved first (same "save first" posture as any
+ * child-resource editor keyed off a not-yet-existing parent id).
+ */
+function SpeedWindowsEditor({ profileId }: { profileId: string }) {
+  const t = useT()
+  const { toast } = useToast()
+  const { data, reload } = useAsync(() => listSpeedWindows(profileId), [profileId])
+  const windows: SpeedWindow[] = data?.items ?? []
+
+  const [label, setLabel] = useState('')
+  const [days, setDays] = useState<Set<number>>(() => new Set())
+  const [start, setStart] = useState('00:00')
+  const [end, setEnd] = useState('06:00')
+  const [rateDown, setRateDown] = useState('')
+  const [rateUp, setRateUp] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  function toggleDay(i: number) {
+    setDays((prev) => {
+      const next = new Set(prev)
+      if (next.has(i)) next.delete(i)
+      else next.add(i)
+      return next
+    })
+  }
+
+  async function add() {
+    const down = parseRateKbps(rateDown)
+    const up = parseRateKbps(rateUp)
+    if (down == null || up == null || down <= 0 || up <= 0) {
+      toast(t('rate.invalid'), 'danger')
+      return
+    }
+    let mask = 0
+    for (const d of days) mask |= 1 << d
+    setBusy(true)
+    try {
+      await createSpeedWindow(profileId, {
+        label,
+        days_mask: mask,
+        start_min: timeToMinutes(start),
+        end_min: timeToMinutes(end),
+        rate_down_kbps: down,
+        rate_up_kbps: up,
+      })
+      toast(t('profiles.speedWindowCreated'), 'ok')
+      setLabel('')
+      setDays(new Set())
+      reload()
+    } catch (err) {
+      toast(err instanceof Error ? err.message : t('common.error.body'), 'danger')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function remove(id: string) {
+    try {
+      await deleteSpeedWindow(profileId, id)
+      toast(t('profiles.speedWindowDeleted'), 'ok')
+      reload()
+    } catch (err) {
+      toast(err instanceof Error ? err.message : t('common.error.body'), 'danger')
+    }
+  }
+
+  return (
+    <div className="col-span-full space-y-3 rounded-md border border-border p-3">
+      <p className="text-sm font-medium">{t('profiles.speedWindows')}</p>
+      <p className="text-xs text-ink-muted">{t('profiles.speedWindowsHint')}</p>
+
+      {windows.length > 0 && (
+        <ul className="space-y-1">
+          {windows.map((w) => (
+            <li key={w.id} className="flex items-center justify-between gap-2 text-sm">
+              <span dir="ltr">
+                {minutesToTime(w.start_min)}–{minutesToTime(w.end_min)} · {w.rate_down_kbps}↓/
+                {w.rate_up_kbps}↑ {w.label ? `(${w.label})` : ''}
+              </span>
+              <Button size="sm" variant="ghost" onClick={() => void remove(w.id)}>
+                {t('ui.delete')}
+              </Button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+        <FormField label={t('profiles.speedWindowLabel')}>
+          {(id) => (
+            <TextInput id={id} dir="ltr" value={label} onChange={(e) => setLabel(e.target.value)} />
+          )}
+        </FormField>
+        <FormField label={t('profiles.speedWindowStart')}>
+          {(id) => (
+            <TextInput
+              id={id}
+              type="time"
+              dir="ltr"
+              value={start}
+              onChange={(e) => setStart(e.target.value)}
+            />
+          )}
+        </FormField>
+        <FormField label={t('profiles.speedWindowEnd')}>
+          {(id) => (
+            <TextInput
+              id={id}
+              type="time"
+              dir="ltr"
+              value={end}
+              onChange={(e) => setEnd(e.target.value)}
+            />
+          )}
+        </FormField>
+        <FormField label={t('profiles.speedWindowRateDown')}>
+          {(id) => <RateInput id={id} value={rateDown} onChange={setRateDown} />}
+        </FormField>
+        <FormField label={t('profiles.speedWindowRateUp')}>
+          {(id) => <RateInput id={id} value={rateUp} onChange={setRateUp} />}
+        </FormField>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-xs text-ink-muted">{t('profiles.speedWindowDays')}:</span>
+        {DAY_KEYS.map((k, i) => (
+          <label key={k} className="flex items-center gap-1 text-xs">
+            <Checkbox
+              checked={days.has(i)}
+              onChange={() => toggleDay(i)}
+              aria-label={t(`profiles.day.${k}`)}
+            />
+            {t(`profiles.day.${k}`)}
+          </label>
+        ))}
+      </div>
+      <Button size="sm" disabled={busy} onClick={() => void add()}>
+        {t('profiles.addSpeedWindow')}
+      </Button>
+    </div>
+  )
 }
 
 /**

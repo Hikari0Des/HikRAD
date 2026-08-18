@@ -52,6 +52,12 @@ func (Module) Register(r chi.Router, d httpapi.Deps) {
 	// Time-of-day sweep engine (C4/FR-11): boundary CoA + tod.window publish.
 	go m.startTODSweeps(context.Background())
 
+	// Limits sweep engine (v4-4/FR-128/FR-129/FR-131): continuous uptime/
+	// daily enforcement, speed-window live sync, and the daily reset. A
+	// separate ticker from the two above — see limitsworker.go's package doc
+	// for why it doesn't merge with either.
+	go m.startLimitsSweep(context.Background())
+
 	// Internal-only authorize route (C4): served on :8080, never proxied by
 	// nginx.
 	r.Post("/internal/radius/authorize", m.authorizeHandler())

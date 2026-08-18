@@ -69,6 +69,20 @@ func (p *policyProvider) GetAuthView(ctx context.Context, username string) (radi
 		// FR-64 effective NAS scope, as the jsonb array the query below builds
 		// (empty array = any NAS).
 		scopesJSON []byte
+		// v4-4 Limits engine (FR-128–131): the four exhaust_action/target
+		// pairs (expiry/quota reuse their existing behavior column as the
+		// action — see migration 0597), the two new limit ceilings, and the
+		// speed-window set, all raw off profiles/profile_speed_windows.
+		expiryExhaustTarget *string
+		quotaExhaustTarget  *string
+		uptimeLimitSeconds  *int64
+		uptimeExhaustAction *string
+		uptimeExhaustTarget *string
+		dailyLimitBytes     *int64
+		dailyResetMin       *int
+		dailyExhaustAction  *string
+		dailyExhaustTarget  *string
+		speedWindowsJSON    []byte
 	)
 	err := p.db.QueryRow(ctx,
 		`SELECT s.id::text, s.password_enc, s.status, s.expires_at,
@@ -81,6 +95,19 @@ func (p *policyProvider) GetAuthView(ctx context.Context, username string) (radi
 		        (SELECT name FROM ip_pools WHERE purpose = 'expired' ORDER BY name LIMIT 1),
 		        p.burst_rate, p.burst_threshold, p.burst_time, p.rate_priority, p.min_rate,
 		        s.address_list_override, p.address_list,
+		        -- v4-4 Limits engine (FR-128-131): expiry/quota reuse their
+		        -- existing behavior column as the action (0597); the target
+		        -- columns are new for all four limits.
+		        p.expiry_exhaust_target, p.quota_exhaust_target,
+		        p.uptime_limit_seconds, p.uptime_exhaust_action, p.uptime_exhaust_target,
+		        p.daily_limit_bytes, p.daily_reset_min, p.daily_exhaust_action, p.daily_exhaust_target,
+		        COALESCE(
+		          (SELECT jsonb_agg(jsonb_build_object(
+		                    'id', w.id::text, 'days_mask', w.days_mask,
+		                    'start_min', w.start_min, 'end_min', w.end_min,
+		                    'rate_down_kbps', w.rate_down_kbps, 'rate_up_kbps', w.rate_up_kbps))
+		             FROM profile_speed_windows w WHERE w.profile_id = p.id AND w.enabled),
+		          '[]'::jsonb),
 		        -- FR-64 effective scope, subscriber-over-profile taken WHOLE: a
 		        -- subscriber with ANY scope row of their own uses only their own
 		        -- set, never a union with the profile's. jsonb_agg is NULL (not an
@@ -107,6 +134,10 @@ func (p *policyProvider) GetAuthView(ctx context.Context, username string) (radi
 		&staticIP, &v.ServiceType, &poolName, &expiredPool,
 		&burstRate, &burstThresh, &burstTime, &ratePriority, &minRate,
 		&addrListOverride, &addrListProfile,
+		&expiryExhaustTarget, &quotaExhaustTarget,
+		&uptimeLimitSeconds, &uptimeExhaustAction, &uptimeExhaustTarget,
+		&dailyLimitBytes, &dailyResetMin, &dailyExhaustAction, &dailyExhaustTarget,
+		&speedWindowsJSON,
 		&scopesJSON)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return radius.AuthView{}, radius.ErrNoSubscriber
@@ -135,6 +166,77 @@ func (p *policyProvider) GetAuthView(ctx context.Context, username string) (radi
 		v.AddressList = *addrListOverride
 	} else {
 		v.AddressList = strOr(addrListProfile, "")
+	}
+
+	// v4-4 Limits engine (FR-128–131). Interpret each limit's exhaust_target
+	// by its own action (limits.go's resolveExhaustTarget); switch_plan is
+	// the only branch that touches the DB again, and only when configured.
+	v.UptimeLimitSeconds = int64Or(uptimeLimitSeconds, 0)
+	v.UptimeExhaustAction = strOr(uptimeExhaustAction, "block")
+	v.DailyLimitBytes = int64Or(dailyLimitBytes, 0)
+	v.DailyResetMin = intOr(dailyResetMin, 0)
+	v.DailyExhaustAction = strOr(dailyExhaustAction, "throttle")
+
+	if v.ExpiryThrottleRate, v.ExpiryPoolOverride, v.ExpirySwitchRate, v.ExpirySwitchPool, err =
+		resolveExhaustTarget(ctx, p.db, v.ExpiryBehavior, strOr(expiryExhaustTarget, "")); err != nil {
+		return radius.AuthView{}, err
+	}
+	// Quota's throttle_rate keeps its pre-v4-4 meaning (p.throttle_rate,
+	// already scanned into v.ThrottleRate above); exhaust_target is only
+	// consulted for the two actions that are new to quota's semantics here.
+	var quotaThrottleUnused string
+	if quotaThrottleUnused, v.QuotaPoolOverride, v.QuotaSwitchRate, v.QuotaSwitchPool, err =
+		resolveExhaustTarget(ctx, p.db, v.QuotaBehavior, strOr(quotaExhaustTarget, "")); err != nil {
+		return radius.AuthView{}, err
+	}
+	_ = quotaThrottleUnused
+	if v.UptimeThrottleRate, v.UptimePoolOverride, v.UptimeSwitchRate, v.UptimeSwitchPool, err =
+		resolveExhaustTarget(ctx, p.db, v.UptimeExhaustAction, strOr(uptimeExhaustTarget, "")); err != nil {
+		return radius.AuthView{}, err
+	}
+	if v.DailyThrottleRate, v.DailyPoolOverride, v.DailySwitchRate, v.DailySwitchPool, err =
+		resolveExhaustTarget(ctx, p.db, v.DailyExhaustAction, strOr(dailyExhaustTarget, "")); err != nil {
+		return radius.AuthView{}, err
+	}
+
+	// FR-128/FR-129: derive live usage only when a limit is actually
+	// configured — the overwhelming majority of profiles set neither, and
+	// skipping both the counters upsert and the sum queries keeps them on
+	// the pre-v4-4 query cost.
+	if v.UptimeLimitSeconds > 0 || v.DailyLimitBytes > 0 {
+		uptimeAnchor, dailyStart, cerr := ensureCounters(ctx, p.db, v.SubscriberID)
+		if cerr != nil {
+			return radius.AuthView{}, cerr
+		}
+		if v.UptimeLimitSeconds > 0 {
+			if v.UptimeUsedSeconds, err = sumUptimeSeconds(ctx, p.db, v.SubscriberID, uptimeAnchor); err != nil {
+				return radius.AuthView{}, err
+			}
+		}
+		if v.DailyLimitBytes > 0 {
+			if v.DailyUsedBytes, err = sumDailyBytes(ctx, p.db, v.SubscriberID, dailyStart); err != nil {
+				return radius.AuthView{}, err
+			}
+		}
+	}
+
+	// FR-131: speed windows, rendered through the same rateString() the base
+	// rate uses (one rendering path).
+	if len(speedWindowsJSON) > 0 {
+		var rows []speedWindowRow
+		if err := json.Unmarshal(speedWindowsJSON, &rows); err != nil {
+			return radius.AuthView{}, fmt.Errorf("subscribers: decode speed windows for %q: %w", username, err)
+		}
+		v.SpeedWindows = make([]radius.SpeedWindow, 0, len(rows))
+		for _, r := range rows {
+			v.SpeedWindows = append(v.SpeedWindows, radius.SpeedWindow{
+				ID:       r.ID,
+				DaysMask: r.DaysMask,
+				StartMin: r.StartMin,
+				EndMin:   r.EndMin,
+				Rate:     rateString(r.RateUpKbps, r.RateDownKbps),
+			})
+		}
 	}
 	// A scope set that fails to decode must not silently become "any NAS" — that
 	// would widen an operator's deliberate restriction on a corrupt read. Fail
@@ -226,6 +328,13 @@ func strOr(p *string, d string) string {
 }
 
 func intOr(p *int, d int) int {
+	if p == nil {
+		return d
+	}
+	return *p
+}
+
+func int64Or(p *int64, d int64) int64 {
 	if p == nil {
 		return d
 	}

@@ -39,4 +39,10 @@ const (
 	// may not use the service: one is an operator config fact, the other an
 	// account fact, and FR-39's debug view must tell them apart.
 	ReasonNASNotAllowed = "nas_not_allowed"
+	// ReasonUptimeExhausted / ReasonDailyExhausted (FR-128/FR-129) are the
+	// "block" outcomes of the two new limits, same posture as
+	// ReasonQuotaExhausted: an exhausted limit whose configured action is
+	// block (or an unrecognized action — fail-safe, radius/limits.go).
+	ReasonUptimeExhausted = "uptime_exhausted"
+	ReasonDailyExhausted  = "daily_exhausted"
 )

@@ -21,6 +21,10 @@ const (
 	modeNormal outcomeMode = iota
 	modeThrottled
 	modeExpiredPool
+	// modeSwitchPlan (FR-130): the exhausted limit's action is "switch to
+	// another plan" — the reply carries the target profile's own resolved
+	// rate/pool rather than a throttle rate or the walled-garden redirect.
+	modeSwitchPlan
 )
 
 // expiredPoolFallbackRate is the "minimal rate" an expired subscriber gets in
@@ -135,30 +139,31 @@ func (e *engine) decide(ctx context.Context, req authorizeRequest) (authorizeRes
 		return e.reject(ctx, ev, ReasonDisabled), nil
 	}
 
-	// 8. Expiry (FR-9). block → reject; expired_pool → walled-garden accept.
-	// Applies to a hotspot-only subscriber exactly as it does to pppoe.
-	mode := modeNormal
-	if e.isExpired(view) {
-		if view.ExpiryBehavior != "expired_pool" {
-			return e.reject(ctx, ev, ReasonExpired), nil
-		}
-		mode = modeExpiredPool
-		ev.Checks = append(ev.Checks, "expired_pool")
-	} else if !quotaExempt(view.ServiceType, hotspot) && view.QuotaExhausted {
-		// 9. Quota (FR-10 / C6 step 9). v1 skipped quota for EVERY hotspot
-		// request; the exemption is really FR-58.3's "a dual subscriber's
-		// hotspot leg is a bonus on top of their PPPoE plan", so it now applies
-		// only to dual. A hotspot-ONLY subscriber's plan *is* their hotspot
-		// usage, so their quota is enforced (FR-61.3).
-		switch view.QuotaBehavior {
-		case "block":
-			return e.reject(ctx, ev, ReasonQuotaExhausted), nil
-		case "throttle":
-			mode = modeThrottled
-			ev.Checks = append(ev.Checks, "throttled")
-		case "expired_pool":
-			mode = modeExpiredPool
-			ev.Checks = append(ev.Checks, "quota_expired_pool")
+	// 8. Limits — expiry → quota → uptime → daily, the v4-4 frozen order
+	// (§4). The FIRST exhausted limit's unified action (FR-130) wins outright;
+	// later limits are not consulted (radius/limits.go: evaluateLimits is the
+	// ONE implementation this path and the continuous worker both call, so
+	// they cannot drift). Quota's FR-58.3 hotspot exemption is folded into
+	// evaluateLimits itself (v1 skipped quota for EVERY hotspot request; the
+	// exemption is really "a dual subscriber's hotspot leg is a bonus on top
+	// of their PPPoE plan", so it applies only to dual — a hotspot-ONLY
+	// subscriber's plan IS their hotspot usage, FR-61.3).
+	oc := evaluateLimits(view, hotspot, e.isExpired(view))
+	if oc.Reject {
+		return e.reject(ctx, ev, oc.Reason), nil
+	}
+	if label := limitCheckLabel(oc.Mode); label != "" {
+		ev.Checks = append(ev.Checks, label)
+	}
+
+	// 9. Speed windows (FR-131) — only when no exhaustion action is active: a
+	// window must never undo an enforcement action (a throttled/switched/
+	// walled-garden subscriber is excluded outright, not just "not boosted").
+	var windowRate string
+	if oc.Mode == modeNormal {
+		if w, ok := selectSpeedWindow(view.SpeedWindows, e.now().In(serverLocation())); ok {
+			windowRate = w.Rate
+			ev.Checks = append(ev.Checks, "speed_window")
 		}
 	}
 
@@ -177,8 +182,8 @@ func (e *engine) decide(ctx context.Context, req authorizeRequest) (authorizeRes
 		ev.Checks = append(ev.Checks, "mac_lock")
 	}
 
-	// Accept: build the vendor-neutral reply intents for the chosen mode.
-	resp := authorizeResponse{Action: "accept", Reason: ReasonOK, Attributes: e.replyIntents(view, instance, hotspot, mode)}
+	// Accept: build the vendor-neutral reply intents for the chosen outcome.
+	resp := authorizeResponse{Action: "accept", Reason: ReasonOK, Attributes: e.replyIntents(view, instance, hotspot, oc, windowRate)}
 	ev.Outcome = "accept"
 	ev.Reason = ReasonOK
 	ev.Attributes = resp.Attributes
@@ -352,7 +357,16 @@ func (e *engine) macLock(ctx context.Context, view AuthView, callingStation stri
 //
 // A static IP still wins over any pool: emit static_ip and omit the pool so the
 // adapter maps it to Framed-IP-Address alone.
-func (e *engine) replyIntents(view AuthView, instance serviceRow, hotspot bool, mode outcomeMode) []attribute {
+//
+// oc carries the resolved v4-4 limit outcome (FR-130): for modeThrottled/
+// modeExpiredPool/modeSwitchPlan, oc.Rate/oc.Pool are the specific exhausted
+// limit's OWN configured target (e.g. uptime's throttle rate, not quota's),
+// falling back to the pre-v4-4 view fields when empty so every pre-existing
+// caller (expiry/quota with no per-limit target set) decides identically to
+// before v4-4. windowRate (FR-131) only ever applies in modeNormal — a
+// throttled/switched/walled-garden subscriber is excluded from speed
+// windows outright (frozen contract §4 item 7).
+func (e *engine) replyIntents(view AuthView, instance serviceRow, hotspot bool, oc policyOutcome, windowRate string) []attribute {
 	attrs := make([]attribute, 0, 3)
 	add := func(intent Intent, value string) {
 		if value != "" {
@@ -360,49 +374,42 @@ func (e *engine) replyIntents(view AuthView, instance serviceRow, hotspot bool, 
 		}
 	}
 
-	switch mode {
+	switch oc.Mode {
 	case modeExpiredPool:
-		add(IntentAddressPool, view.ExpiredPoolName)
+		rate, pool := expiredPoolRateAndPool(view, oc)
+		add(IntentAddressPool, pool)
 		add(IntentRedirectExpired, "expired")
-		rate := view.ThrottleRate
-		if rate == "" {
-			rate = expiredPoolFallbackRate
-		}
 		add(IntentRateLimit, rate)
 		return attrs
-	case modeThrottled:
-		rate := view.ThrottleRate
-		if rate == "" {
-			rate = view.RateLimit
-		}
-		add(IntentRateLimit, rate)
+	case modeThrottled, modeSwitchPlan:
+		add(IntentRateLimit, throttleOrSwitchRate(view, oc))
 	default: // modeNormal
-		rate := view.RateLimit
-		if hotspot && view.HotspotRateLimit != "" {
-			rate = view.HotspotRateLimit
-		}
-		// Full-speed reply carries the profile's burst segments (FR-11); the
-		// vendor adapter renders the concrete rate string so no burst syntax
-		// leaks into the engine (FR-17). Non-empty burst fields only.
-		add(IntentRateLimit, composeRate(view, rate))
+		// Full-speed reply carries the profile's burst segments (FR-11) and a
+		// currently-active speed window override (FR-131); the vendor adapter
+		// renders the concrete rate string so no burst syntax leaks into the
+		// engine (FR-17).
+		add(IntentRateLimit, normalRate(view, hotspot, windowRate))
 	}
 
-	// Address assignment (normal/throttled). Static IP takes precedence; then
-	// the resolved service instance's own pool; then, for pppoe only, the
-	// profile's pool. add() already skips an empty value, so "omit" is the
-	// natural fallthrough.
-	if view.StaticIP != "" {
+	// Address assignment (normal/throttled/switch_plan). Static IP takes
+	// precedence; then a switch_plan's own resolved pool; then the resolved
+	// service instance's own pool; then, for pppoe only, the profile's pool.
+	// add() already skips an empty value, so "omit" is the natural fallthrough.
+	switch {
+	case view.StaticIP != "":
 		add(IntentStaticIP, view.StaticIP)
-	} else if instance.IPPoolName != "" {
+	case oc.Mode == modeSwitchPlan && oc.Pool != "":
+		add(IntentAddressPool, oc.Pool)
+	case instance.IPPoolName != "":
 		add(IntentAddressPool, instance.IPPoolName)
-	} else if !hotspot {
+	case !hotspot:
 		add(IntentAddressPool, view.PoolName)
 	}
 
-	// FR-109: an operator-named address-list for a NORMAL/throttled login. This
-	// tail is never reached by modeExpiredPool (it returns above), so this
-	// intent never collides with the redirect's use of the same MikroTik VSA.
-	// Empty ⇒ omitted (add skips empty values).
+	// FR-109: an operator-named address-list for a NORMAL/throttled/
+	// switch_plan login. This tail is never reached by modeExpiredPool (it
+	// returns above), so this intent never collides with the redirect's use
+	// of the same MikroTik VSA. Empty ⇒ omitted (add skips empty values).
 	add(IntentAddressList, view.AddressList)
 	return attrs
 }
