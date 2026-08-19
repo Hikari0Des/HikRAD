@@ -2,10 +2,19 @@ package monitorsvc
 
 // Alerts engine (FR-36). A rule fire flows: match enabled rules of the fired
 // type → per-rule cooldown gate (alert-storm damping) → quiet-hours filter
-// (Asia/Baghdad; suppresses telegram/email/whatsapp, never in-app) → concurrent
-// channel dispatch (failure-isolated) → one alert_events row with the per-channel
-// delivery results. Quiet-hours + cooldown are pure/injectable so the matrix is
-// unit-tested with no clock, DB or network.
+// (Asia/Baghdad; suppresses telegram/email/whatsapp, never in-app) →
+// enqueue into the v4-10 Notification Center's ONE queue (internal/notify) →
+// one alert_events row recording which channels were queued. Quiet-hours +
+// cooldown stay pure/injectable so the matrix is unit-tested with no clock,
+// DB or network.
+//
+// v4-10: this used to dispatch each channel inline (its own senders,
+// concurrent, with retry). That moved to internal/notify's outbox +
+// dispatcher — a staff alert now traverses the exact same throttled queue
+// as a broadcast or a subscriber's renewal reminder (binding rule: one
+// queue, no side channel). alert_events is still written here, unchanged in
+// shape, but "delivery" now means "queued" — the outbox is the source of
+// truth for whether it actually sent.
 
 import (
 	"context"
@@ -15,7 +24,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/hikrad/hikrad/internal/notify"
 	"github.com/hikrad/hikrad/internal/platform"
+	"github.com/hikrad/hikrad/internal/push"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 )
@@ -64,38 +75,39 @@ type fireInput struct {
 	alwaysRecord bool
 }
 
-// alertEngine wires rule storage, cooldown, dispatch and the clock.
+// delivery is the per-channel outcome recorded on the alert_events row. Since
+// v4-10 this records QUEUE ADMISSION ("queued", true), not a completed send —
+// the notify outbox (Overview/Outbox tabs) is the truthful record of whether
+// a channel actually delivered.
+type delivery struct {
+	Channel string `json:"channel"`
+	OK      bool   `json:"ok"`
+	Detail  string `json:"detail,omitempty"`
+}
+
+// alertEngine wires rule storage, cooldown, the clock, and the notify queue.
 type alertEngine struct {
 	db       *pgxpool.Pool
 	settings platform.Settings
 	log      *slog.Logger
-	disp     *dispatcher
 	cooldown cooldownStore
 	now      func() time.Time
 	loc      *time.Location
 }
 
 func newAlertEngine(db *pgxpool.Pool, rdb *redis.Client, settings platform.Settings, log *slog.Logger) *alertEngine {
-	client := httpClient()
-	disp := newDispatcher(log,
-		inAppSender{rdb: rdb},
-		telegramSender{settings: settings, client: client},
-		emailSender{settings: settings},
-		whatsAppSender{settings: settings, client: client},
-		pushSender{},
-	)
 	return &alertEngine{
 		db:       db,
 		settings: settings,
 		log:      log,
-		disp:     disp,
 		cooldown: newCooldownStore(rdb),
 		now:      time.Now,
 		loc:      baghdad,
 	}
 }
 
-// Fire evaluates every enabled rule of the input's type and delivers matches.
+// Fire evaluates every enabled rule of the input's type and enqueues matches
+// into the notify outbox.
 func (a *alertEngine) Fire(ctx context.Context, in fireInput) {
 	rules, err := a.loadRules(ctx, in.ruleType)
 	if err != nil {
@@ -115,20 +127,56 @@ func (a *alertEngine) Fire(ctx context.Context, in fireInput) {
 		if len(channels) == 0 {
 			continue
 		}
-		msg := alertMessage{
-			RuleType: in.ruleType, State: in.state, Summary: in.summary,
-			Payload: in.payload, Recipients: r.Recipients,
+		// Push (FR-54.4) is a distinct, pre-existing infrastructure — the
+		// admin panel's own Web Push subscription, not one of the v4-10
+		// Notification Center's five queue channels — so it is delivered
+		// directly here, same delivery-isolated posture it always had,
+		// while everything else enqueues into the one shared queue.
+		queueChannels := make([]string, 0, len(channels))
+		for _, c := range channels {
+			if c == chPush {
+				a.deliverPush(ctx, in)
+				continue
+			}
+			queueChannels = append(queueChannels, c)
 		}
-		deliveries := a.disp.dispatch(ctx, channels, msg)
-		a.record(ctx, &r.ID, in, deliveries)
+		if len(queueChannels) > 0 && a.db != nil {
+			if err := notify.EnqueueAlert(ctx, a.db, a.settings, notify.AlertEnqueueInput{
+				RuleID: r.ID, RuleType: in.ruleType, Summary: in.summary, Channels: queueChannels, Recipients: r.Recipients,
+			}); err != nil {
+				a.log.Warn("alerts: enqueue failed", "type", in.ruleType, "error", err)
+			}
+		}
+		a.record(ctx, &r.ID, in, channels)
 		fired = true
 	}
 	if !fired && in.alwaysRecord {
 		// No rule configured, but keep reachability transitions in the feed.
-		deliveries := a.disp.dispatch(ctx, []string{chInApp}, alertMessage{
-			RuleType: in.ruleType, State: in.state, Summary: in.summary, Payload: in.payload,
-		})
-		a.record(ctx, nil, in, deliveries)
+		if a.db != nil {
+			_ = notify.EnqueueAlert(ctx, a.db, a.settings, notify.AlertEnqueueInput{
+				RuleType: in.ruleType, Summary: in.summary, Channels: []string{chInApp},
+			})
+		}
+		a.record(ctx, nil, in, []string{chInApp})
+	}
+}
+
+// deliverPush sends the admin panel's Web Push notification for a fire —
+// keys+params only, never the rendered summary text (the PWA localizes
+// client-side); failure is logged and never blocks anything else.
+func (a *alertEngine) deliverPush(ctx context.Context, in fireInput) {
+	params := make(map[string]any, len(in.payload)+1)
+	params["state"] = in.state
+	for k, v := range in.payload {
+		params[k] = v
+	}
+	if err := push.DeliverPanel(ctx, push.Payload{
+		TitleKey: "push.alert." + in.ruleType + ".title",
+		BodyKey:  "push.alert." + in.ruleType + ".body",
+		Params:   params,
+		URL:      "/alerts",
+	}); err != nil {
+		a.log.Warn("alerts: push delivery failed", "type", in.ruleType, "error", err)
 	}
 }
 
@@ -147,13 +195,17 @@ func (a *alertEngine) effectiveChannels(r rule) []string {
 	return out
 }
 
-// record writes the alert_events row (contract: every fire → a row with delivery
-// results). ruleID nil for the always-record fallback.
-func (a *alertEngine) record(ctx context.Context, ruleID *string, in fireInput, deliveries []delivery) {
+// record writes the alert_events row (contract: every fire → a row showing
+// which channels were queued). ruleID nil for the always-record fallback.
+func (a *alertEngine) record(ctx context.Context, ruleID *string, in fireInput, channels []string) {
 	if a.db == nil {
 		return
 	}
 	payload, _ := json.Marshal(in.payload)
+	deliveries := make([]delivery, 0, len(channels))
+	for _, c := range channels {
+		deliveries = append(deliveries, delivery{Channel: c, OK: true, Detail: "queued"})
+	}
 	dj, _ := json.Marshal(deliveries)
 	_, err := a.db.Exec(ctx,
 		`INSERT INTO alert_events (rule_id, state, type, summary, payload, deliveries)

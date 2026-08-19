@@ -17,6 +17,8 @@ import (
 	"net"
 	"net/http"
 	"net/smtp"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/hikrad/hikrad/internal/auth"
@@ -41,8 +43,19 @@ type whatsappConfig struct {
 	PhoneNumberID string `json:"phone_number_id"`
 }
 
+// smsConfig mirrors internal/notify's smsConfig JSON shape exactly (v4-10,
+// FR-161) — same "notifications.sms" settings key, same generic HTTP
+// gateway + one named provider preset.
+type smsConfig struct {
+	Provider string            `json:"provider"`
+	URL      string            `json:"url"`
+	Method   string            `json:"method"`
+	ParamMap map[string]string `json:"param_map"`
+	APIKey   string            `json:"api_key"`
+}
+
 type testNotificationRequest struct {
-	Channel   string `json:"channel" validate:"required,oneof=email telegram whatsapp"`
+	Channel   string `json:"channel" validate:"required,oneof=email telegram whatsapp sms"`
 	Recipient string `json:"recipient" validate:"required"`
 }
 
@@ -64,6 +77,8 @@ func testNotificationHandler(w http.ResponseWriter, r *http.Request) {
 		sendErr = sendTestTelegram(ctx, req.Recipient)
 	case "whatsapp":
 		sendErr = sendTestWhatsApp(ctx, req.Recipient)
+	case "sms":
+		sendErr = sendTestSMS(ctx, req.Recipient)
 	}
 
 	_ = auth.Audit(r.Context(), "settings.notification_test", "notifications", req.Channel, nil,
@@ -152,6 +167,56 @@ func sendTestWhatsApp(ctx context.Context, to string) error {
 	})
 	headers := map[string]string{"Authorization": "Bearer " + cfg.AccessToken}
 	return postJSONExpectOK(ctx, url, headers, body)
+}
+
+func sendTestSMS(ctx context.Context, to string) error {
+	cfg, err := platform.GetEncrypted[smsConfig](ctx, svc.settings, "notifications.sms")
+	if err != nil || cfg.URL == "" {
+		return errors.New("SMS gateway is not configured (Settings > Notifications)")
+	}
+	field := func(key, def string) string {
+		if v, ok := cfg.ParamMap[key]; ok && v != "" {
+			return v
+		}
+		return def
+	}
+	values := url.Values{}
+	values.Set(field("to", "to"), to)
+	values.Set(field("text", "text"), "This is a test message from your HikRAD installation.")
+	if cfg.APIKey != "" {
+		values.Set(field("key", "key"), cfg.APIKey)
+	}
+
+	method := cfg.Method
+	if method == "" {
+		method = http.MethodPost
+	}
+	var req *http.Request
+	if method == http.MethodGet {
+		sep := "?"
+		if strings.Contains(cfg.URL, "?") {
+			sep = "&"
+		}
+		req, err = http.NewRequestWithContext(ctx, http.MethodGet, cfg.URL+sep+values.Encode(), nil)
+	} else {
+		req, err = http.NewRequestWithContext(ctx, http.MethodPost, cfg.URL, strings.NewReader(values.Encode()))
+		if err == nil {
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		}
+	}
+	if err != nil {
+		return err
+	}
+	client := &http.Client{Timeout: testSendTimeout}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("gateway returned HTTP %d", resp.StatusCode)
+	}
+	return nil
 }
 
 func postJSONExpectOK(ctx context.Context, url string, headers map[string]string, body []byte) error {

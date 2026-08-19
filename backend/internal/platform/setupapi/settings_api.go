@@ -21,13 +21,17 @@ import (
 	"github.com/hikrad/hikrad/internal/platform/crypto"
 )
 
-// notificationSecretFields (FR-127) are the notifications-group fields
-// whose values embed a credential (smtp.password, telegram.bot_token,
-// whatsapp.token/access_token) and must therefore be stored encrypted at
+// notificationSecretFields (FR-127, extended v4-10/FR-161 for the new SMS
+// gateway) are the notifications-group fields whose values embed a
+// credential (smtp.password, telegram.bot_token, whatsapp.token/
+// access_token, sms.api_key) and must therefore be stored encrypted at
 // rest, unlike locale/branding/billing fields which carry nothing secret.
 // The whole object is sealed (not just the credential sub-field) — see
-// internal/platform/settings_crypto.go's doc comment for why.
-var notificationSecretFields = map[string]bool{"smtp": true, "telegram": true, "whatsapp": true}
+// internal/platform/settings_crypto.go's doc comment for why. This is the
+// ONLY place any channel's secret is ever written (binding rule, FR-161:
+// no new secret storage path) — internal/notify's Channels tab reads
+// status through this same key, never a channel-specific store of its own.
+var notificationSecretFields = map[string]bool{"smtp": true, "telegram": true, "whatsapp": true, "sms": true}
 
 // settingsGroups declares every v1 group (FR-53.2) and its allowed field
 // names. A PUT with a field not in this list is rejected (422) rather than
@@ -35,7 +39,7 @@ var notificationSecretFields = map[string]bool{"smtp": true, "telegram": true, "
 var settingsGroups = map[string][]string{
 	"locale":         {"timezone", "currency", "date_format", "language"},
 	"branding":       {"name", "logo_url", "primary_color", "secondary_color"},
-	"notifications":  {"smtp", "telegram", "whatsapp"},
+	"notifications":  {"smtp", "telegram", "whatsapp", "sms", "whatsapp_templates"},
 	"billing":        {"renewal_anchor", "admin_balance_bypass", "receipt_prefix", "receipt_branding", "voucher_prefix", "receipt_numerals"},
 	"backups":        {"schedule_hour", "retention_count", "path"},
 	"data_retention": {"raw_months", "rollup_years"},

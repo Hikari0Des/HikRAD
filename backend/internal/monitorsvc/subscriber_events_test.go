@@ -1,9 +1,13 @@
 package monitorsvc
 
-// End-to-end proof of the C7 subscriber WhatsApp path (task 4b, gate item 9):
-// a real Redis publish on billing.renewed flows through subscriberEvents.run
-// into a request-capture fake standing in for the Meta Graph API — the same
-// fallback the task brief sanctions for when Meta onboarding is pending.
+// End-to-end proof of the C7 subscriber-notification path (v4-10 shape): a
+// real Redis publish on billing.renewed flows through subscriberEvents.run,
+// which enqueues into internal/notify's outbox; a single notify.Dispatcher
+// tick then drains it to a request-capture fake standing in for the Meta
+// Graph API (the same fallback the original task brief sanctioned for when
+// Meta onboarding is pending). This supersedes the pre-v4-10 test that
+// asserted a synchronous WhatsApp send — delivery is now two steps (enqueue,
+// then dispatch), matching the "one queue" binding rule.
 
 import (
 	"context"
@@ -17,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hikrad/hikrad/internal/notify"
 	"github.com/hikrad/hikrad/internal/platform"
 	"github.com/hikrad/hikrad/internal/push"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -47,7 +52,7 @@ func testDBRedis(t *testing.T) (*pgxpool.Pool, *redis.Client) {
 	return db, rdb
 }
 
-func TestSubscriberEvents_RenewedDeliversWhatsAppReceipt(t *testing.T) {
+func TestSubscriberEvents_RenewedEnqueuesAndDispatchesWhatsAppReceipt(t *testing.T) {
 	db, rdb := testDBRedis(t)
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 
@@ -59,18 +64,20 @@ func TestSubscriberEvents_RenewedDeliversWhatsAppReceipt(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer fake.Close()
-	origBase := graphAPIBase
-	graphAPIBase = fake.URL
-	defer func() { graphAPIBase = origBase }()
+	restore := notify.SetGraphAPIBaseForTest(fake.URL)
+	defer restore()
 
 	settings := platform.NewSettings(db)
 	ctx := context.Background()
-	if err := platform.SetEncrypted(ctx, settings, "notifications.whatsapp", whatsAppConfig{Token: "tok", PhoneID: "555"}); err != nil {
+	if err := platform.SetEncrypted(ctx, settings, "notifications.whatsapp", struct {
+		Token   string `json:"access_token"`
+		PhoneID string `json:"phone_number_id"`
+	}{Token: "tok", PhoneID: "555"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := settings.Set(ctx, subscriberTemplatesKey, templateCatalog{Templates: map[string]map[string]string{
-		"payment_receipt": {"ar": "payment_receipt_ar"},
-	}}); err != nil {
+	if err := settings.Set(ctx, "notifications.whatsapp_templates", map[string]any{
+		"templates": map[string]any{"payment_receipt": map[string]any{"ar": "payment_receipt_ar"}},
+	}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -82,8 +89,7 @@ func TestSubscriberEvents_RenewedDeliversWhatsAppReceipt(t *testing.T) {
 	}
 
 	// The push channel (payment_receipt push, alongside WhatsApp) needs its own
-	// wiring, same as it does in the real hikrad-monitor binary (see
-	// cmd/hikrad-monitor/main.go and the push package doc comment).
+	// wiring, same as it does in the real hikrad-monitor binary.
 	push.Init(db, rdb, settings, log)
 
 	se := newSubscriberEvents(db, rdb, settings, log)
@@ -106,6 +112,12 @@ func TestSubscriberEvents_RenewedDeliversWhatsAppReceipt(t *testing.T) {
 	if err := rdb.Publish(ctx, "billing.renewed", payload).Err(); err != nil {
 		t.Fatalf("publish billing.renewed: %v", err)
 	}
+
+	// Give the enqueue a moment to land, then drain the queue exactly once —
+	// deterministic, no reliance on the dispatcher's own ticker interval.
+	time.Sleep(150 * time.Millisecond)
+	disp := notify.NewDispatcher(db, rdb, settings, log)
+	disp.Tick(ctx, 10)
 
 	select {
 	case body := <-captured:

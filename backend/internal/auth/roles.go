@@ -67,6 +67,12 @@ var permissionCatalog = []struct {
 	// nas.* — it is a queue over every NAS's CoAs, not a per-router config
 	// surface, so it gets its own grantable/withholdable pair.
 	{"coa_outbox", []string{"coa_outbox.view", "coa_outbox.manage"}},
+	// v4-10 (FR-160-165): the Notification Center (channels/templates/rules/
+	// broadcast/outbox) and support tickets each get their own
+	// grantable/withholdable pair — neither is a subset of any existing
+	// module (billing/monitoring included), same posture as coa_outbox above.
+	{"notifications", []string{"notifications.view", "notifications.manage"}},
+	{"support", []string{"support.view", "support.manage"}},
 	{"audit", []string{"audit.view"}},
 	{"actions", []string{PermRenew, PermDisconnect, PermTopup, PermExport, "refund"}},
 }

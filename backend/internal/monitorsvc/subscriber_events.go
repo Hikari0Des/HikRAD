@@ -2,29 +2,32 @@ package monitorsvc
 
 // Subscriber + manager event delivery (contract C7/C8, FR-55/FR-59/FR-80):
 // consumes billing's billing.renewed and billing.payment_ticket Redis pub/sub
-// events and delivers WhatsApp + portal-push to the subscriber, and panel
-// push to the owning manager (v2-2, FR-80.2: ticket submitted, or decided by
-// someone other than the owner). Fully independent of the admin alert engine
-// — a dead WhatsApp/push endpoint here never touches Telegram/email/in-app
-// and vice versa (delivery isolation, NFR-7). Built as a plain consumer
-// rather than routed through the alert_rules engine because these are
-// per-event subscriber/manager messages, not admin-configured rules.
+// events and delivers to the subscriber and the owning manager (v2-2,
+// FR-80.2: ticket submitted, or decided by someone other than the owner).
 //
-// The manager-facing half reuses push.DeliverToManager (panel Web Push) only
-// — the existing "in-app notification center" (alert_events/NotificationsChannel)
-// is a global admin broadcast with no per-manager scoping column, so treating
-// it as this event's in-app channel would either leak to every admin or
-// require a schema change outside this phase's frozen scope (C11 says "never
-// a new channel"); documented here rather than silently narrowed.
+// v4-10: the subscriber-facing half no longer calls a WhatsApp sender
+// directly — it enqueues into internal/notify's one shared queue
+// (EventPaymentReceipt / EventPaymentTicketState), exactly like a broadcast
+// or a staff alert (binding rule: one queue, no side channel). The
+// manager-facing push half is untouched — Web Push to the panel is a
+// distinct, pre-existing channel outside the v4-10 Notification Center's
+// scope (same call this package's alert engine makes for FR-54.4), so it
+// stays a direct push.DeliverToManager call.
+//
+// Fully independent of the admin alert engine — a dead channel here never
+// touches Telegram/email/in-app and vice versa (delivery isolation, NFR-7).
+// Built as a plain consumer rather than routed through the alert_rules
+// engine because these are per-event subscriber/manager messages, not
+// admin-configured rules.
 
 import (
 	"context"
 	"encoding/json"
 	"log/slog"
-	"net/http"
 	"strconv"
 	"time"
 
+	"github.com/hikrad/hikrad/internal/notify"
 	"github.com/hikrad/hikrad/internal/platform"
 	"github.com/hikrad/hikrad/internal/push"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -36,11 +39,10 @@ type subscriberEvents struct {
 	rdb      *redis.Client
 	settings platform.Settings
 	log      *slog.Logger
-	client   *http.Client
 }
 
 func newSubscriberEvents(db *pgxpool.Pool, rdb *redis.Client, settings platform.Settings, log *slog.Logger) *subscriberEvents {
-	return &subscriberEvents{db: db, rdb: rdb, settings: settings, log: log, client: httpClient()}
+	return &subscriberEvents{db: db, rdb: rdb, settings: settings, log: log}
 }
 
 // run subscribes until ctx ends, reconnecting on a short backoff if the
@@ -102,15 +104,18 @@ func (s *subscriberEvents) handleRenewed(ctx context.Context, payload []byte) {
 		s.log.Warn("subscriber-events: bad billing.renewed payload", "error", err)
 		return
 	}
-	contact, ok := loadSubscriberContact(ctx, s.db, ev.SubscriberID)
-	if !ok {
-		return
-	}
-	if contact.OptIn && contact.Phone != "" {
-		params := []string{strconv.FormatInt(ev.Amount, 10), ev.ReceiptNo, ev.NewExpiresAt.Format("2006-01-02")}
-		if err := deliverSubscriberWhatsApp(ctx, s.settings, s.client, contact.Phone, contact.Language, "payment_receipt", params); err != nil {
-			s.log.Warn("subscriber-events: payment_receipt whatsapp failed", "subscriber_id", ev.SubscriberID, "error", err)
-		}
+	if _, err := notify.EnqueueEvent(ctx, s.db, notify.EnqueueInput{
+		EventKey:     notify.EventPaymentReceipt,
+		SubscriberID: ev.SubscriberID,
+		Source:       "rule",
+		Params: map[string]string{
+			"amount":     strconv.FormatInt(ev.Amount, 10),
+			"currency":   ev.Currency,
+			"receipt_no": ev.ReceiptNo,
+			"expires_at": ev.NewExpiresAt.Format("2006-01-02"),
+		},
+	}); err != nil {
+		s.log.Warn("subscriber-events: payment_receipt enqueue failed", "subscriber_id", ev.SubscriberID, "error", err)
 	}
 	if err := push.DeliverToSubscriber(ctx, ev.SubscriberID, push.Payload{
 		TitleKey: "push.payment_receipt.title",
@@ -148,16 +153,13 @@ func (s *subscriberEvents) handlePaymentTicket(ctx context.Context, payload []by
 // notifySubscriberTicket is FR-80.1: the subscriber's own WhatsApp + portal
 // push for every state (submitted/approved/rejected).
 func (s *subscriberEvents) notifySubscriberTicket(ctx context.Context, ev paymentTicketEvent) {
-	contact, ok := loadSubscriberContact(ctx, s.db, ev.SubscriberID)
-	if !ok {
-		return
-	}
-	templateKey := "payment_ticket_" + ev.State // e.g. payment_ticket_approved | payment_ticket_rejected
-	if contact.OptIn && contact.Phone != "" {
-		params := []string{contact.Name, ev.Reason}
-		if err := deliverSubscriberWhatsApp(ctx, s.settings, s.client, contact.Phone, contact.Language, templateKey, params); err != nil {
-			s.log.Warn("subscriber-events: payment_ticket whatsapp failed", "subscriber_id", ev.SubscriberID, "state", ev.State, "error", err)
-		}
+	if _, err := notify.EnqueueEvent(ctx, s.db, notify.EnqueueInput{
+		EventKey:     notify.EventPaymentTicketState,
+		SubscriberID: ev.SubscriberID,
+		Source:       "rule",
+		Params:       map[string]string{"status": ev.State, "reason": ev.Reason},
+	}); err != nil {
+		s.log.Warn("subscriber-events: payment_ticket enqueue failed", "subscriber_id", ev.SubscriberID, "state", ev.State, "error", err)
 	}
 	if err := push.DeliverToSubscriber(ctx, ev.SubscriberID, push.Payload{
 		TitleKey: "push.payment_ticket." + ev.State + ".title",
