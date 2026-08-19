@@ -60,6 +60,10 @@ func (m *Module) Register(r chi.Router, d httpapi.Deps) {
 	r.With(m.requireSubscriber).Get("/api/v1/portal/usage", m.usageHandler)
 	r.With(m.requireSubscriber).Get("/api/v1/portal/payments", m.paymentsHandler)
 
+	// v4-10 (FR-165): issues the one-time code the Telegram bot's /link
+	// command consumes. The button that calls this is v4-11's UI.
+	r.With(m.requireSubscriber).Post("/api/v1/portal/telegram/link-code", m.telegramLinkCodeHandler)
+
 	// Renewal (FR-42): voucher redeem + the unified Pay screen (v2-2, C4/C5/C13).
 	r.With(m.requireSubscriber).Post("/api/v1/portal/vouchers/redeem", m.redeemVoucherHandler)
 	r.With(m.requireSubscriber).Get("/api/v1/portal/pay-methods", m.payMethodsHandler)
