@@ -10,6 +10,7 @@ package billing
 import (
 	"errors"
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/hikrad/hikrad/internal/auth"
@@ -148,6 +149,13 @@ func (m *Module) topupHandler(w http.ResponseWriter, r *http.Request) {
 		m.internalError(w, "topup recompute", err)
 		return
 	}
+	// FR-153, §3.1: staged dual-write, same transaction as the ledger row above.
+	var dbNow time.Time
+	_ = tx.QueryRow(r.Context(), `SELECT now()`).Scan(&dbNow)
+	if err := postLedgerJournal(r.Context(), tx, dbNow.UTC(), entry, txID, 0, false, "billing.topup", id); err != nil {
+		m.internalError(w, "topup journal", err)
+		return
+	}
 	if err := tx.Commit(r.Context()); err != nil {
 		m.internalError(w, "topup commit", err)
 		return
@@ -158,7 +166,10 @@ func (m *Module) topupHandler(w http.ResponseWriter, r *http.Request) {
 		"ledger_tx_id": txID, "amount": iqd, "entered_amount": in.Amount, "entered_currency": entered,
 		"balance": bal, "note": in.Note,
 	})
-	httpapi.JSON(w, http.StatusOK, map[string]any{"ledger_tx_id": txID, "currency": "IQD", "balance": bal})
+	actorMgr, _ := auth.ManagerFrom(r.Context())
+	undoID, _ := m.recordUndo(r.Context(), "topup", "manager", id, managerID(actorMgr), txID,
+		undoTopupSnapshot{ManagerID: id, Amount: iqd}, "")
+	httpapi.JSON(w, http.StatusOK, map[string]any{"ledger_tx_id": txID, "currency": "IQD", "balance": bal, "undo_id": undoID})
 }
 
 // --- Currency catalog + admin rate table (FR-68) ---------------------------
@@ -260,7 +271,6 @@ func (m *Module) createCurrencyRateHandler(w http.ResponseWriter, r *http.Reques
 	_ = auth.Audit(r.Context(), "currency_rate.create", "currency_rate", v.ID, nil, v)
 	httpapi.JSON(w, http.StatusCreated, v)
 }
-
 
 func pow10(n int) float64 {
 	f := 1.0

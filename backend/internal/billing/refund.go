@@ -6,6 +6,12 @@ package billing
 // duration (floor: now), requires a reason, is audited, and re-applies FR-9
 // behavior via CoA when the rollback lands the subscriber in the expired state.
 // A second refund of the same transaction is rejected (unique reverses_id index).
+//
+// refundCore is the ONE transactional implementation (FR-159's "approval
+// replays the original code path" discipline, applied even though a refund
+// itself isn't gated for approval — undo.go's undoRenewal calls this exact
+// function too, so "undo a renewal" and "refund a renewal" can never drift
+// into two different reversal behaviors). refundHandler is its HTTP shell.
 
 import (
 	"context"
@@ -21,9 +27,22 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
+var (
+	errTxNotFound      = errors.New("billing: transaction not found")
+	errTxMismatch      = errors.New("billing: transaction does not belong to this subscriber")
+	errNotRefundable   = errors.New("billing: a refund cannot itself be refunded")
+	errAlreadyRefunded = errors.New("billing: this transaction has already been refunded")
+)
+
 type refundRequest struct {
 	LedgerTxID string `json:"ledger_tx_id"`
 	Reason     string `json:"reason"`
+}
+
+type refundCoreResult struct {
+	RefundLedgerTxID string
+	NewExpiresAt     time.Time
+	CoAResult        string
 }
 
 func (m *Module) refundHandler(w http.ResponseWriter, r *http.Request) {
@@ -49,22 +68,56 @@ func (m *Module) refundHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Resolve settings BEFORE opening the transaction (pool-safety: reading
-	// settings queries the pool, which would deadlock if done while holding a
-	// transaction connection under concurrency — see billing/renew.go).
+	res, err := m.refundCore(ctx, subID, in.LedgerTxID, in.Reason, "panel", "billing.refund")
+	if m.writeRefundError(w, err) {
+		return
+	}
+	_ = auth.Audit(ctx, "subscriber.refund", "subscriber", subID, nil, map[string]any{
+		"refund_ledger_tx_id": res.RefundLedgerTxID, "reverses": in.LedgerTxID,
+		"new_expires_at": res.NewExpiresAt, "reason": in.Reason, "coa_result": res.CoAResult,
+	})
+	httpapi.JSON(w, http.StatusOK, map[string]any{
+		"refund_ledger_tx_id": res.RefundLedgerTxID,
+		"reverses_id":         in.LedgerTxID,
+		"new_expires_at":      res.NewExpiresAt,
+		"coa_result":          res.CoAResult,
+	})
+}
+
+func (m *Module) writeRefundError(w http.ResponseWriter, err error) bool {
+	switch {
+	case err == nil:
+		return false
+	case errors.Is(err, errTxNotFound):
+		httpapi.Error(w, http.StatusNotFound, "not_found", "transaction not found")
+	case errors.Is(err, errTxMismatch):
+		httpapi.Error(w, http.StatusUnprocessableEntity, "mismatch", "transaction does not belong to this subscriber")
+	case errors.Is(err, errNotRefundable):
+		httpapi.Error(w, http.StatusUnprocessableEntity, "not_refundable", "a refund cannot itself be refunded")
+	case errors.Is(err, errAlreadyRefunded):
+		httpapi.Error(w, http.StatusConflict, "already_refunded", "this transaction has already been refunded")
+	case errors.Is(err, errNoRate):
+		httpapi.Error(w, http.StatusUnprocessableEntity, "no_rate", err.Error())
+	default:
+		m.internalError(w, "refund", err)
+	}
+	return true
+}
+
+// refundCore performs the entire reversing-entry transaction: load + validate
+// the original entry, reverse the ledger (+ journal, §3.1), reverse the
+// payment/receipt, roll back expiry, and (post-commit) re-apply FR-9 via CoA.
+// source/journalSource let a caller other than the panel (undo.go) attribute
+// the reversal accurately without duplicating this logic.
+func (m *Module) refundCore(ctx context.Context, subID, ledgerTxID, reason, source, journalSource string) (refundCoreResult, error) {
 	receiptPrefix := m.getString(ctx, keyReceiptPrefix, "HR-")
 
 	tx, err := m.db.Begin(ctx)
 	if err != nil {
-		m.internalError(w, "refund begin", err)
-		return
+		return refundCoreResult{}, err
 	}
 	defer tx.Rollback(ctx)
 
-	// Load the original entry (must belong to this subscriber) and its gross.
-	// v2 phase 4 / FR-69.5: the refund reverses in the ORIGINAL entry's own
-	// currency, at no rate at all — read here, never re-resolved from today's
-	// profile price or today's rate table.
 	var (
 		origType       string
 		origAmount     int64
@@ -78,28 +131,29 @@ func (m *Module) refundHandler(w http.ResponseWriter, r *http.Request) {
 		`SELECT l.type, l.amount, l.currency, l.actor_manager_id::text, l.subscriber_id::text,
 		        COALESCE((SELECT amount FROM payments WHERE ledger_tx_id = l.id LIMIT 1), 0),
 		        l.cost_at_sale
-		   FROM ledger_transactions l WHERE l.id = $1::uuid`, in.LedgerTxID).
+		   FROM ledger_transactions l WHERE l.id = $1::uuid`, ledgerTxID).
 		Scan(&origType, &origAmount, &origCurrency, &origActor, &origSub, &origGross, &origCostAtSale)
 	if errors.Is(err, pgx.ErrNoRows) {
-		httpapi.Error(w, http.StatusNotFound, "not_found", "transaction not found")
-		return
+		return refundCoreResult{}, errTxNotFound
 	}
 	if err != nil {
-		m.internalError(w, "refund load", err)
-		return
+		return refundCoreResult{}, err
 	}
 	if origSub == nil || *origSub != subID {
-		httpapi.Error(w, http.StatusUnprocessableEntity, "mismatch", "transaction does not belong to this subscriber")
-		return
+		return refundCoreResult{}, errTxMismatch
 	}
 	if origType == "refund" {
-		httpapi.Error(w, http.StatusUnprocessableEntity, "not_refundable", "a refund cannot itself be refunded")
-		return
+		return refundCoreResult{}, errNotRefundable
 	}
 
 	actor := ""
 	if origActor != nil {
 		actor = *origActor
+	}
+
+	dbNow, err := nowIn(ctx, tx)
+	if err != nil {
+		return refundCoreResult{}, err
 	}
 
 	// Lock the subscriber FIRST, then the balance — the same lock order as the
@@ -118,13 +172,11 @@ func (m *Module) refundHandler(w http.ResponseWriter, r *http.Request) {
 		  WHERE s.id = $1::uuid FOR UPDATE OF s`, subID).
 		Scan(&curExpires, &duration, &behavior, &expiredPool)
 	if err != nil {
-		m.internalError(w, "refund subscriber", err)
-		return
+		return refundCoreResult{}, err
 	}
 	if actor != "" {
 		if _, err := lockBalance(ctx, tx, actor); err != nil {
-			m.internalError(w, "refund lock", err)
-			return
+			return refundCoreResult{}, err
 		}
 	}
 
@@ -134,19 +186,12 @@ func (m *Module) refundHandler(w http.ResponseWriter, r *http.Request) {
 	// the reversal is converted to IQD at the current rate and stamped, since
 	// there is no IQD figure to reverse to. `entered_*` records the original.
 	refundAmount, refundRateID, err := signedToIQD(ctx, tx, -origAmount, origCurrency)
-	if errors.Is(err, errNoRate) {
-		httpapi.Error(w, http.StatusUnprocessableEntity, "no_rate",
-			"no IQD rate is defined for "+origCurrency+"; add one before refunding this legacy transaction")
-		return
-	}
 	if err != nil {
-		m.internalError(w, "refund convert", err)
-		return
+		return refundCoreResult{}, err
 	}
 	refundGross, _, err := signedToIQD(ctx, tx, -origGross, origCurrency)
 	if err != nil && !errors.Is(err, errNoRate) {
-		m.internalError(w, "refund gross convert", err)
-		return
+		return refundCoreResult{}, err
 	}
 
 	// Reversing entry: negate the original balance effect, and (v2 phase 9,
@@ -164,9 +209,9 @@ func (m *Module) refundHandler(w http.ResponseWriter, r *http.Request) {
 		Amount:         refundAmount,
 		ActorManagerID: actor,
 		SubscriberID:   subID,
-		Source:         "panel",
-		ReversesID:     in.LedgerTxID,
-		Note:           in.Reason,
+		Source:         source,
+		ReversesID:     ledgerTxID,
+		Note:           reason,
 		CostAtSale:     refundCostAtSale,
 		CurrencyRateID: refundRateID,
 	}
@@ -177,39 +222,39 @@ func (m *Module) refundHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	refundID, err := insertLedger(ctx, tx, entry)
 	if isUniqueViolation(err) {
-		httpapi.Error(w, http.StatusConflict, "already_refunded", "this transaction has already been refunded")
-		return
+		return refundCoreResult{}, errAlreadyRefunded
 	}
 	if err != nil {
-		m.internalError(w, "refund insert", err)
-		return
+		return refundCoreResult{}, err
 	}
 	if actor != "" {
 		if err := recomputeBalance(ctx, tx, actor); err != nil {
-			m.internalError(w, "refund recompute", err)
-			return
+			return refundCoreResult{}, err
 		}
+	}
+
+	// FR-153, §3.1: staged dual-write, same transaction as the reversing
+	// ledger row above. signedPair (journal.go) reverses the ORIGINAL
+	// entry's direction automatically because refundAmount/refundGross are
+	// already the signed negation of the original — no special-casing.
+	if err := postLedgerJournal(ctx, tx, dbNow, entry, refundID, refundGross, true, journalSource, actor); err != nil {
+		return refundCoreResult{}, err
 	}
 
 	// Negative IQD payment row so revenue_daily nets the reversal.
 	receiptNo, err := nextReceiptNo(ctx, tx, receiptPrefix)
 	if err != nil {
-		m.internalError(w, "refund receipt", err)
-		return
+		return refundCoreResult{}, err
 	}
 	if err := insertPayment(ctx, tx, paymentRow{
 		ReceiptNo: receiptNo, LedgerTxID: refundID, SubscriberID: subID,
-		Amount: refundGross, Currency: "IQD", Method: "refund", Source: "panel", ShareToken: randToken(),
+		Amount: refundGross, Currency: "IQD", Method: "refund", Source: source, ShareToken: randToken(),
 	}); err != nil {
-		m.internalError(w, "refund payment", err)
-		return
+		return refundCoreResult{}, err
 	}
 
 	// Expiry rollback: floor now. Roll back by the current profile's granted
 	// duration (the cancelled renewal's grant in the common cancel-renewal case).
-	var dbNow time.Time
-	_ = tx.QueryRow(ctx, `SELECT now()`).Scan(&dbNow)
-	dbNow = dbNow.UTC()
 	newExpiry := rollbackExpiry(dbNow, curExpires, duration)
 	nowExpired := !newExpiry.After(dbNow)
 	status := "active"
@@ -219,13 +264,11 @@ func (m *Module) refundHandler(w http.ResponseWriter, r *http.Request) {
 	if _, err := tx.Exec(ctx,
 		`UPDATE subscribers SET expires_at = $2, status = $3 WHERE id = $1::uuid`,
 		subID, newExpiry, status); err != nil {
-		m.internalError(w, "refund rollback", err)
-		return
+		return refundCoreResult{}, err
 	}
 
 	if err := tx.Commit(ctx); err != nil {
-		m.internalError(w, "refund commit", err)
-		return
+		return refundCoreResult{}, err
 	}
 
 	// Post-commit: invalidate policy; if the rollback expired an online user,
@@ -235,16 +278,7 @@ func (m *Module) refundHandler(w http.ResponseWriter, r *http.Request) {
 	if nowExpired {
 		coa = m.enforceExpiredCoA(ctx, subID, behavior, strOr(expiredPool, ""))
 	}
-	_ = auth.Audit(ctx, "subscriber.refund", "subscriber", subID, nil, map[string]any{
-		"refund_ledger_tx_id": refundID, "reverses": in.LedgerTxID,
-		"new_expires_at": newExpiry.UTC(), "reason": in.Reason, "coa_result": coa,
-	})
-	httpapi.JSON(w, http.StatusOK, map[string]any{
-		"refund_ledger_tx_id": refundID,
-		"reverses_id":         in.LedgerTxID,
-		"new_expires_at":      newExpiry.UTC(),
-		"coa_result":          coa,
-	})
+	return refundCoreResult{RefundLedgerTxID: refundID, NewExpiresAt: newExpiry.UTC(), CoAResult: coa}, nil
 }
 
 // rollbackExpiry rolls a subscriber's expiry back by durationDays, floored at now

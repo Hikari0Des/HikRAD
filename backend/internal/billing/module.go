@@ -127,6 +127,53 @@ func (m *Module) Register(r chi.Router, d httpapi.Deps) {
 	r.With(auth.Require("reseller_prices.manage")).Get("/api/v1/reseller-prices", m.listResellerPricesHandler)
 	r.With(auth.Require("reseller_prices.manage")).Post("/api/v1/reseller-prices", m.createResellerPriceHandler)
 
+	// v4-9 (FR-153): chart of accounts.
+	r.With(auth.Require(permAccountingView)).Get("/api/v1/accounts", m.listAccountsHandler)
+	r.With(auth.Require(permAccountingManage)).Post("/api/v1/accounts", m.createAccountHandler)
+
+	// v4-9 (FR-156): statements. All read-only; reseller isolation is a
+	// field-level omission inside profitAndLossHandler, not a separate
+	// permission (a reseller sees their own statements, just without
+	// cost/margin — gate item 12).
+	r.With(auth.Require(permAccountingView)).Get("/api/v1/statements/pl", m.profitAndLossHandler)
+	r.With(auth.Require(permAccountingView)).Get("/api/v1/statements/balance-sheet", m.balanceSheetHandler)
+	r.With(auth.Require(permAccountingView)).Get("/api/v1/statements/cash-flow", m.cashFlowHandler)
+	r.With(auth.Require(permAccountingView)).Get("/api/v1/statements/aging/receivables", m.agingReceivablesHandler)
+	r.With(auth.Require(permAccountingView)).Get("/api/v1/statements/aging/payables", m.agingPayablesHandler)
+	r.With(auth.Require(permAccountingView)).Get("/api/v1/statements/trial-balance", m.trialBalanceHandler)
+	r.With(auth.Require(permAccountingView)).Get("/api/v1/statements/general-ledger", m.generalLedgerHandler)
+	r.With(auth.Require(permAccountingView)).Get("/api/v1/statements/journal", m.journalHandler)
+
+	// v4-9 (FR-154): invoices.
+	r.With(auth.Require(permInvoicesView)).Get("/api/v1/invoices", m.listInvoicesHandler)
+	r.With(auth.Require(permInvoicesView)).Get("/api/v1/invoices/{id}", m.getInvoiceHandler)
+	r.With(auth.Require(permInvoicesCreate)).Post("/api/v1/invoices", m.createInvoiceHandler)
+	r.With(auth.Require(permInvoicesManage)).Post("/api/v1/invoices/{id}/void", m.voidInvoiceHandler)
+	r.With(auth.Require(permInvoicesCreate)).Post("/api/v1/invoices/{id}/receipts", m.createARReceiptHandler)
+
+	// v4-9 (FR-155): expenses.
+	r.With(auth.Require(permExpensesView)).Get("/api/v1/expenses", m.listExpensesHandler)
+	r.With(auth.Require(permExpensesCreate)).Post("/api/v1/expenses", m.createExpenseHandler)
+	r.With(auth.Require(permExpensesManage)).Post("/api/v1/expenses/{id}/void", m.voidExpenseHandler)
+	r.With(auth.Require(permExpensesCreate)).Post("/api/v1/expenses/{id}/payments", m.createAPPaymentHandler)
+
+	// v4-9 (FR-157): fixed assets.
+	r.With(auth.Require(permAccountingView)).Get("/api/v1/fixed-assets", m.listFixedAssetsHandler)
+	r.With(auth.Require(permAccountingManage)).Post("/api/v1/fixed-assets", m.createFixedAssetHandler)
+	r.With(auth.Require(permAccountingManage)).Post("/api/v1/fixed-assets/{id}/depreciate", m.runDepreciationHandler)
+
+	// v4-9 (FR-158): undo. Authenticated only — undoHandler enforces
+	// ownership itself (a scoped agent may only undo their own actions).
+	r.With(auth.Require("")).Post("/api/v1/undo/{id}", m.undoHandler)
+	r.With(auth.Require("")).Get("/api/v1/undo/mine", m.listMyUndoableHandler)
+
+	// v4-9 (FR-159): the approval queue.
+	r.With(auth.Require("")).Get("/api/v1/approval-requests", m.listApprovalRequestsHandler)
+	r.With(auth.Require("")).Get("/api/v1/approval-requests/{id}", m.getApprovalRequestHandler)
+	r.With(auth.Require(permApprovalsManage)).Post("/api/v1/approval-requests/{id}/approve", m.approveApprovalRequestHandler)
+	r.With(auth.Require(permApprovalsManage)).Post("/api/v1/approval-requests/{id}/reject", m.rejectApprovalRequestHandler)
+	r.With(auth.Require("")).Post("/api/v1/approval-requests/{id}/withdraw", m.withdrawApprovalRequestHandler)
+
 	wireOnce.Do(func() {
 		// B's hotspot-voucher login redeems through this seam (C3 internal redeem
 		// API); B never imports billing.

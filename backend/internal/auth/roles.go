@@ -42,6 +42,19 @@ var permissionCatalog = []struct {
 	{"billing", []string{"billing.view", "billing.create", "billing.edit",
 		"currency_rates.manage", "overheads.manage", "reseller_prices.manage",
 		"payment_providers.manage", "payment_tickets.verify"}},
+	// v4-9 (FR-153-159): double-entry accounting, invoices/expenses, and the
+	// agent approval gate. accounting.* covers the chart of accounts and
+	// every statement (P&L/balance sheet/cash flow/aging/advanced); a
+	// reseller/agent holding accounting.view still sees their own
+	// statements with cost/margin fields omitted (gate item 12), never a
+	// separate reseller permission. approvals.manage is the full queue;
+	// an agent may always list/withdraw their OWN pending requests and
+	// undo their OWN actions with no permission beyond authentication
+	// (checked by ownership, not by grant — see billing/undo_api.go).
+	{"accounting", []string{"accounting.view", "accounting.manage"}},
+	{"invoices", []string{"invoices.view", "invoices.create", "invoices.manage", "invoices.no_charge"}},
+	{"expenses", []string{"expenses.view", "expenses.create", "expenses.manage"}},
+	{"approvals", []string{"approvals.manage"}},
 	{"vouchers", []string{"vouchers.view", "vouchers.create", "vouchers.edit"}},
 	{"cards", []string{"cards.view", "cards.create", "cards.edit", "cards.print"}},
 	{"monitoring", []string{"monitoring.view", "monitoring.create", "monitoring.edit", "monitoring.delete"}},

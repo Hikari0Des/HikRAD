@@ -85,6 +85,10 @@ type renewResult struct {
 	NewExpiresAt time.Time `json:"new_expires_at"`
 	CoAResult    string    `json:"coa_result"` // enqueued | failed | not_online (v4-8: async — see the CoA Outbox for the real outcome)
 	Currency     string    `json:"currency"`
+	// UndoID is FR-158's five-minute undo handle, filled in by renewHandler
+	// after commit (never by renewInTx — recording undo is best-effort and
+	// deliberately outside the money transaction, see undo.go).
+	UndoID string `json:"undo_id,omitempty"`
 	// internal, not serialized: needed for the post-commit CoA restore.
 	price    int64
 	rate     string
@@ -265,7 +269,14 @@ func (m *Module) renewInTx(ctx context.Context, tx pgx.Tx, dbNow time.Time, p re
 		if err != nil {
 			return renewResult{}, err
 		}
-		if p.enforceBalance && bal < balanceAmount {
+		// FR-159: an agent's balance may go negative down to their configured
+		// credit limit (0 by default — byte-identical to pre-v4-9 behavior,
+		// which hard-blocked at exactly 0).
+		limit, err := managerCreditLimit(ctx, tx, p.actorManagerID)
+		if err != nil {
+			return renewResult{}, err
+		}
+		if p.enforceBalance && bal-balanceAmount < -limit {
 			return renewResult{}, errInsufficientFunds
 		}
 	}
@@ -277,7 +288,7 @@ func (m *Module) renewInTx(ctx context.Context, tx pgx.Tx, dbNow time.Time, p re
 	// movement) + one payment row (customer billing), the same decoupled
 	// shape this renewal path has always had, now fed two different resolved
 	// numbers instead of one number feeding both.
-	txID, err := insertLedger(ctx, tx, ledgerEntry{
+	ledgerEnt := ledgerEntry{
 		Type:           p.ledgerType,
 		Amount:         balanceDelta, // IQD (plans are IQD-only, FR-101.3)
 		ActorManagerID: p.actorManagerID,
@@ -286,12 +297,26 @@ func (m *Module) renewInTx(ctx context.Context, tx pgx.Tx, dbNow time.Time, p re
 		Reference:      p.reference,
 		Note:           p.note,
 		CostAtSale:     costAtSale,
-	})
+	}
+	txID, err := insertLedger(ctx, tx, ledgerEnt)
 	if err != nil {
 		return renewResult{}, err
 	}
 	if p.chargeBalance {
 		if err := recomputeBalance(ctx, tx, p.actorManagerID); err != nil {
+			return renewResult{}, err
+		}
+	}
+	// FR-153, §3.1: staged dual-write, same transaction as the ledger row
+	// above so the two can never diverge even under a crash mid-write.
+	if err := postLedgerJournal(ctx, tx, dbNow, ledgerEnt, txID, price, true, "billing."+p.ledgerType, p.actorManagerID); err != nil {
+		return renewResult{}, err
+	}
+	// FR-159: an agent's commission rebate on this sale, posted as its own
+	// ledger row (so it actually reaches their spendable balance, not just
+	// the journal) + journal entry, in the SAME transaction.
+	if p.chargeBalance && p.actorManagerID != "" {
+		if err := postCommission(ctx, tx, dbNow, p.actorManagerID, balanceAmount, p.source, p.reference); err != nil {
 			return renewResult{}, err
 		}
 	}
@@ -349,6 +374,19 @@ func (m *Module) renewInTx(ctx context.Context, tx pgx.Tx, dbNow time.Time, p re
 		ShareToken:   randToken(),
 	}); err != nil {
 		return renewResult{}, err
+	}
+
+	// FR-154: auto-generate an invoice for a priced (IQD, plans are
+	// IQD-only per v3-2) renewal — see createPaidInvoiceForRenewal's doc
+	// comment for why it reuses the renewal's own journal entry rather than
+	// posting a second one.
+	if price > 0 && profCurrency == "IQD" {
+		var journalEntryID string
+		_ = tx.QueryRow(ctx, `SELECT id::text FROM journal_entries WHERE ledger_tx_id = $1::uuid ORDER BY at DESC LIMIT 1`, txID).
+			Scan(&journalEntryID)
+		if _, err := createPaidInvoiceForRenewal(ctx, tx, dbNow, p.subscriberID, price, "Subscription renewal", journalEntryID, p.actorManagerID); err != nil {
+			return renewResult{}, err
+		}
 	}
 
 	return renewResult{

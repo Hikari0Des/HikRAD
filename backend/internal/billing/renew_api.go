@@ -58,6 +58,11 @@ func (m *Module) renewHandler(w http.ResponseWriter, r *http.Request) {
 		"ledger_tx_id": res.LedgerTxID, "receipt_no": res.ReceiptNo,
 		"new_expires_at": res.NewExpiresAt, "price": res.price, "currency": res.Currency, "coa_result": res.CoAResult,
 	})
+	// FR-158: a renewal gets a five-minute undo window. Best-effort — losing
+	// this record to a crash right here only makes this one renewal
+	// non-undoable, never a money-safety issue (see undo.go).
+	res.UndoID, _ = m.recordUndo(r.Context(), "renewal", "subscriber", id, managerID(mgr), res.LedgerTxID,
+		undoRenewalSnapshot{NewExpiresAt: res.NewExpiresAt}, "")
 	httpapi.JSON(w, http.StatusOK, res)
 }
 

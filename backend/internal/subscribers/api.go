@@ -7,6 +7,7 @@ package subscribers
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/hikrad/hikrad/internal/approvals"
 	"github.com/hikrad/hikrad/internal/auth"
 	"github.com/hikrad/hikrad/internal/httpapi"
 	"github.com/hikrad/hikrad/internal/platform"
@@ -457,39 +459,48 @@ func (m *Module) updateHandler(w http.ResponseWriter, r *http.Request) {
 	httpapi.JSON(w, http.StatusOK, resp)
 }
 
+// deleteHandler serves DELETE /subscribers/{id}. FR-159: a scoped agent's
+// request is parked as a pending approval instead of executing (the
+// approvals.RequestOrExecute split); an unscoped caller's delete runs
+// immediately through executeSubscriberDelete — the SAME function
+// approvals.Approve calls verbatim on approval, never a second
+// implementation.
 func (m *Module) deleteHandler(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
+	mgr, _ := auth.ManagerFrom(r.Context())
 	scope := auth.ScopeFilter(r.Context())
-	before, err := getByID(r.Context(), m.db, id, scope)
+	if _, err := getByID(r.Context(), m.db, id, scope); isNotFound(err) {
+		httpapi.Error(w, http.StatusNotFound, "not_found", "subscriber not found")
+		return
+	} else if err != nil {
+		m.internalError(w, "get for delete", err)
+		return
+	}
+
+	payload := subscriberDeletePayload{SubscriberID: id}
+	if mgr != nil {
+		payload.RequesterManagerID = mgr.ID
+		payload.RequesterScoped = mgr.Scoped
+	}
+	pending, requestID, _, err := approvals.RequestOrExecute(r.Context(), m.db, approvalKindSubscriberDelete,
+		payload, mgr, "delete subscriber "+id)
+	if pending {
+		httpapi.JSON(w, http.StatusAccepted, map[string]any{"pending_approval": true, "approval_request_id": requestID})
+		return
+	}
+	if errors.Is(err, errHasFinancialHistory) {
+		httpapi.Error(w, http.StatusConflict, "has_billing_history",
+			"this subscriber has billing history and cannot be deleted; disable them instead so their payments stay attached to them")
+		return
+	}
 	if isNotFound(err) {
 		httpapi.Error(w, http.StatusNotFound, "not_found", "subscriber not found")
 		return
 	}
 	if err != nil {
-		m.internalError(w, "get for delete", err)
-		return
-	}
-	// Refuse rather than orphan their ledger rows — see hasFinancialHistory.
-	paid, err := hasFinancialHistory(r.Context(), m.db, id)
-	if err != nil {
-		m.internalError(w, "check financial history", err)
-		return
-	}
-	if paid {
-		httpapi.Error(w, http.StatusConflict, "has_billing_history",
-			"this subscriber has billing history and cannot be deleted; disable them instead so their payments stay attached to them")
-		return
-	}
-	if err := deleteByID(r.Context(), m.db, id, scope); err != nil {
-		if isNotFound(err) {
-			httpapi.Error(w, http.StatusNotFound, "not_found", "subscriber not found")
-			return
-		}
 		m.internalError(w, "delete", err)
 		return
 	}
-	_ = auth.Audit(r.Context(), "subscriber.delete", "subscriber", id, before, nil)
-	_ = radius.InvalidatePolicy(id)
 	w.WriteHeader(http.StatusNoContent)
 }
 
