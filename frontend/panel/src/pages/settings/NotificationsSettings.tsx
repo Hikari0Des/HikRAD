@@ -25,6 +25,12 @@ interface WhatsApp {
   access_token?: string
   phone_number_id?: string
 }
+interface Sms {
+  provider?: string
+  url?: string
+  method?: string
+  api_key?: string
+}
 
 /** Notifications settings (FR-53.2): SMTP/Telegram/WhatsApp creds + send-test. */
 export function NotificationsSettings() {
@@ -38,9 +44,14 @@ export function NotificationsSettings() {
   const smtp = (g.values.smtp ?? {}) as Smtp
   const telegram = (g.values.telegram ?? {}) as Telegram
   const whatsapp = (g.values.whatsapp ?? {}) as WhatsApp
+  const sms = (g.values.sms ?? {}) as Sms
 
   async function submit() {
-    await g.save({ smtp, telegram, whatsapp }, t('settings.saved'), t('common.error.body'))
+    await g.save(
+      { smtp, telegram, whatsapp, sms: { ...sms, method: sms.method || 'POST' } },
+      t('settings.saved'),
+      t('common.error.body'),
+    )
   }
 
   return (
@@ -156,6 +167,48 @@ export function NotificationsSettings() {
           </FormField>
         </div>
         <TestSendRow channel="whatsapp" />
+      </section>
+
+      <section>
+        <h2 className="mb-3 text-sm font-semibold">{t('settings.notifications.sms')}</h2>
+        <p className="mb-3 text-xs text-ink-muted">{t('settings.notifications.smsHint')}</p>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <FormField label={t('settings.notifications.smsUrl')}>
+            {(id) => (
+              <TextInput
+                id={id}
+                dir="ltr"
+                disabled={!canEdit}
+                value={sms.url ?? ''}
+                onChange={(e) => g.setField('sms', { ...sms, url: e.target.value })}
+              />
+            )}
+          </FormField>
+          <FormField label={t('settings.notifications.smsMethod')}>
+            {(id) => (
+              <TextInput
+                id={id}
+                dir="ltr"
+                disabled={!canEdit}
+                value={sms.method ?? 'POST'}
+                onChange={(e) => g.setField('sms', { ...sms, method: e.target.value })}
+              />
+            )}
+          </FormField>
+          <FormField label={t('settings.notifications.smsApiKey')}>
+            {(id) => (
+              <TextInput
+                id={id}
+                type="password"
+                dir="ltr"
+                disabled={!canEdit}
+                value={sms.api_key ?? ''}
+                onChange={(e) => g.setField('sms', { ...sms, api_key: e.target.value })}
+              />
+            )}
+          </FormField>
+        </div>
+        <TestSendRow channel="sms" />
       </section>
 
       {canEdit ? (

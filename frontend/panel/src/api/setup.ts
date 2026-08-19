@@ -35,7 +35,7 @@ export function putSettingsGroup<T = Record<string, unknown>>(
   return request<T>(`/settings/${group}`, { method: 'PUT', body })
 }
 
-export type NotificationChannel = 'email' | 'telegram' | 'whatsapp'
+export type NotificationChannel = 'email' | 'telegram' | 'whatsapp' | 'sms'
 
 export function testNotification(
   channel: NotificationChannel,

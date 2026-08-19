@@ -37,6 +37,8 @@
     "health": "System health",
     "debug": "RADIUS debug",
     "coaOutbox": "CoA Outbox",
+    "notifications": "Notification Center",
+    "supportTickets": "Support tickets",
     "statements": "Statements",
     "invoices": "Invoices",
     "expenses": "Expenses",
@@ -50,6 +52,7 @@
       "billing": "Billing",
       "accounting": "Accounting",
       "network": "Network",
+      "support": "Support",
       "admin": "Administration"
     },
     "comingSoon": "Coming soon",
@@ -180,6 +183,7 @@
     "back": "Back",
     "continue": "Continue",
     "enabled": "Enabled",
+    "disabled": "Disabled",
     "select": "Choose…",
     "working": "Working…",
     "copy": "Copy",
@@ -1102,11 +1106,193 @@
   },
   "notifications": {
     "title": "Notifications",
-    "empty": "No notifications yet."
+    "empty": "No notifications yet.",
+    "tab": {
+      "overview": "Overview",
+      "channels": "Channels",
+      "messages": "Messages",
+      "rules": "Rules & timers",
+      "broadcast": "Broadcast",
+      "outbox": "Outbox"
+    },
+    "overview": {
+      "queued": "Queued",
+      "sending": "Sending",
+      "sentToday": "Sent today",
+      "failed": "Failed",
+      "skipped": "Skipped",
+      "total": "Total",
+      "channelState": "Channel state"
+    },
+    "channel": {
+      "inapp": "In-app",
+      "telegram": "Telegram",
+      "email": "Email",
+      "whatsapp": "WhatsApp",
+      "sms": "SMS",
+      "configured": "Configured",
+      "notConfigured": "Not configured"
+    },
+    "channels": {
+      "hint": "Channel credentials are edited in Settings.",
+      "settingsLink": "Open notification settings",
+      "col": {
+        "channel": "Channel",
+        "status": "Status"
+      }
+    },
+    "event": {
+      "renewal_reminder": "Renewal reminder",
+      "expiry_notice": "Expiry notice",
+      "quota_warning": "Quota warning",
+      "payment_receipt": "Payment receipt",
+      "plan_renewed": "Plan renewed",
+      "payment_ticket_state": "Payment ticket status changed",
+      "staff_alert": "Staff alert notifications",
+      "broadcast": "Broadcast"
+    },
+    "messages": {
+      "col": { "event": "Event" },
+      "editVersion": "Edit (v{version})",
+      "addTranslation": "Add translation",
+      "saved": "Template saved.",
+      "subject": "Subject",
+      "body": "Message body",
+      "placeholderHint": "Double-curly-brace placeholders such as name, days_left, amount or plan are filled in per message."
+    },
+    "rules": {
+      "col": {
+        "event": "Event",
+        "enabled": "Enabled",
+        "channels": "Channels",
+        "daysBefore": "Days before",
+        "ignoreOptOut": "Ignore opt-out"
+      },
+      "ignoreOptOutOn": "Ignores opt-out",
+      "optOutHonoured": "Opt-out honoured",
+      "saved": "Rule saved.",
+      "daysBeforeHint": "How many days before expiry this reminder fires; leave blank for events with no timing.",
+      "ignoreOptOut": "Ignore subscriber opt-out",
+      "ignoreOptOutDescription": "Delivers even to a subscriber who opted out — reserve this for genuinely transactional messages (receipts, status changes), never marketing.",
+      "batchSize": "Batch size",
+      "tickInterval": "Tick interval (seconds)"
+    },
+    "broadcast": {
+      "hint": "Sends through the same throttled queue as every other message — never a side channel.",
+      "subscriberIds": "Subscriber IDs",
+      "subscriberIdsHint": "One per line, or comma-separated.",
+      "channel": "Channel",
+      "subject": "Subject (email only)",
+      "body": "Message",
+      "send": "Send broadcast",
+      "done": "{count} message(s) queued."
+    },
+    "outbox": {
+      "filter": {
+        "state": "State",
+        "channel": "Channel"
+      },
+      "state": {
+        "queued": "Queued",
+        "sending": "Sending",
+        "sent": "Sent",
+        "failed": "Failed",
+        "skipped": "Skipped"
+      },
+      "col": {
+        "event": "Event",
+        "channel": "Channel",
+        "address": "Address",
+        "state": "State",
+        "reason": "Reason",
+        "created": "Created"
+      },
+      "inspect": "Inspect",
+      "retry": "Retry",
+      "cancel": "Cancel",
+      "retried": "Row re-queued.",
+      "cancelled": "Row cancelled.",
+      "empty": {
+        "title": "No messages yet",
+        "body": "Queued, sent and failed messages will appear here."
+      },
+      "attempts": "Attempts",
+      "templateVersion": "Template version"
+    }
   },
   "balance": {
     "mine": "Balance",
     "low": "Low"
+  },
+  "support": {
+    "title": "Support tickets",
+    "new": "New ticket",
+    "filter": {
+      "status": "Status",
+      "priority": "Priority",
+      "scope": "Scope",
+      "search": "Search",
+      "all": "All"
+    },
+    "status": {
+      "open": "Open",
+      "in_progress": "In progress",
+      "resolved": "Resolved",
+      "closed": "Closed",
+      "withdrawn": "Withdrawn"
+    },
+    "priority": {
+      "normal": "Normal",
+      "moderate": "Moderate",
+      "critical": "Critical"
+    },
+    "scope": {
+      "mine": "My subscribers",
+      "all": "All subscribers"
+    },
+    "empty": {
+      "title": "No tickets match",
+      "body": "Support tickets will appear here once opened."
+    },
+    "col": {
+      "number": "Number",
+      "subscriber": "Subscriber",
+      "subject": "Subject",
+      "priority": "Priority",
+      "status": "Status",
+      "updated": "Updated"
+    },
+    "createDone": "Ticket created.",
+    "form": {
+      "subscriberId": "Subscriber ID",
+      "subscriberIdHint": "The subscriber's account ID (see their profile page).",
+      "subject": "Subject",
+      "priority": "Priority",
+      "body": "Description",
+      "reply": "Reply"
+    },
+    "create": "Create ticket",
+    "detailTitle": "Ticket",
+    "thread": "Conversation",
+    "noMessages": "No messages yet.",
+    "author": {
+      "manager": "Staff",
+      "subscriber": "Subscriber",
+      "system": "System",
+      "bot": "Telegram bot"
+    },
+    "internalNoteBadge": "internal note",
+    "internalNote": "Internal note",
+    "internalNoteHint": "Visible to staff only — never sent to the subscriber.",
+    "addNote": "Add note",
+    "sendReply": "Send reply",
+    "withdraw": "Withdraw",
+    "moveTo": {
+      "open": "Reopen",
+      "in_progress": "Mark in progress",
+      "resolved": "Mark resolved",
+      "closed": "Close"
+    }
   },
   "ledger": {
     "title": "Ledger",
@@ -1976,7 +2162,12 @@
       "sendTest": "Send test",
       "testRecipient": "Recipient (email, chat ID or number)",
       "testOk": "Test message sent successfully.",
-      "testFailed": "Sending the test message failed."
+      "testFailed": "Sending the test message failed.",
+      "sms": "SMS",
+      "smsHint": "A generic HTTP gateway — configure the URL, method and one named provider's API key.",
+      "smsUrl": "Gateway URL",
+      "smsMethod": "HTTP method",
+      "smsApiKey": "API key"
     },
     "billing": {
       "renewalAnchor": "Renewal anchor",

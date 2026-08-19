@@ -37,6 +37,8 @@
     "health": "صحة النظام",
     "debug": "تصحيح RADIUS",
     "coaOutbox": "صندوق CoA الصادر",
+    "notifications": "مركز الإشعارات",
+    "supportTickets": "تذاكر الدعم",
     "statements": "القوائم المالية",
     "invoices": "الفواتير",
     "expenses": "المصروفات",
@@ -50,6 +52,7 @@
       "billing": "الفوترة",
       "accounting": "المحاسبة",
       "network": "الشبكة",
+      "support": "الدعم",
       "admin": "الإدارة"
     },
     "comingSoon": "قريبًا",
@@ -180,6 +183,7 @@
     "back": "رجوع",
     "continue": "متابعة",
     "enabled": "مفعّل",
+    "disabled": "معطّل",
     "select": "اختر…",
     "working": "جارٍ التنفيذ…",
     "copy": "نسخ",
@@ -1102,7 +1106,189 @@
   },
   "notifications": {
     "title": "الإشعارات",
-    "empty": "لا إشعارات بعد."
+    "empty": "لا إشعارات بعد.",
+    "tab": {
+      "overview": "نظرة عامة",
+      "channels": "القنوات",
+      "messages": "الرسائل",
+      "rules": "القواعد والتوقيت",
+      "broadcast": "بث جماعي",
+      "outbox": "صندوق الصادر"
+    },
+    "overview": {
+      "queued": "في الانتظار",
+      "sending": "قيد الإرسال",
+      "sentToday": "أُرسل اليوم",
+      "failed": "فشل",
+      "skipped": "تم التجاوز",
+      "total": "الإجمالي",
+      "channelState": "حالة القنوات"
+    },
+    "channel": {
+      "inapp": "داخل التطبيق",
+      "telegram": "تيليجرام",
+      "email": "البريد الإلكتروني",
+      "whatsapp": "واتساب",
+      "sms": "رسالة نصية",
+      "configured": "مُعدّة",
+      "notConfigured": "غير مُعدّة"
+    },
+    "channels": {
+      "hint": "تُحرَّر بيانات اعتماد القنوات من الإعدادات.",
+      "settingsLink": "فتح إعدادات الإشعارات",
+      "col": {
+        "channel": "القناة",
+        "status": "الحالة"
+      }
+    },
+    "event": {
+      "renewal_reminder": "تذكير بالتجديد",
+      "expiry_notice": "إشعار انتهاء الصلاحية",
+      "quota_warning": "تنبيه استهلاك الباقة",
+      "payment_receipt": "إيصال الدفع",
+      "plan_renewed": "تم تجديد الباقة",
+      "payment_ticket_state": "تغيّرت حالة طلب الدفع",
+      "staff_alert": "تنبيهات الموظفين",
+      "broadcast": "بث جماعي"
+    },
+    "messages": {
+      "col": { "event": "الحدث" },
+      "editVersion": "تعديل (إصدار {version})",
+      "addTranslation": "إضافة ترجمة",
+      "saved": "تم حفظ القالب.",
+      "subject": "الموضوع",
+      "body": "نص الرسالة",
+      "placeholderHint": "المتغيرات بين أقواس مزدوجة مثل الاسم أو الأيام المتبقية أو المبلغ أو الباقة تُملأ تلقائياً لكل رسالة."
+    },
+    "rules": {
+      "col": {
+        "event": "الحدث",
+        "enabled": "مفعّلة",
+        "channels": "القنوات",
+        "daysBefore": "عدد الأيام قبل",
+        "ignoreOptOut": "تجاهل إلغاء الاشتراك"
+      },
+      "ignoreOptOutOn": "يتجاهل إلغاء الاشتراك",
+      "optOutHonoured": "يُحترم إلغاء الاشتراك",
+      "saved": "تم حفظ القاعدة.",
+      "daysBeforeHint": "عدد الأيام قبل انتهاء الصلاحية التي يُرسَل عندها هذا التذكير؛ اتركه فارغاً للأحداث التي لا توقيت لها.",
+      "ignoreOptOut": "تجاهل إلغاء اشتراك المشترك",
+      "ignoreOptOutDescription": "يُرسِل حتى لمشترك ألغى اشتراكه — اقتصر استخدامه على الرسائل المعاملاتية الحقيقية (الإيصالات، تغييرات الحالة)، وليس التسويق أبداً.",
+      "batchSize": "حجم الدفعة",
+      "tickInterval": "الفاصل الزمني (ثوانٍ)"
+    },
+    "broadcast": {
+      "hint": "يمر عبر نفس الطابور المُنظَّم كأي رسالة أخرى — لا قناة جانبية أبداً.",
+      "subscriberIds": "معرّفات المشتركين",
+      "subscriberIdsHint": "واحد في كل سطر، أو مفصولة بفواصل.",
+      "channel": "القناة",
+      "subject": "الموضوع (للبريد فقط)",
+      "body": "الرسالة",
+      "send": "إرسال البث",
+      "done": "تم وضع {count} رسالة في الطابور."
+    },
+    "outbox": {
+      "filter": {
+        "state": "الحالة",
+        "channel": "القناة"
+      },
+      "state": {
+        "queued": "في الانتظار",
+        "sending": "قيد الإرسال",
+        "sent": "أُرسلت",
+        "failed": "فشلت",
+        "skipped": "تم التجاوز"
+      },
+      "col": {
+        "event": "الحدث",
+        "channel": "القناة",
+        "address": "العنوان",
+        "state": "الحالة",
+        "reason": "السبب",
+        "created": "تاريخ الإنشاء"
+      },
+      "inspect": "فحص",
+      "retry": "إعادة المحاولة",
+      "cancel": "إلغاء",
+      "retried": "أُعيد الصف إلى الطابور.",
+      "cancelled": "تم إلغاء الصف.",
+      "empty": {
+        "title": "لا توجد رسائل بعد",
+        "body": "ستظهر هنا الرسائل قيد الانتظار والمُرسَلة والفاشلة."
+      },
+      "attempts": "المحاولات",
+      "templateVersion": "إصدار القالب"
+    }
+  },
+  "support": {
+    "title": "تذاكر الدعم",
+    "new": "تذكرة جديدة",
+    "filter": {
+      "status": "الحالة",
+      "priority": "الأولوية",
+      "scope": "النطاق",
+      "search": "بحث",
+      "all": "الكل"
+    },
+    "status": {
+      "open": "مفتوحة",
+      "in_progress": "قيد المعالجة",
+      "resolved": "تم الحل",
+      "closed": "مغلقة",
+      "withdrawn": "مسحوبة"
+    },
+    "priority": {
+      "normal": "عادية",
+      "moderate": "متوسطة",
+      "critical": "حرجة"
+    },
+    "scope": {
+      "mine": "مشتركيّ",
+      "all": "كل المشتركين"
+    },
+    "empty": {
+      "title": "لا توجد تذاكر مطابقة",
+      "body": "ستظهر تذاكر الدعم هنا بعد فتحها."
+    },
+    "col": {
+      "number": "الرقم",
+      "subscriber": "المشترك",
+      "subject": "الموضوع",
+      "priority": "الأولوية",
+      "status": "الحالة",
+      "updated": "آخر تحديث"
+    },
+    "createDone": "تم إنشاء التذكرة.",
+    "form": {
+      "subscriberId": "معرّف المشترك",
+      "subscriberIdHint": "معرّف حساب المشترك (راجع صفحة ملفه الشخصي).",
+      "subject": "الموضوع",
+      "priority": "الأولوية",
+      "body": "الوصف",
+      "reply": "الرد"
+    },
+    "create": "إنشاء تذكرة",
+    "detailTitle": "التذكرة",
+    "thread": "المحادثة",
+    "noMessages": "لا توجد رسائل بعد.",
+    "author": {
+      "manager": "الموظف",
+      "subscriber": "المشترك",
+      "system": "النظام",
+      "bot": "بوت تيليجرام"
+    },
+    "internalNoteBadge": "ملاحظة داخلية",
+    "internalNote": "ملاحظة داخلية",
+    "internalNoteHint": "مرئية للموظفين فقط — لا تُرسَل للمشترك أبداً.",
+    "addNote": "إضافة ملاحظة",
+    "sendReply": "إرسال الرد",
+    "withdraw": "سحب التذكرة",
+    "moveTo": {
+      "open": "إعادة الفتح",
+      "in_progress": "وضعها قيد المعالجة",
+      "resolved": "وضعها كمحلولة",
+      "closed": "إغلاق"
+    }
   },
   "balance": {
     "mine": "الرصيد",
@@ -1976,7 +2162,12 @@
       "sendTest": "إرسال اختبار",
       "testRecipient": "المستلم (بريد أو معرّف محادثة أو رقم)",
       "testOk": "تم إرسال رسالة الاختبار بنجاح.",
-      "testFailed": "فشل إرسال رسالة الاختبار."
+      "testFailed": "فشل إرسال رسالة الاختبار.",
+      "sms": "الرسائل النصية",
+      "smsHint": "بوابة HTTP عامة — حدد الرابط والطريقة ومفتاح API لمزود معتمد.",
+      "smsUrl": "رابط البوابة",
+      "smsMethod": "طريقة HTTP",
+      "smsApiKey": "مفتاح API"
     },
     "billing": {
       "renewalAnchor": "مرجع التجديد",

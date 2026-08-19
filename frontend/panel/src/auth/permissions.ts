@@ -75,6 +75,12 @@ export const PERM_EXPENSES_VIEW = 'expenses.view'
 export const PERM_EXPENSES_CREATE = 'expenses.create'
 export const PERM_EXPENSES_MANAGE = 'expenses.manage'
 export const PERM_APPROVALS_MANAGE = 'approvals.manage'
+/** v4-10 (FR-160-163): the Notification Center — channels/templates/rules/broadcast/outbox. */
+export const PERM_NOTIFICATIONS_VIEW = 'notifications.view'
+export const PERM_NOTIFICATIONS_MANAGE = 'notifications.manage'
+/** v4-10 (FR-164): support tickets. */
+export const PERM_SUPPORT_VIEW = 'support.view'
+export const PERM_SUPPORT_MANAGE = 'support.manage'
 
 // Bare action permissions granted independently of module verbs (C2/C7).
 export const PERM_DISCONNECT = 'disconnect'

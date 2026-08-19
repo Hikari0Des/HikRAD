@@ -5,6 +5,7 @@ import { useT } from '@hikrad/shared'
 
 import { getCoAOutboxCounters } from '../api/coaOutbox'
 import { listTickets } from '../api/paymentTickets'
+import { getSupportTicketCounts } from '../api/support'
 import { useAuth } from '../auth/AuthContext'
 import { brandInitial, useBranding } from '../branding'
 import { usePersistentState } from '../hooks/usePersistentState'
@@ -22,12 +23,14 @@ import {
   PERM_MANAGERS_VIEW,
   PERM_MONITORING_VIEW,
   PERM_NAS_VIEW,
+  PERM_NOTIFICATIONS_VIEW,
   PERM_OVERHEADS_MANAGE,
   PERM_POOLS_VIEW,
   PERM_PROFILES_VIEW,
   PERM_REPORTS_VIEW,
   PERM_SETTINGS_VIEW,
   PERM_SUBSCRIBERS_VIEW,
+  PERM_SUPPORT_VIEW,
   PERM_TOPUP,
   PERM_VOUCHERS_VIEW,
 } from '../auth/permissions'
@@ -96,6 +99,13 @@ const NAV_GROUPS: readonly NavGroup[] = [
     ],
   },
   {
+    titleKey: 'nav.group.support',
+    items: [
+      { key: 'nav.notifications', to: '/notifications', perm: PERM_NOTIFICATIONS_VIEW },
+      { key: 'nav.supportTickets', to: '/support-tickets', perm: PERM_SUPPORT_VIEW },
+    ],
+  },
+  {
     titleKey: 'nav.group.admin',
     items: [
       { key: 'nav.managers', to: '/managers', perm: PERM_MANAGERS_VIEW },
@@ -159,11 +169,37 @@ function usePendingCoACount(enabled: boolean): number {
   return count
 }
 
+/** Polls the open support-ticket count for the nav badge (v4-10, FR-164). */
+function usePendingSupportCount(enabled: boolean): number {
+  const [count, setCount] = useState(0)
+  useEffect(() => {
+    if (!enabled) return
+    let cancelled = false
+    function load() {
+      getSupportTicketCounts({ scope: 'mine' })
+        .then((res) => {
+          if (!cancelled) setCount(res.open)
+        })
+        .catch(() => {
+          /* badge is best-effort */
+        })
+    }
+    load()
+    const id = setInterval(load, 30_000)
+    return () => {
+      cancelled = true
+      clearInterval(id)
+    }
+  }, [enabled])
+  return count
+}
+
 export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const t = useT()
   const { can } = useAuth()
   const pendingTickets = usePendingTicketCount(can(PERM_PAYMENT_TICKETS_VERIFY))
   const pendingCoA = usePendingCoACount(can(PERM_COA_OUTBOX_VIEW))
+  const pendingSupport = usePendingSupportCount(can(PERM_SUPPORT_VIEW))
   const branding = useBranding()
   const location = useLocation()
 
@@ -257,6 +293,11 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
                         {item.to === '/coa-outbox' && pendingCoA > 0 ? (
                           <span className="rounded-full bg-brand px-1.5 py-0.5 text-xs font-medium text-ink-inverse">
                             {pendingCoA}
+                          </span>
+                        ) : null}
+                        {item.to === '/support-tickets' && pendingSupport > 0 ? (
+                          <span className="rounded-full bg-danger px-1.5 py-0.5 text-xs font-medium text-ink-inverse">
+                            {pendingSupport}
                           </span>
                         ) : null}
                       </NavLink>

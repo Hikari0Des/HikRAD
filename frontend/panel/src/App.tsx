@@ -17,6 +17,7 @@ import {
   PERM_MONITORING_VIEW,
   PERM_NAS_EDIT,
   PERM_NAS_VIEW,
+  PERM_NOTIFICATIONS_VIEW,
   PERM_POOLS_VIEW,
   PERM_PROFILES_VIEW,
   PERM_PROFILES_CREATE,
@@ -25,6 +26,7 @@ import {
   PERM_OVERHEADS_MANAGE,
   PERM_SUBSCRIBERS_CREATE,
   PERM_SUBSCRIBERS_VIEW,
+  PERM_SUPPORT_VIEW,
   PERM_TOPUP,
   PERM_VOUCHERS_VIEW,
 } from './auth/permissions'
@@ -64,6 +66,7 @@ import { MyAccountPage } from './pages/MyAccountPage'
 import { MyPreferencesPage } from './pages/preferences/MyPreferencesPage'
 import { ProfilesPage } from './pages/profiles/ProfilesPage'
 import { DebugPage } from './pages/radius/DebugPage'
+import { NotificationCenterPage } from './pages/notifications/NotificationCenterPage'
 import { MarginReportPage } from './pages/reports/MarginReportPage'
 import { RevenueReportPage } from './pages/reports/RevenueReportPage'
 import { ReportsIndexPage } from './pages/reports/ReportsIndexPage'
@@ -75,6 +78,7 @@ import { AuditLogPage } from './pages/security/AuditLogPage'
 import { ManagersPage } from './pages/security/ManagersPage'
 import { RolesPage } from './pages/security/RolesPage'
 import { SettingsPage } from './pages/settings/SettingsPage'
+import { SupportTicketsPage } from './pages/support/SupportTicketsPage'
 import { UserDetailPage } from './pages/subscribers/UserDetailPage'
 import { UserListPage } from './pages/subscribers/UserListPage'
 import { SetupGate } from './setup/SetupGate'
@@ -163,6 +167,14 @@ export function App() {
           <Route path="invoices" element={guard(PERM_INVOICES_VIEW, <InvoicesPage />)} />
           <Route path="expenses" element={guard(PERM_EXPENSES_VIEW, <ExpensesPage />)} />
           <Route path="approvals" element={<ApprovalsQueuePage />} />
+          <Route
+            path="notifications"
+            element={guard(PERM_NOTIFICATIONS_VIEW, <NotificationCenterPage />)}
+          />
+          <Route
+            path="support-tickets"
+            element={guard(PERM_SUPPORT_VIEW, <SupportTicketsPage />)}
+          />
           <Route path="managers" element={guard(PERM_MANAGERS_VIEW, <ManagersPage />)} />
           <Route path="roles" element={guard(PERM_MANAGERS_VIEW, <RolesPage />)} />
           <Route path="audit-log" element={guard(PERM_AUDIT_VIEW, <AuditLogPage />)} />
