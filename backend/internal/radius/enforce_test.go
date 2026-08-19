@@ -2,14 +2,21 @@ package radius
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/hikrad/hikrad/internal/radius/vendor"
 )
 
-// fakeCoA records CoA calls and returns scripted outcomes.
+// fakeCoA records Enqueue calls (v4-8: the worker no longer dispatches, it
+// only enqueues) and categorizes them the same way the old direct-dispatch
+// harness did, so most existing assertions ("N disconnects", "a rate of X")
+// still read naturally even though a single combined pool+rate enqueue now
+// lands in both `pools` and `rates`.
 type fakeCoA struct {
 	mu          sync.Mutex
 	disconnects []SessionRef
@@ -21,44 +28,36 @@ type fakeCoA struct {
 		ref  SessionRef
 		pool string
 	}
-	// outcome funcs let a test script NAK/timeout per op; default ACK.
-	disconnectOut func(SessionRef) CoAResult
-	applyRateOut  func(SessionRef, string) CoAResult
-	movePoolOut   func(SessionRef, string) CoAResult
+	// enqueueErr, when set, makes every Enqueue call fail (simulates the DB
+	// being unreachable — the only way enqueueing itself can fail).
+	enqueueErr error
 }
 
-func (f *fakeCoA) Disconnect(_ context.Context, ref SessionRef) CoAResult {
+func (f *fakeCoA) Enqueue(_ context.Context, ref SessionRef, action CoAAction, attrs []vendor.Attr, _, _ string) (string, error) {
 	f.mu.Lock()
-	f.disconnects = append(f.disconnects, ref)
-	f.mu.Unlock()
-	if f.disconnectOut != nil {
-		return f.disconnectOut(ref)
+	defer f.mu.Unlock()
+	if f.enqueueErr != nil {
+		return "", f.enqueueErr
 	}
-	return CoAResult{Outcome: CoAACK}
-}
-func (f *fakeCoA) ApplyRate(_ context.Context, ref SessionRef, rate string) CoAResult {
-	f.mu.Lock()
-	f.rates = append(f.rates, struct {
-		ref  SessionRef
-		rate string
-	}{ref, rate})
-	f.mu.Unlock()
-	if f.applyRateOut != nil {
-		return f.applyRateOut(ref, rate)
+	if action == CoAActionDisconnect {
+		f.disconnects = append(f.disconnects, ref)
+		return "outbox-1", nil
 	}
-	return CoAResult{Outcome: CoAACK}
-}
-func (f *fakeCoA) MovePool(_ context.Context, ref SessionRef, pool string) CoAResult {
-	f.mu.Lock()
-	f.pools = append(f.pools, struct {
-		ref  SessionRef
-		pool string
-	}{ref, pool})
-	f.mu.Unlock()
-	if f.movePoolOut != nil {
-		return f.movePoolOut(ref, pool)
+	for _, a := range attrs {
+		switch a.Intent {
+		case vendor.IntentRateLimit:
+			f.rates = append(f.rates, struct {
+				ref  SessionRef
+				rate string
+			}{ref, a.Value})
+		case vendor.IntentAddressPool:
+			f.pools = append(f.pools, struct {
+				ref  SessionRef
+				pool string
+			}{ref, a.Value})
+		}
 	}
-	return CoAResult{Outcome: CoAACK}
+	return "outbox-1", nil
 }
 
 type testWorker struct {
@@ -69,7 +68,6 @@ type testWorker struct {
 	found     bool
 	claimed   map[string]bool // dedup keys already claimed
 	records   []enforceRecord
-	failures  int
 	claimErr  error
 	listErr   error
 	behaveErr error
@@ -88,9 +86,7 @@ func newTestWorker(t *testing.T) *testWorker {
 		behavior: func(_ context.Context, _ string) (behaviorView, bool, error) {
 			return tw.behavior, tw.found, tw.behaveErr
 		},
-		disconnect: tw.coa.Disconnect,
-		applyRate:  tw.coa.ApplyRate,
-		movePool:   tw.coa.MovePool,
+		enqueue: tw.coa.Enqueue,
 		claim: func(_ context.Context, _ enforceKind, _, key string) (bool, error) {
 			if tw.claimErr != nil {
 				return false, tw.claimErr
@@ -101,11 +97,8 @@ func newTestWorker(t *testing.T) *testWorker {
 			tw.claimed[key] = true
 			return true, nil
 		},
-		record:      func(_ context.Context, rec enforceRecord) { tw.records = append(tw.records, rec) },
-		incFailures: func(_ context.Context, n int) { tw.failures += n },
-		sleep:       func(time.Duration) {},
-		now:         time.Now,
-		maxAttempts: 3,
+		record: func(_ context.Context, rec enforceRecord) { tw.records = append(tw.records, rec) },
+		now:    time.Now,
 	}
 	return tw
 }
@@ -120,41 +113,59 @@ func sessions(n int) []SessionRef {
 
 func TestPlanSteps_Matrix(t *testing.T) {
 	cases := []struct {
-		name     string
-		kind     enforceKind
-		b        behaviorView
-		wantOps  []string
-		wantFall bool // first step fallback
-		label    string
+		name       string
+		kind       enforceKind
+		b          behaviorView
+		wantAction CoAAction
+		wantIntent string // "" = no attrs expected (disconnect)
+		wantValue  string
+		label      string
 	}{
-		{"quota block", kindQuota, behaviorView{QuotaBehavior: "block"}, []string{"disconnect"}, false, "block"},
-		{"quota throttle", kindQuota, behaviorView{QuotaBehavior: "throttle", ThrottleRate: "2M/2M"}, []string{"apply_rate"}, true, "throttle"},
-		{"quota throttle no rate", kindQuota, behaviorView{QuotaBehavior: "throttle"}, []string{"disconnect"}, false, "throttle"},
-		{"quota expired_pool", kindQuota, behaviorView{QuotaBehavior: "expired_pool", ExpiredPoolName: "walled"}, []string{"move_pool"}, true, "expired_pool"},
-		{"quota expired_pool no pool", kindQuota, behaviorView{QuotaBehavior: "expired_pool"}, []string{"disconnect"}, false, "expired_pool"},
-		{"quota unknown", kindQuota, behaviorView{QuotaBehavior: "weird"}, nil, false, "weird"},
-		{"expiry block", kindExpired, behaviorView{ExpiryBehavior: "block"}, []string{"disconnect"}, false, "block"},
-		{"expiry expired_pool", kindExpired, behaviorView{ExpiryBehavior: "expired_pool", ExpiredPoolName: "walled"}, []string{"move_pool", "apply_rate"}, true, "expired_pool"},
-		{"expiry expired_pool no pool", kindExpired, behaviorView{ExpiryBehavior: "expired_pool"}, []string{"disconnect"}, false, "block"},
+		{"quota block", kindQuota, behaviorView{QuotaBehavior: "block"}, CoAActionDisconnect, "", "", "block"},
+		{"quota throttle", kindQuota, behaviorView{QuotaBehavior: "throttle", ThrottleRate: "2M/2M"}, CoAActionUpdate, vendor.IntentRateLimit, "2M/2M", "throttle"},
+		{"quota throttle no rate", kindQuota, behaviorView{QuotaBehavior: "throttle"}, CoAActionDisconnect, "", "", "throttle"},
+		{"quota expired_pool", kindQuota, behaviorView{QuotaBehavior: "expired_pool", ExpiredPoolName: "walled"}, CoAActionUpdate, vendor.IntentAddressPool, "walled", "expired_pool"},
+		{"quota expired_pool no pool", kindQuota, behaviorView{QuotaBehavior: "expired_pool"}, CoAActionDisconnect, "", "", "expired_pool"},
+		{"quota unknown", kindQuota, behaviorView{QuotaBehavior: "weird"}, "", "", "", "weird"},
+		{"expiry block", kindExpired, behaviorView{ExpiryBehavior: "block"}, CoAActionDisconnect, "", "", "block"},
+		{"expiry expired_pool", kindExpired, behaviorView{ExpiryBehavior: "expired_pool", ExpiredPoolName: "walled"}, CoAActionUpdate, vendor.IntentAddressPool, "walled", "expired_pool"},
+		{"expiry expired_pool no pool", kindExpired, behaviorView{ExpiryBehavior: "expired_pool"}, CoAActionDisconnect, "", "", "block"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			steps, label := planSteps(c.kind, c.b)
+			action, attrs, label := planSteps(c.kind, c.b)
 			if label != c.label {
 				t.Errorf("label = %q, want %q", label, c.label)
 			}
-			if len(steps) != len(c.wantOps) {
-				t.Fatalf("got %d steps %+v, want ops %v", len(steps), steps, c.wantOps)
+			if action != c.wantAction {
+				t.Fatalf("action = %q, want %q", action, c.wantAction)
 			}
-			for i, op := range c.wantOps {
-				if steps[i].op != op {
-					t.Errorf("step %d op = %q, want %q", i, steps[i].op, op)
+			if c.wantIntent == "" {
+				return
+			}
+			found := false
+			for _, a := range attrs {
+				if a.Intent == c.wantIntent && a.Value == c.wantValue {
+					found = true
 				}
 			}
-			if len(steps) > 0 && steps[0].fallback != c.wantFall {
-				t.Errorf("step0 fallback = %v, want %v", steps[0].fallback, c.wantFall)
+			if !found {
+				t.Errorf("attrs %+v missing {%s: %s}", attrs, c.wantIntent, c.wantValue)
 			}
 		})
+	}
+}
+
+// TestPlanSteps_ExpiredPoolCombinesPoolAndRate proves v4-8's collapse of the
+// old sequential move_pool→apply_rate steps into ONE combined attribute set
+// (the dispatcher's hybrid fallback then treats the whole thing atomically).
+func TestPlanSteps_ExpiredPoolCombinesPoolAndRate(t *testing.T) {
+	action, attrs, label := planSteps(kindExpired, behaviorView{ExpiryBehavior: "expired_pool", ExpiredPoolName: "walled", ThrottleRate: "512k/512k"})
+	if action != CoAActionUpdate || label != "expired_pool" {
+		t.Fatalf("action=%q label=%q, want update/expired_pool", action, label)
+	}
+	if len(attrs) != 2 {
+		t.Fatalf("expected 2 combined attrs, got %+v", attrs)
 	}
 }
 
@@ -165,7 +176,7 @@ func TestWorker_MultiSessionEnforced(t *testing.T) {
 	tw.handle(context.Background(), kindQuota, "sub1")
 
 	if len(tw.coa.rates) != 3 {
-		t.Fatalf("expected 3 ApplyRate calls, got %d", len(tw.coa.rates))
+		t.Fatalf("expected 3 enqueued apply_rate calls, got %d", len(tw.coa.rates))
 	}
 	for _, r := range tw.coa.rates {
 		if r.rate != "1M/1M" {
@@ -173,8 +184,8 @@ func TestWorker_MultiSessionEnforced(t *testing.T) {
 		}
 	}
 	rec := tw.records[len(tw.records)-1]
-	if rec.Outcome != "applied" || rec.Applied != 3 || rec.Failures != 0 {
-		t.Errorf("record = %+v, want applied 3/0", rec)
+	if rec.Outcome != "enqueued" || rec.Applied != 3 || rec.Failures != 0 {
+		t.Errorf("record = %+v, want enqueued 3/0", rec)
 	}
 }
 
@@ -190,76 +201,38 @@ func TestWorker_Idempotent(t *testing.T) {
 	}
 }
 
-func TestWorker_ThrottleNAKFallsBackToDisconnect(t *testing.T) {
+// TestWorker_EnqueueFailure_CountsFailure: the ONLY way this worker's own
+// enqueue can fail is the DB being unreachable — a NAK/timeout is entirely
+// coa_dispatcher.go's concern now (see TestDecideNack_* there).
+func TestWorker_EnqueueFailure_CountsFailure(t *testing.T) {
 	tw := newTestWorker(t)
 	tw.sessions = sessions(1)
 	tw.behavior = behaviorView{QuotaBehavior: "throttle", ThrottleRate: "1M/1M"}
-	tw.coa.applyRateOut = func(SessionRef, string) CoAResult { return CoAResult{Outcome: CoANAK} }
-	tw.handle(context.Background(), kindQuota, "sub1")
-
-	if len(tw.coa.rates) != 1 {
-		t.Fatalf("expected 1 ApplyRate attempt, got %d", len(tw.coa.rates))
-	}
-	if len(tw.coa.disconnects) != 1 {
-		t.Fatalf("expected fallback Disconnect, got %d", len(tw.coa.disconnects))
-	}
-	rec := tw.records[len(tw.records)-1]
-	if rec.Applied != 1 || rec.Failures != 0 {
-		t.Errorf("record = %+v, want applied 1/0 (fallback ACKed)", rec)
-	}
-	if rec.Detail[0].Path != "apply_rate→disconnect" {
-		t.Errorf("path = %q, want apply_rate→disconnect", rec.Detail[0].Path)
-	}
-}
-
-func TestWorker_ThrottleNAKAndFallbackFail_CountsFailure(t *testing.T) {
-	tw := newTestWorker(t)
-	tw.sessions = sessions(1)
-	tw.behavior = behaviorView{QuotaBehavior: "throttle", ThrottleRate: "1M/1M"}
-	tw.coa.applyRateOut = func(SessionRef, string) CoAResult { return CoAResult{Outcome: CoANAK} }
-	tw.coa.disconnectOut = func(SessionRef) CoAResult { return CoAResult{Outcome: CoATimeout} }
+	tw.coa.enqueueErr = errors.New("db unreachable")
 	tw.handle(context.Background(), kindQuota, "sub1")
 
 	rec := tw.records[len(tw.records)-1]
-	if rec.Failures != 1 || rec.Outcome != "failed" {
-		t.Errorf("record = %+v, want 1 failure/failed", rec)
-	}
-	if tw.failures != 1 {
-		t.Errorf("enforcement_failures inc = %d, want 1", tw.failures)
-	}
-	// Retried maxAttempts times: 3 apply + 3 disconnect fallback.
-	if len(tw.coa.rates) != 3 {
-		t.Errorf("expected 3 retried ApplyRate, got %d", len(tw.coa.rates))
+	if rec.Failures != 1 || rec.Outcome != "enqueue_failed" {
+		t.Errorf("record = %+v, want 1 failure/enqueue_failed", rec)
 	}
 }
 
-func TestWorker_ExpiryExpiredPool_MovePoolThenRate(t *testing.T) {
+func TestWorker_ExpiryExpiredPool_CombinedMovePoolAndRate(t *testing.T) {
 	tw := newTestWorker(t)
 	tw.sessions = sessions(1)
 	tw.behavior = behaviorView{ExpiryBehavior: "expired_pool", ExpiredPoolName: "walled", ThrottleRate: "512k/512k"}
 	tw.handle(context.Background(), kindExpired, "sub1")
 
 	if len(tw.coa.pools) != 1 || tw.coa.pools[0].pool != "walled" {
-		t.Fatalf("expected MovePool(walled), got %+v", tw.coa.pools)
+		t.Fatalf("expected enqueued move to walled, got %+v", tw.coa.pools)
 	}
 	if len(tw.coa.rates) != 1 || tw.coa.rates[0].rate != "512k/512k" {
-		t.Fatalf("expected ApplyRate(512k/512k) after move, got %+v", tw.coa.rates)
+		t.Fatalf("expected enqueued rate 512k/512k alongside it, got %+v", tw.coa.rates)
 	}
-}
-
-func TestWorker_ExpiryExpiredPool_MoveNAKFallsBack(t *testing.T) {
-	tw := newTestWorker(t)
-	tw.sessions = sessions(1)
-	tw.behavior = behaviorView{ExpiryBehavior: "expired_pool", ExpiredPoolName: "walled"}
-	tw.coa.movePoolOut = func(SessionRef, string) CoAResult { return CoAResult{Outcome: CoANAK} }
-	tw.handle(context.Background(), kindExpired, "sub1")
-
-	if len(tw.coa.disconnects) != 1 {
-		t.Fatalf("expected fallback disconnect, got %d", len(tw.coa.disconnects))
-	}
-	// After a fallback-disconnect the rate step must NOT run (session gone).
-	if len(tw.coa.rates) != 0 {
-		t.Errorf("expected no ApplyRate after fallback disconnect, got %d", len(tw.coa.rates))
+	// Same session, same row (v4-8 combines pool+rate into one enqueue) — not
+	// two independently-retried operations.
+	if tw.coa.pools[0].ref.AcctSessionID != tw.coa.rates[0].ref.AcctSessionID {
+		t.Fatalf("pool and rate enqueues target different sessions: %+v / %+v", tw.coa.pools[0], tw.coa.rates[0])
 	}
 }
 

@@ -14,7 +14,12 @@ async function touchingBalance<T>(p: Promise<T>): Promise<T> {
   return res
 }
 
-export type CoAResult = 'restored' | 'disconnect_fallback' | 'failed' | 'not_online'
+/**
+ * v4-8: CoA restore is enqueue-only — `enqueued` replaces the old synchronous
+ * `restored`/`disconnect_fallback` split (the actual ack/nak/hybrid-fallback
+ * outcome resolves asynchronously and shows up on the CoA Outbox screen).
+ */
+export type CoAResult = 'enqueued' | 'failed' | 'not_online'
 
 export interface RenewResult {
   ledger_tx_id: string

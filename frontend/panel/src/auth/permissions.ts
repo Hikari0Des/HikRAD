@@ -54,6 +54,9 @@ export const PERM_NAS_REBOOT = 'nas.reboot'
 export const PERM_NAS_UPDATE = 'nas.update'
 /** v2 phase 7 (FR-87.1): one-click panel update, admin-only by default. */
 export const PERM_SYSTEM_UPDATE = 'system.update'
+/** v4-8 (FR-152): the CoA Outbox screen. view = see the queue/inspect; manage = retry/cancel. */
+export const PERM_COA_OUTBOX_VIEW = 'coa_outbox.view'
+export const PERM_COA_OUTBOX_MANAGE = 'coa_outbox.manage'
 
 // Bare action permissions granted independently of module verbs (C2/C7).
 export const PERM_DISCONNECT = 'disconnect'

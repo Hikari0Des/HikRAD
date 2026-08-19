@@ -37,7 +37,7 @@ func (Module) Register(r chi.Router, d httpapi.Deps) {
 	m := &module{db: d.DB, rdb: d.Redis, log: d.Log, settings: d.Settings, dialROS: vendor.DialROS}
 	m.nas = newNASRegistry(d.DB, d.Log)
 	m.eng = newEngine(d.Redis, d.Log, m.nas, d.DB)
-	m.coa = newCoAService(d.DB, d.Redis, d.Log)
+	m.coa = newCoAService(d.DB, d.Redis, d.Log, d.Settings)
 	setDefaultEngine(m.eng)
 	setDefaultCoA(m.coa)
 	pkgDB = d.DB
@@ -68,6 +68,12 @@ func (Module) Register(r chi.Router, d httpapi.Deps) {
 	// for unconfirmed firewall changes past their revert deadline and
 	// restores the pre-change values — see firewall_api.go.
 	go m.startFirewallRevertWorker(context.Background())
+
+	// CoA dispatcher (v4-8/FR-150-151): the ONLY sender of any CoA/Disconnect
+	// packet. Everything above that used to CoA inline (enforcement/limits
+	// workers, renewals, the panel disconnect button) now enqueues a
+	// coa_outbox row instead; this worker drains it. See coa_dispatcher.go.
+	go m.startCoADispatcher(context.Background())
 
 	// Internal-only authorize route (C4): served on :8080, never proxied by
 	// nginx.
@@ -206,6 +212,16 @@ func (Module) Register(r chi.Router, d httpapi.Deps) {
 	r.With(auth.Require("pools.edit")).Post("/api/v1/nas/{id}/pools/{poolId}/push/plan", m.poolPushPlanHandler)
 	r.With(auth.Require("pools.edit")).Post("/api/v1/nas/{id}/pools/{poolId}/push/apply", m.poolPushApplyHandler)
 	r.With(auth.Require("pools.edit")).Post("/api/v1/nas/{id}/pools/adopt", m.poolAdoptHandler)
+
+	// v4-8 / FR-152: the CoA Outbox operator surface. Its own permission
+	// pair (coa_outbox.view/manage) — this is an operations screen over
+	// every NAS's queued CoAs at once, not a per-router config screen, so it
+	// is deliberately not gated on nas.*.
+	r.With(auth.Require(PermCoAOutboxView)).Get("/api/v1/coa-outbox", m.listCoAOutboxHandler)
+	r.With(auth.Require(PermCoAOutboxView)).Get("/api/v1/coa-outbox/counters", m.countersCoAOutboxHandler)
+	r.With(auth.Require(PermCoAOutboxView)).Get("/api/v1/coa-outbox/{id}", m.getCoAOutboxHandler)
+	r.With(auth.Require(PermCoAOutboxManage)).Post("/api/v1/coa-outbox/{id}/retry", m.retryCoAOutboxHandler)
+	r.With(auth.Require(PermCoAOutboxManage)).Post("/api/v1/coa-outbox/{id}/cancel", m.cancelCoAOutboxHandler)
 }
 
 func init() { httpapi.Add(Module{}) }

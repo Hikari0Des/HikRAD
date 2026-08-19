@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/hikrad/hikrad/internal/live/livestate"
+	"github.com/hikrad/hikrad/internal/radius/vendor"
 )
 
 // newLimitsTestEnv wires a fakeProvider-backed engine (mirrors
@@ -81,8 +82,8 @@ func TestLimitsWorker_UptimeThrottleAppliesRate(t *testing.T) {
 	if len(env.tw.coa.rates) != 1 || env.tw.coa.rates[0].rate != "1M/1M" {
 		t.Fatalf("expected one apply_rate 1M/1M, got %+v", env.tw.coa.rates)
 	}
-	if len(env.tw.records) != 1 || env.tw.records[0].Outcome != "applied" {
-		t.Fatalf("expected one applied record, got %+v", env.tw.records)
+	if len(env.tw.records) != 1 || env.tw.records[0].Outcome != "enqueued" {
+		t.Fatalf("expected one enqueued record, got %+v", env.tw.records)
 	}
 }
 
@@ -302,36 +303,46 @@ func TestLimitsWorker_DailyResetSweep_NotYetDueSkipped(t *testing.T) {
 	}
 }
 
-// --- pure function: planStepsForOutcome ------------------------------------
+// --- pure function: planForOutcome ------------------------------------
 
-func TestPlanStepsForOutcome_Matrix(t *testing.T) {
+func TestPlanForOutcome_Matrix(t *testing.T) {
 	view := AuthView{RateLimit: "10M/10M", ThrottleRate: "5M/5M", ExpiredPoolName: "global-expired"}
 	cases := []struct {
-		name    string
-		oc      policyOutcome
-		wantOps []string
-		wantLbl string
+		name        string
+		oc          policyOutcome
+		wantAction  CoAAction
+		wantIntents []string // vendor intents expected in attrs, any order
+		wantLbl     string
 	}{
-		{"reject", policyOutcome{Reject: true}, []string{"disconnect"}, "block"},
-		{"throttle_own_rate", policyOutcome{Mode: modeThrottled, Rate: "1M/1M"}, []string{"apply_rate"}, "throttle"},
-		{"throttle_falls_back_to_base", policyOutcome{Mode: modeThrottled}, []string{"apply_rate"}, "throttle"},
-		{"expired_pool_own_target", policyOutcome{Mode: modeExpiredPool, Pool: "own-pool", Rate: "2M/2M"}, []string{"move_pool", "apply_rate"}, "expired_pool"},
-		{"expired_pool_falls_back", policyOutcome{Mode: modeExpiredPool}, []string{"move_pool", "apply_rate"}, "expired_pool"},
-		{"switch_plan_with_pool", policyOutcome{Mode: modeSwitchPlan, Rate: "3M/3M", Pool: "target-pool"}, []string{"move_pool", "apply_rate"}, "switch_plan"},
-		{"switch_plan_no_pool", policyOutcome{Mode: modeSwitchPlan, Rate: "3M/3M"}, []string{"apply_rate"}, "switch_plan"},
+		{"reject", policyOutcome{Reject: true}, CoAActionDisconnect, nil, "block"},
+		{"throttle_own_rate", policyOutcome{Mode: modeThrottled, Rate: "1M/1M"}, CoAActionUpdate, []string{vendor.IntentRateLimit}, "throttle"},
+		{"throttle_falls_back_to_base", policyOutcome{Mode: modeThrottled}, CoAActionUpdate, []string{vendor.IntentRateLimit}, "throttle"},
+		{"expired_pool_own_target", policyOutcome{Mode: modeExpiredPool, Pool: "own-pool", Rate: "2M/2M"}, CoAActionUpdate, []string{vendor.IntentAddressPool, vendor.IntentRateLimit}, "expired_pool"},
+		{"expired_pool_falls_back", policyOutcome{Mode: modeExpiredPool}, CoAActionUpdate, []string{vendor.IntentAddressPool, vendor.IntentRateLimit}, "expired_pool"},
+		{"switch_plan_with_pool", policyOutcome{Mode: modeSwitchPlan, Rate: "3M/3M", Pool: "target-pool"}, CoAActionUpdate, []string{vendor.IntentAddressPool, vendor.IntentRateLimit}, "switch_plan"},
+		{"switch_plan_no_pool", policyOutcome{Mode: modeSwitchPlan, Rate: "3M/3M"}, CoAActionUpdate, []string{vendor.IntentRateLimit}, "switch_plan"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			steps, label := planStepsForOutcome(view, c.oc)
+			action, attrs, label := planForOutcome(view, c.oc)
 			if label != c.wantLbl {
 				t.Errorf("label = %q, want %q", label, c.wantLbl)
 			}
-			if len(steps) != len(c.wantOps) {
-				t.Fatalf("steps = %+v, want ops %v", steps, c.wantOps)
+			if action != c.wantAction {
+				t.Fatalf("action = %q, want %q", action, c.wantAction)
 			}
-			for i, op := range c.wantOps {
-				if steps[i].op != op {
-					t.Errorf("step %d op = %q, want %q", i, steps[i].op, op)
+			if len(attrs) != len(c.wantIntents) {
+				t.Fatalf("attrs = %+v, want intents %v", attrs, c.wantIntents)
+			}
+			for _, want := range c.wantIntents {
+				found := false
+				for _, a := range attrs {
+					if a.Intent == want {
+						found = true
+					}
+				}
+				if !found {
+					t.Errorf("attrs %+v missing intent %q", attrs, want)
 				}
 			}
 		})

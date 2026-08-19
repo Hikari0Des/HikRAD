@@ -6,18 +6,15 @@ package radius
 // channels — enforce.quota_exceeded (C publishes on interim evaluation) and
 // enforce.expired (D's expiry sweep publishes) — and for each affected
 // subscriber with live sessions resolves the profile's configured behavior via
-// D's AuthView, then executes the matching CoA on every session within one
-// cycle (≤ 5 min):
+// D's AuthView, then ENQUEUES the matching CoA for every session (v4-8,
+// FR-150: enqueue is the only way to send a CoA — this worker decides WHAT to
+// send, never dispatches it itself). coa_dispatcher.go owns the actual UDP
+// exchange, the retry budget, and the hybrid update→disconnect fallback; this
+// worker's job ends the moment a coa_outbox row exists.
 //
-//	quota:  block → Disconnect · throttle → ApplyRate(throttle) · expired_pool → MovePool
-//	expiry: block → Disconnect · expired_pool → MovePool + minimal rate
-//
-// A CoA that NAKs on an in-place change falls back to Disconnect (FR-15.4) so
-// the NAS re-auths and the auth-time half applies the same behavior. Every
-// enforcement is idempotent (re-delivered events are a no-op within the cycle,
-// guarded in Postgres so it survives a restart), audited, and — on unrecoverable
-// CoA failure — counted into the enforcement_failures Redis counter C's health
-// surfaces.
+// Every enforcement decision is still idempotent (re-delivered events are a
+// no-op within the cycle, guarded in Postgres so it survives a restart) and
+// audited via the enforcement_actions row this worker writes.
 
 import (
 	"context"
@@ -29,6 +26,7 @@ import (
 
 	"github.com/hikrad/hikrad/internal/auth"
 	"github.com/hikrad/hikrad/internal/live/livestate"
+	"github.com/hikrad/hikrad/internal/radius/vendor"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
@@ -41,8 +39,12 @@ const (
 )
 
 // EnforcementFailuresKey is the Redis counter of CoA enforcements that failed
-// even after the FR-15.4 disconnect fallback. C's health/alerts read it
-// (rule type acct_backlog-style). Frozen key name (contract: B exposes it).
+// even after the FR-15.4 disconnect fallback. C's health page reads it,
+// mirroring EnforcementFailuresKey's contract. As of v4-8 it is incremented
+// by coa_dispatcher.go when a coa_outbox row resolves to `failed` — the only
+// place a CoA's real, final outcome is known — rather than by this worker
+// (or billing/live's enqueue call sites), which now only knows whether the
+// row was ENQUEUED, not whether it ultimately succeeded.
 const EnforcementFailuresKey = "enforce:failures"
 
 // enforceKind distinguishes the two channels and is the event_kind recorded.
@@ -67,16 +69,10 @@ type behaviorView struct {
 	ExpiredPoolName string
 }
 
-// coaStep is one CoA operation in a session's enforcement plan. fallback marks
-// an in-place change (throttle / move-pool) that, on NAK/timeout, falls back to
-// Disconnect (FR-15.4) so re-auth picks up the behavior instead.
-type coaStep struct {
-	op       string // "disconnect" | "apply_rate" | "move_pool"
-	param    string
-	fallback bool
-}
-
 // enforceRecord is the outcome persisted to enforcement_actions and audited.
+// Outcome/Applied/Failures now describe ENQUEUE success, not CoA delivery —
+// "applied" (all sessions' CoA rows enqueued), "enqueue_failed" (none could
+// be enqueued, e.g. DB down), "partial" (mixed).
 type enforceRecord struct {
 	Key      string // dedup_key of the claim row this finalizes
 	Kind     enforceKind
@@ -85,35 +81,33 @@ type enforceRecord struct {
 	Sessions int
 	Applied  int
 	Failures int
-	Outcome  string // applied | partial | failed | no_sessions | not_found | noop
+	Outcome  string // enqueued | partial | enqueue_failed | no_sessions | not_found | noop
 	Detail   []sessionOutcome
 }
 
 type sessionOutcome struct {
 	AcctSessionID string `json:"acct_session_id"`
-	Path          string `json:"path"`    // e.g. "apply_rate", "apply_rate→disconnect"
-	Outcome       string `json:"outcome"` // ack | nak | timeout | error
+	Action        string `json:"action"`           // "update" | "disconnect"
+	Outcome       string `json:"outcome"`           // enqueued | enqueue_failed
+	OutboxID      string `json:"outbox_id,omitempty"`
 }
 
 // worker enforces one crossing at a time. Every external dependency is a seam
-// so the mapping/idempotency/fallback logic is unit-testable with no Redis, DB
-// or NAS.
+// so the decide/enqueue logic is unit-testable with no Redis, DB or NAS.
 type worker struct {
 	log *slog.Logger
 
 	listSessions func(ctx context.Context, subscriberID string) ([]SessionRef, error)
 	behavior     func(ctx context.Context, username string) (behaviorView, bool, error)
-	disconnect   func(ctx context.Context, ref SessionRef) CoAResult
-	applyRate    func(ctx context.Context, ref SessionRef, rate string) CoAResult
-	movePool     func(ctx context.Context, ref SessionRef, pool string) CoAResult
+	// enqueue is the ONLY way this worker ever causes a CoA to be sent
+	// (FR-150 gate item 1) — it inserts a coa_outbox row and returns
+	// immediately; coa_dispatcher.go does the rest.
+	enqueue func(ctx context.Context, ref SessionRef, action CoAAction, attrs []vendor.Attr, reason, subscriberID string) (string, error)
 	// claim inserts the idempotency row for key and reports proceed=true only for
 	// the first delivery within the cycle.
-	claim       func(ctx context.Context, kind enforceKind, subID, key string) (proceed bool, err error)
-	record      func(ctx context.Context, rec enforceRecord)
-	incFailures func(ctx context.Context, n int)
-	sleep       func(d time.Duration)
-	now         func() time.Time
-	maxAttempts int
+	claim  func(ctx context.Context, kind enforceKind, subID, key string) (proceed bool, err error)
+	record func(ctx context.Context, rec enforceRecord)
+	now    func() time.Time
 }
 
 // cycle is the enforcement window that dedups re-delivered events; it matches
@@ -127,7 +121,8 @@ func (w *worker) dedupKey(kind enforceKind, subID string) string {
 	return string(kind) + ":" + subID + ":" + itoa(int(bucket))
 }
 
-// handle processes one crossing end to end.
+// handle processes one crossing end to end: resolve the plan, enqueue it for
+// every live session, record the outcome.
 func (w *worker) handle(ctx context.Context, kind enforceKind, subID string) {
 	if subID == "" {
 		return
@@ -164,146 +159,76 @@ func (w *worker) handle(ctx context.Context, kind enforceKind, subID string) {
 		return
 	}
 
-	steps, label := planSteps(kind, b)
-	if len(steps) == 0 {
+	action, attrs, label := planSteps(kind, b)
+	if action == "" {
 		// No actionable behavior (e.g. unknown quota mode) — record and stop.
 		w.record(ctx, enforceRecord{Key: key, Kind: kind, SubID: subID, Behavior: label, Sessions: len(sessions), Outcome: "noop"})
 		return
 	}
 
-	rec := w.enforceSessions(ctx, kind, subID, label, steps, sessions)
+	rec := w.enqueueSessions(ctx, kind, subID, label, action, attrs, sessions)
 	rec.Key = key
 	w.record(ctx, rec)
-	if rec.Failures > 0 {
-		w.incFailures(ctx, rec.Failures)
-		w.log.Warn("enforce: coa failures (alert-worthy)",
-			"subscriber", subID, "kind", kind, "behavior", label,
-			"failures", rec.Failures, "sessions", rec.Sessions)
-	}
 }
 
-// enforceSessions runs the plan against every session, retrying the ones that
-// still failed with backoff up to maxAttempts.
-func (w *worker) enforceSessions(ctx context.Context, kind enforceKind, subID, label string, steps []coaStep, sessions []SessionRef) enforceRecord {
+// enqueueSessions enqueues one coa_outbox row per session, all carrying the
+// same action/attrs (identical enforcement decision applied to every live
+// session of the crossing subscriber).
+func (w *worker) enqueueSessions(ctx context.Context, kind enforceKind, subID, label string, action CoAAction, attrs []vendor.Attr, sessions []SessionRef) enforceRecord {
 	rec := enforceRecord{Kind: kind, SubID: subID, Behavior: label, Sessions: len(sessions)}
-	done := make([]bool, len(sessions))
-	outcomes := make([]sessionOutcome, len(sessions))
-
-	attempts := w.maxAttempts
-	if attempts < 1 {
-		attempts = 1
-	}
-	for attempt := 0; attempt < attempts; attempt++ {
-		remaining := 0
-		for i, s := range sessions {
-			if done[i] {
-				continue
-			}
-			oc := w.runPlan(ctx, s, steps)
-			outcomes[i] = oc
-			if oc.Outcome == "ack" {
-				done[i] = true
-			} else {
-				remaining++
-			}
-		}
-		if remaining == 0 {
-			break
-		}
-		if attempt < attempts-1 {
-			// Exponential-ish backoff before retrying the still-failed sessions.
-			w.sleep(time.Duration(attempt+1) * 200 * time.Millisecond)
-		}
-	}
-
-	for i := range sessions {
-		if done[i] {
-			rec.Applied++
-		} else {
+	reason := "enforce." + string(kind) + ":" + label
+	for _, s := range sessions {
+		id, err := w.enqueue(ctx, s, action, attrs, reason, subID)
+		oc := sessionOutcome{AcctSessionID: s.AcctSessionID, Action: string(action)}
+		if err != nil {
+			oc.Outcome = "enqueue_failed"
 			rec.Failures++
+			w.log.Warn("enforce: coa enqueue failed", "error", err, "subscriber", subID, "kind", kind)
+		} else {
+			oc.Outcome = "enqueued"
+			oc.OutboxID = id
+			rec.Applied++
 		}
-		rec.Detail = append(rec.Detail, outcomes[i])
+		rec.Detail = append(rec.Detail, oc)
 	}
 	switch {
 	case rec.Failures == 0:
-		rec.Outcome = "applied"
+		rec.Outcome = "enqueued"
 	case rec.Applied == 0:
-		rec.Outcome = "failed"
+		rec.Outcome = "enqueue_failed"
 	default:
 		rec.Outcome = "partial"
 	}
 	return rec
 }
 
-// runPlan executes one session's steps in order. A fallback step that NAKs is
-// retried as a Disconnect (FR-15.4); a successful fallback-disconnect ends the
-// session so remaining steps are moot. Returns the terminal outcome + the path
-// actually taken.
-func (w *worker) runPlan(ctx context.Context, s SessionRef, steps []coaStep) sessionOutcome {
-	oc := sessionOutcome{AcctSessionID: s.AcctSessionID}
-	for _, step := range steps {
-		res := w.runStep(ctx, s, step)
-		oc.Path = joinPath(oc.Path, step.op)
-		if res.Ok() {
-			oc.Outcome = string(res.Outcome)
-			continue
-		}
-		if step.fallback {
-			// In-place change refused: fall back to Disconnect so re-auth applies
-			// the behavior. Record which path ran.
-			fb := w.disconnect(ctx, s)
-			oc.Path = joinPath(oc.Path, "disconnect")
-			oc.Outcome = string(fb.Outcome)
-			return oc
-		}
-		oc.Outcome = string(res.Outcome)
-		return oc
-	}
-	return oc
-}
-
-func (w *worker) runStep(ctx context.Context, s SessionRef, step coaStep) CoAResult {
-	switch step.op {
-	case "disconnect":
-		return w.disconnect(ctx, s)
-	case "apply_rate":
-		return w.applyRate(ctx, s, step.param)
-	case "move_pool":
-		return w.movePool(ctx, s, step.param)
-	default:
-		return CoAResult{Outcome: CoAError}
-	}
-}
-
-func joinPath(a, b string) string {
-	if a == "" {
-		return b
-	}
-	return a + "→" + b
-}
-
-// planSteps maps an event kind + behavior to the ordered CoA plan and a label.
+// planSteps maps an event kind + behavior to ONE CoA-Update/Disconnect
+// enqueue (v4-8 collapses the old sequential move_pool→apply_rate steps into
+// a single combined attribute set — the dispatcher's hybrid fallback then
+// applies to that one row as a unit rather than to each step separately, and
+// a NAK is genuinely all-or-nothing at the NAS for a single packet anyway).
+// action == "" means "no actionable behavior" (the old empty-steps sentinel).
 // Pure — the enforcement matrix is exercised directly in tests.
-func planSteps(kind enforceKind, b behaviorView) (steps []coaStep, label string) {
+func planSteps(kind enforceKind, b behaviorView) (action CoAAction, attrs []vendor.Attr, label string) {
 	switch kind {
 	case kindQuota:
 		switch b.QuotaBehavior {
 		case "block":
-			return []coaStep{{op: "disconnect"}}, "block"
+			return CoAActionDisconnect, nil, "block"
 		case "throttle":
 			if b.ThrottleRate == "" {
 				// No throttle rate configured: disconnecting is the only safe way
 				// to stop an over-quota session keeping full speed.
-				return []coaStep{{op: "disconnect"}}, "throttle"
+				return CoAActionDisconnect, nil, "throttle"
 			}
-			return []coaStep{{op: "apply_rate", param: b.ThrottleRate, fallback: true}}, "throttle"
+			return CoAActionUpdate, []vendor.Attr{{Intent: vendor.IntentRateLimit, Value: b.ThrottleRate}}, "throttle"
 		case "expired_pool":
 			if b.ExpiredPoolName == "" {
-				return []coaStep{{op: "disconnect"}}, "expired_pool"
+				return CoAActionDisconnect, nil, "expired_pool"
 			}
-			return []coaStep{{op: "move_pool", param: b.ExpiredPoolName, fallback: true}}, "expired_pool"
+			return CoAActionUpdate, []vendor.Attr{{Intent: vendor.IntentAddressPool, Value: b.ExpiredPoolName}}, "expired_pool"
 		default:
-			return nil, b.QuotaBehavior
+			return "", nil, b.QuotaBehavior
 		}
 	case kindExpired:
 		if b.ExpiryBehavior == "expired_pool" && b.ExpiredPoolName != "" {
@@ -311,31 +236,22 @@ func planSteps(kind enforceKind, b behaviorView) (steps []coaStep, label string)
 			if rate == "" {
 				rate = expiredPoolFallbackRate
 			}
-			// Move to the walled garden, then clamp to a minimal rate. If the
-			// move NAKs we fall back to Disconnect and the rate step is moot.
-			return []coaStep{
-				{op: "move_pool", param: b.ExpiredPoolName, fallback: true},
-				{op: "apply_rate", param: rate, fallback: false},
+			// Move to the walled garden AND clamp to a minimal rate in ONE
+			// CoA-Update; if the NAS NAKs it, the dispatcher's hybrid
+			// fallback disconnects so re-auth applies both at once.
+			return CoAActionUpdate, []vendor.Attr{
+				{Intent: vendor.IntentAddressPool, Value: b.ExpiredPoolName},
+				{Intent: vendor.IntentRateLimit, Value: rate},
 			}, "expired_pool"
 		}
 		// hard block (or expired_pool misconfigured with no pool).
-		return []coaStep{{op: "disconnect"}}, "block"
+		return CoAActionDisconnect, nil, "block"
 	default:
-		return nil, ""
+		return "", nil, ""
 	}
 }
 
 // --- production wiring ------------------------------------------------------
-
-// enforceMaxConcurrent bounds how many subscribers' enforcement plans run at
-// once (storm safety, CoA hardening task 4): a burst far exceeding steady
-// state (e.g. a midnight expiry sweep crossing hundreds of subscribers within
-// one Redis publish burst) fans out across a small worker pool instead of
-// serializing one full CoA round trip (up to ~10s worst case with retry)
-// behind the next — without this a burst can starve the ≤5min enforcement SLA
-// (contract C4) — while coaService's own inflight cap (coaMaxInflight) still
-// bounds the NAS-facing packet rate underneath it.
-const enforceMaxConcurrent = 16
 
 // startEnforcementWorker subscribes to both channels and dispatches events
 // across a bounded worker pool. It runs for the process lifetime (like
@@ -390,22 +306,24 @@ func (m *module) startEnforcementWorker(ctx context.Context) {
 	}
 }
 
+// enforceMaxConcurrent bounds how many subscribers' enforcement plans run at
+// once (storm safety, CoA hardening task 4): a burst far exceeding steady
+// state (e.g. a midnight expiry sweep crossing hundreds of subscribers within
+// one Redis publish burst) fans out across a small worker pool instead of
+// serializing enqueue calls one after another.
+const enforceMaxConcurrent = 16
+
 // newWorker composes the production seams from the module's engine, live state,
-// package CoA API and DB.
+// package CoA enqueue API and DB.
 func (m *module) newWorker() *worker {
 	return &worker{
 		log:          m.log,
 		listSessions: func(ctx context.Context, subID string) ([]SessionRef, error) { return liveSessionRefs(ctx, m.rdb, subID) },
 		behavior:     m.enforceBehavior,
-		disconnect:   Disconnect,
-		applyRate:    ApplyRate,
-		movePool:     MovePool,
+		enqueue:      Enqueue,
 		claim:        func(ctx context.Context, kind enforceKind, subID, key string) (bool, error) { return claimEnforcement(ctx, m.db, kind, subID, key) },
 		record:       func(ctx context.Context, rec enforceRecord) { recordEnforcement(ctx, m.db, m.log, rec) },
-		incFailures:  func(ctx context.Context, n int) { incEnforcementFailures(ctx, m.rdb, n) },
-		sleep:        time.Sleep,
 		now:          time.Now,
-		maxAttempts:  3,
 	}
 }
 
@@ -471,12 +389,8 @@ func claimEnforcement(ctx context.Context, db *pgxpool.Pool, kind enforceKind, s
 }
 
 // recordEnforcement finalizes the claim row with the outcome + counts. It
-// runs on a context detached from the caller's enforcement-cycle budget: a
-// slow/unreachable NAS can burn the whole cycle's timeout in CoA retries
-// before we get here, and the outcome record + audit entry (the only trace
-// gate item 4 / contract C4 "records outcome to audit" leaves) must not be
-// lost just because the CoA phase ran long — mirrors the WithoutCancel
-// detach already used one layer up in startEnforcementWorker.
+// runs on a context detached from the caller's enforcement-cycle budget so
+// the outcome record + audit entry is never lost to a slow enqueue path.
 func recordEnforcement(ctx context.Context, db *pgxpool.Pool, log *slog.Logger, rec enforceRecord) {
 	if db == nil {
 		return
@@ -510,7 +424,8 @@ func incEnforcementFailures(ctx context.Context, rdb *redis.Client, n int) {
 	_ = rdb.IncrBy(ctx, EnforcementFailuresKey, int64(n)).Err()
 }
 
-// EnforcementFailures reads the CoA-failure counter (C's health surface).
+// EnforcementFailures reads the CoA-failure counter (C's health page). A nil
+// Redis client (unit context) returns an empty map, not an error.
 func EnforcementFailures(ctx context.Context) (int64, error) {
 	e := defaultEngine()
 	if e == nil || e.rdb == nil {

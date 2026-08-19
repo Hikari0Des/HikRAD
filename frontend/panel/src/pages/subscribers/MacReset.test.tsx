@@ -27,7 +27,7 @@ vi.mock('../../api/managers', () => ({
 vi.mock('../../api/live', () => ({
   openLiveStream: () => ({ close: () => {} }),
   usageBySubscriber: () => Promise.resolve([]),
-  disconnectSession: () => Promise.resolve({ outcome: 'ack' }),
+  disconnectSession: () => Promise.resolve({ outbox_id: 'outbox-1', state: 'pending' }),
   listSessionHistory: () => Promise.resolve({ items: [], next_cursor: null }),
 }))
 

@@ -36,6 +36,7 @@
     "alerts": "التنبيهات",
     "health": "صحة النظام",
     "debug": "تصحيح RADIUS",
+    "coaOutbox": "صندوق CoA الصادر",
     "managers": "المدراء",
     "roles": "الأدوار",
     "auditLog": "سجل التدقيق",
@@ -294,7 +295,7 @@
     "macReset": "تمت إعادة تعيين MAC.",
     "disableDisconnectTitle": "فصل الآن؟",
     "disableDisconnectBody": "هذا المشترك متصل. هل تريد فصل جلساته الحية الآن عبر CoA بدلاً من الانتظار حتى إعادة المصادقة التالية؟",
-    "disconnectedCount": "تم فصل {count} جلسة.",
+    "disconnectedCount": "تم إدراج {count} جلسة في طابور القطع.",
     "serviceType": "الخدمة",
     "serviceTypeHint": "الخدمة التي يُسمح لهذا الحساب بالدخول عبرها. حسابات Hotspot فقط هي مشتركون كاملون — تُطبَّق باقتهم وحصتهم وحد الجلسات.",
     "counters": {
@@ -997,7 +998,7 @@
     "disconnect": "فصل",
     "disconnectTitle": "فصل هذه الجلسة؟",
     "disconnectBody": "يرسل CoA Disconnect إلى NAS. يُمحى الصف عند تأكيد NAS.",
-    "disconnectAck": "تم فصل الجلسة.",
+    "disconnectAck": "تم إدراج القطع في الطابور — راجع صندوق CoA الصادر للنتيجة.",
     "disconnectFail": "لم يقم الموجّه بفصل الجلسة ({outcome}).",
     "service": {
       "pppoe": "PPPoE‏",
@@ -1084,10 +1085,9 @@
     "printAr": "طباعة (AR)",
     "receiptLangNote": "تُطبع الإيصالات بالعربية أو الإنجليزية.",
     "coaResult": {
-      "restored": "تمت استعادة السرعة — دون إعادة اتصال",
-      "disconnect_fallback": "تم قطع الاتصال لإعادة الاتصال بالسرعة الكاملة",
+      "enqueued": "تم إدراج تحديث السرعة في الطابور — راجع صندوق CoA الصادر للنتيجة",
       "not_online": "غير متصل — يُطبّق عند الاتصال التالي",
-      "failed": "فشل التحديث المباشر — اقطع الاتصال يدوياً"
+      "failed": "تعذّر إدراج التحديث في الطابور — اقطع الاتصال يدوياً"
     },
     "error": {
       "insufficient_balance": "الرصيد غير كافٍ للتجديد.",
@@ -1335,7 +1335,8 @@
       "overheads": "المصاريف التشغيلية",
       "reseller_prices": "أسعار الموزعين",
       "payment_providers": "مزوّدو الدفع",
-      "payment_tickets": "تذاكر الدفع"
+      "payment_tickets": "تذاكر الدفع",
+      "coa_outbox": "صندوق CoA الصادر"
     },
     "verb": {
       "view": "عرض",
@@ -2082,6 +2083,67 @@
     "rejectConsequence": "الرفض ينهي تجربة المشترك المجانية ويرسل له إشعارًا.",
     "rejectReason": "السبب",
     "rejectDone": "تم رفض الدفع."
+  },
+  "coaOutbox": {
+    "title": "صندوق CoA الصادر",
+    "counter": {
+      "pending": "قيد الانتظار",
+      "sent": "أُرسل",
+      "nack": "مرفوض",
+      "done": "تم",
+      "failed": "فشل",
+      "total": "الإجمالي",
+      "failed24h": "{n} خلال آخر 24 ساعة"
+    },
+    "searchPlaceholder": "ابحث عن اسم المستخدم أو NAS أو السبب",
+    "filter": {
+      "state": "الحالة",
+      "action": "الإجراء"
+    },
+    "state": {
+      "pending": "قيد الانتظار",
+      "sent": "أُرسل",
+      "nack": "مرفوض",
+      "done": "تم",
+      "failed": "فشل"
+    },
+    "action": {
+      "update": "تحديث",
+      "disconnect": "قطع الاتصال"
+    },
+    "fallbackBadge": "تم اللجوء إلى قطع الاتصال",
+    "col": {
+      "username": "اسم المستخدم",
+      "nas": "NAS",
+      "action": "الإجراء",
+      "state": "الحالة",
+      "reason": "السبب",
+      "updated": "آخر تحديث"
+    },
+    "empty": {
+      "title": "لا توجد طلبات CoA في الطابور",
+      "body": "تظهر هنا إجراءات الإنفاذ والتجديدات وعمليات القطع اليدوية عند إدراجها في الطابور."
+    },
+    "inspect": "فحص",
+    "retry": "إعادة المحاولة",
+    "cancel": "إلغاء",
+    "retryDone": "تمت إعادة الإدراج في الطابور.",
+    "cancelDone": "تم إلغاء الصف.",
+    "detailTitle": "صف صندوق CoA",
+    "currentOp": "المحاولة الحالية",
+    "attemptCount": "عدد المحاولات",
+    "fallbackNotice": "تم اللجوء إلى طلب قطع الاتصال بعد رفض التحديث.",
+    "intendedAttributes": "السمات المقصودة",
+    "noAttributes": "لا توجد سمات (لا يحمل قطع الاتصال أي سمة).",
+    "intent": "النية",
+    "value": "القيمة",
+    "attempts": "محاولات الإرسال",
+    "noAttempts": "لم تتم أي محاولة بعد.",
+    "attemptNo": "المحاولة {n}",
+    "hideWire": "إخفاء سمات الإرسال الفعلية",
+    "showWire": "عرض سمات الإرسال الفعلية (كما أُرسلت)",
+    "wireType": "النوع",
+    "wireValue": "القيمة"
   },
   "paymentProviders": {
     "title": "مزوّدو الدفع",

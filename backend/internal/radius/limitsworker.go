@@ -34,6 +34,7 @@ import (
 
 	"github.com/hikrad/hikrad/internal/auth"
 	"github.com/hikrad/hikrad/internal/live/livestate"
+	"github.com/hikrad/hikrad/internal/radius/vendor"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -57,9 +58,10 @@ type dailyResetProfile struct {
 
 // limitsEngine holds the sweep's seams so the decision/dispatch logic is
 // unit-testable with no Redis/DB/NAS. w supplies the proven claim/record/
-// runPlan/dedupKey machinery from enforce.go's worker — reused verbatim
-// rather than reimplemented, so idempotency and CoA fallback behavior are
-// guaranteed identical to expiry/quota's.
+// enqueue/dedupKey machinery from enforce.go's worker — reused verbatim
+// rather than reimplemented, so idempotency and the enqueue path are
+// guaranteed identical to expiry/quota's (actual dispatch, retry and hybrid
+// fallback live in coa_dispatcher.go, v4-8).
 type limitsEngine struct {
 	log *slog.Logger
 	eng *engine
@@ -157,14 +159,20 @@ func (e *limitsEngine) evaluateSession(ctx context.Context, s livestate.State, n
 	e.normalRateState[field] = rate
 	delete(e.wasEnforced, field)
 	if forcedRestore || (seen && prev != rate) {
-		res := e.w.applyRate(ctx, ref, rate)
-		e.log.Info("limits: rate sync", "username", ref.Username, "rate", rate, "outcome", res.Outcome, "restored", forcedRestore)
+		reason := "limits.window_sync"
+		if forcedRestore {
+			reason = "limits.restore"
+		}
+		id, err := e.w.enqueue(ctx, ref, CoAActionUpdate, []vendor.Attr{{Intent: vendor.IntentRateLimit, Value: rate}}, reason, s.SubscriberID)
+		e.log.Info("limits: rate sync enqueued", "username", ref.Username, "rate", rate, "restored", forcedRestore, "outbox_id", id, "error", err)
 	}
 }
 
 // enforceLimit applies an exhausted uptime/daily limit's unified action
-// (FR-130) to one session, through enforce.go's proven claim → plan → CoA →
-// record pipeline (idempotent per gate item 9).
+// (FR-130) to one session by enqueueing a coa_outbox row through enforce.go's
+// proven claim → record pipeline (idempotent per gate item 9). Dispatch,
+// retry and the hybrid fallback all live in coa_dispatcher.go now (v4-8) —
+// this function's job ends once the row exists.
 func (e *limitsEngine) enforceLimit(ctx context.Context, ref SessionRef, subID string, view AuthView, oc policyOutcome) {
 	kind := kindUptime
 	if oc.Kind == "daily" {
@@ -180,57 +188,60 @@ func (e *limitsEngine) enforceLimit(ctx context.Context, ref SessionRef, subID s
 		return // already enforced this cycle
 	}
 
-	steps, label := planStepsForOutcome(view, oc)
+	action, attrs, label := planForOutcome(view, oc)
 	rec := enforceRecord{Key: key, Kind: kind, SubID: subID, Behavior: label, Sessions: 1}
-	if len(steps) == 0 {
+	if action == "" {
 		rec.Outcome = "noop"
 	} else {
-		so := e.w.runPlan(ctx, ref, steps)
-		rec.Detail = []sessionOutcome{so}
-		if so.Outcome == string(CoAACK) {
-			rec.Applied = 1
-			rec.Outcome = "applied"
-		} else {
+		id, err := e.w.enqueue(ctx, ref, action, attrs, "limits."+label, subID)
+		oc := sessionOutcome{AcctSessionID: ref.AcctSessionID, Action: string(action)}
+		if err != nil {
+			oc.Outcome = "enqueue_failed"
 			rec.Failures = 1
-			rec.Outcome = "failed"
+			rec.Outcome = "enqueue_failed"
+			e.log.Warn("limits: coa enqueue failed", "error", err, "subscriber", subID, "kind", kind, "behavior", label)
+		} else {
+			oc.Outcome = "enqueued"
+			oc.OutboxID = id
+			rec.Applied = 1
+			rec.Outcome = "enqueued"
 		}
+		rec.Detail = []sessionOutcome{oc}
 	}
 	e.w.record(ctx, rec)
-	if rec.Failures > 0 {
-		e.w.incFailures(ctx, rec.Failures)
-		e.log.Warn("limits: coa failure (alert-worthy)", "subscriber", subID, "kind", kind, "behavior", label)
-	}
 }
 
-// planStepsForOutcome maps a resolved policyOutcome to the CoA plan, reusing
-// the SAME rate/pool resolution helpers policy.go's replyIntents calls
-// (limits.go: throttleOrSwitchRate/expiredPoolRateAndPool) — the auth-time
-// reply and the worker's CoA target can never disagree on what "throttled"
-// or "switched" means for this subscriber.
-func planStepsForOutcome(view AuthView, oc policyOutcome) (steps []coaStep, label string) {
+// planForOutcome maps a resolved policyOutcome to ONE CoA-Update/Disconnect
+// enqueue, reusing the SAME rate/pool resolution helpers policy.go's
+// replyIntents calls (limits.go: throttleOrSwitchRate/expiredPoolRateAndPool)
+// — the auth-time reply and the worker's CoA target can never disagree on
+// what "throttled" or "switched" means for this subscriber. A pool+rate
+// combination is one combined attribute set (v4-8: the dispatcher's hybrid
+// fallback treats it as a single atomic row, not two separately-retried ops).
+func planForOutcome(view AuthView, oc policyOutcome) (action CoAAction, attrs []vendor.Attr, label string) {
 	if oc.Reject {
-		return []coaStep{{op: "disconnect"}}, "block"
+		return CoAActionDisconnect, nil, "block"
 	}
 	switch oc.Mode {
 	case modeThrottled:
-		return []coaStep{{op: "apply_rate", param: throttleOrSwitchRate(view, oc), fallback: true}}, "throttle"
+		return CoAActionUpdate, []vendor.Attr{{Intent: vendor.IntentRateLimit, Value: throttleOrSwitchRate(view, oc)}}, "throttle"
 	case modeSwitchPlan:
 		rate := throttleOrSwitchRate(view, oc)
 		if oc.Pool == "" {
-			return []coaStep{{op: "apply_rate", param: rate, fallback: true}}, "switch_plan"
+			return CoAActionUpdate, []vendor.Attr{{Intent: vendor.IntentRateLimit, Value: rate}}, "switch_plan"
 		}
-		return []coaStep{
-			{op: "move_pool", param: oc.Pool, fallback: true},
-			{op: "apply_rate", param: rate, fallback: false},
+		return CoAActionUpdate, []vendor.Attr{
+			{Intent: vendor.IntentAddressPool, Value: oc.Pool},
+			{Intent: vendor.IntentRateLimit, Value: rate},
 		}, "switch_plan"
 	case modeExpiredPool:
 		rate, pool := expiredPoolRateAndPool(view, oc)
-		return []coaStep{
-			{op: "move_pool", param: pool, fallback: true},
-			{op: "apply_rate", param: rate, fallback: false},
+		return CoAActionUpdate, []vendor.Attr{
+			{Intent: vendor.IntentAddressPool, Value: pool},
+			{Intent: vendor.IntentRateLimit, Value: rate},
 		}, "expired_pool"
 	default:
-		return nil, ""
+		return "", nil, ""
 	}
 }
 

@@ -121,14 +121,14 @@ describe('RenewModal (FR-19)', () => {
       receipt_no: 'R-100',
       new_expires_at: '2026-08-01T00:00:00Z',
       currency: 'IQD',
-      coa_result: 'restored',
+      coa_result: 'enqueued',
     })
     renderModal()
 
     await user.click(screen.getByRole('button', { name: en.renew.confirm }))
 
     expect(await screen.findByText(en.renew.success)).toBeInTheDocument()
-    expect(screen.getByText(en.renew.coaResult.restored)).toBeInTheDocument()
+    expect(screen.getByText(en.renew.coaResult.enqueued)).toBeInTheDocument()
     expect(screen.getByText('R-100')).toBeInTheDocument()
     // Idempotency key was sent on the request.
     const [, , idemKey] = renewSubscriber.mock.calls[0]
@@ -140,19 +140,19 @@ describe('RenewModal (FR-19)', () => {
     await waitFor(() => expect(printReceipt).toHaveBeenCalledWith('R-100', 'ar'))
   })
 
-  it('renders the disconnect-fallback CoA badge', async () => {
+  it('renders the not-online CoA badge', async () => {
     const user = userEvent.setup()
     renewSubscriber.mockResolvedValue({
       ledger_tx_id: 'tx1',
       receipt_no: 'R-101',
       new_expires_at: '2026-08-01T00:00:00Z',
       currency: 'IQD',
-      coa_result: 'disconnect_fallback',
+      coa_result: 'not_online',
     })
     renderModal()
 
     await user.click(screen.getByRole('button', { name: en.renew.confirm }))
-    expect(await screen.findByText(en.renew.coaResult.disconnect_fallback)).toBeInTheDocument()
+    expect(await screen.findByText(en.renew.coaResult.not_online)).toBeInTheDocument()
   })
 
   it('surfaces the insufficient-balance error with a hint and stays on the form', async () => {

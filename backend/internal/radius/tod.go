@@ -98,8 +98,11 @@ type todEngine struct {
 	windows    func(ctx context.Context) ([]TODWindow, error)
 	profilesOf func(ctx context.Context, subIDs []string) (map[string]string, error)
 	sessions   func(ctx context.Context) ([]livestate.State, error)
-	applyRate  func(ctx context.Context, ref SessionRef, rate string) CoAResult
-	publish    func(ctx context.Context, profileID string, active bool)
+	// enqueueRate is the ONLY way this engine causes a CoA to be sent (v4-8,
+	// FR-150 gate item 1) — it enqueues a coa_outbox row and returns
+	// immediately; coa_dispatcher.go does the actual dispatch.
+	enqueueRate func(ctx context.Context, ref SessionRef, rate, subscriberID string) (string, error)
+	publish     func(ctx context.Context, profileID string, active bool)
 	now        func() time.Time // local time (Asia/Baghdad)
 
 	state map[string]bool // windowKey → last-known active (baseline set on first tick)
@@ -148,10 +151,11 @@ func (e *todEngine) tick(ctx context.Context) {
 	}
 }
 
-// sweepProfile ApplyRate's rate to every live session whose subscriber is on
-// profileID. NAK/timeout is logged (a boost/de-boost failing is not
-// alert-worthy the way a quota/expiry enforcement failure is — the next auth
-// corrects it); it does not fall back to Disconnect.
+// sweepProfile ENQUEUES rate to every live session whose subscriber is on
+// profileID (v4-8: dispatch, retry and any fallback are entirely
+// coa_dispatcher.go's concern now — an enqueue failure here is logged, a
+// boost/de-boost is not alert-worthy the way a quota/expiry enforcement
+// failure is, and the next auth corrects it regardless).
 func (e *todEngine) sweepProfile(ctx context.Context, profileID, rate, label string, active bool) {
 	all, err := e.sessions(ctx)
 	if err != nil {
@@ -183,15 +187,17 @@ func (e *todEngine) sweepProfile(ctx context.Context, profileID, rate, label str
 		if pmap[s.SubscriberID] != profileID {
 			continue
 		}
-		res := e.applyRate(ctx, SessionRef{
+		_, err := e.enqueueRate(ctx, SessionRef{
 			NASID: s.NASID, AcctSessionID: s.AcctSessionID, Username: s.Username, FramedIP: s.IP,
 			Service: s.Service,
-		}, rate)
-		if res.Ok() {
+		}, rate, s.SubscriberID)
+		if err == nil {
 			swept++
+		} else {
+			e.log.Warn("tod: coa enqueue failed", "error", err, "profile", profileID, "subscriber", s.SubscriberID)
 		}
 	}
-	e.log.Info("tod: window sweep", "profile", profileID, "window", label, "active", active, "rate", rate, "sessions_swept", swept)
+	e.log.Info("tod: window sweep enqueued", "profile", profileID, "window", label, "active", active, "rate", rate, "sessions_swept", swept)
 }
 
 // --- production wiring ------------------------------------------------------
@@ -223,7 +229,9 @@ func (m *module) startTODSweeps(ctx context.Context) {
 		return p.ProfilesForSubscribers(ctx, subIDs)
 	}
 	e.sessions = func(ctx context.Context) ([]livestate.State, error) { return livestate.All(ctx, m.rdb) }
-	e.applyRate = ApplyRate
+	e.enqueueRate = func(ctx context.Context, ref SessionRef, rate, subscriberID string) (string, error) {
+		return EnqueueApplyRate(ctx, ref, rate, "tod.window_sweep", subscriberID)
+	}
 	e.publish = func(ctx context.Context, profileID string, active bool) { publishTODWindow(ctx, m.rdb, profileID, active) }
 	e.now = func() time.Time { return time.Now().In(loc) }
 

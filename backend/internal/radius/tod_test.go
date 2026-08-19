@@ -71,12 +71,12 @@ func newTODFixture() *todFixture {
 			return out, nil
 		},
 		sessions: func(context.Context) ([]livestate.State, error) { return f.sessions, nil },
-		applyRate: func(_ context.Context, ref SessionRef, rate string) CoAResult {
+		enqueueRate: func(_ context.Context, ref SessionRef, rate, _ string) (string, error) {
 			f.rates = append(f.rates, struct {
 				ref  SessionRef
 				rate string
 			}{ref, rate})
-			return CoAResult{Outcome: CoAACK}
+			return "outbox-1", nil
 		},
 		publish: func(_ context.Context, profileID string, active bool) {
 			f.published = append(f.published, struct {

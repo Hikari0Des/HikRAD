@@ -38,28 +38,16 @@ export function usageBySubscriber(
 }
 
 /**
- * Disconnect a live session via CoA (FR-31.3). The server replies 200 with
- * `{outcome:"ack"}` on success and 502 with `{outcome:"nak"|"timeout", error}`
- * when the NAS refused or didn't answer — both are meaningful results, not
- * transport errors, so we read the body regardless of status (the C2 error
- * envelope only applies to 4xx auth/validation, not this CoA outcome). A true
- * transport/auth failure still throws.
+ * Disconnect a live session via CoA (FR-31.3). v4-8: enqueue-only — the
+ * server replies 202 with the coa_outbox row id; the actual ack/nak/timeout
+ * (and the hybrid fallback, if it comes to that) resolves asynchronously on
+ * the dispatcher's worker tick and shows up on the CoA Outbox screen.
  */
-export async function disconnectSession(
-  nasId: string,
-  acctSessionId: string,
-): Promise<DisconnectResult> {
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-  const token = tokenStore.getAccessToken()
-  if (token) headers['Authorization'] = `Bearer ${token}`
-  const res = await fetch(`${API_BASE}/live/disconnect`, {
+export function disconnectSession(nasId: string, acctSessionId: string): Promise<DisconnectResult> {
+  return request('/live/disconnect', {
     method: 'POST',
-    headers,
-    body: JSON.stringify({ nas_id: nasId, acct_session_id: acctSessionId }),
+    body: { nas_id: nasId, acct_session_id: acctSessionId },
   })
-  const payload = (await res.json().catch(() => null)) as DisconnectResult | null
-  if (payload && typeof payload.outcome === 'string') return payload
-  throw new Error(`disconnect failed (HTTP ${res.status})`)
 }
 
 // --- SSE stream -----------------------------------------------------------

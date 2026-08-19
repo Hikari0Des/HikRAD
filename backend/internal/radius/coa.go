@@ -1,12 +1,22 @@
 package radius
 
-// CoA / Disconnect service (contract C5 / FR-15). Exposes Disconnect,
-// ApplyRate and MovePool as an in-process Go API consumed this phase by the
-// panel disconnect button (E via C) and in Phase 3 by renewals (D). Every
-// attempt sends UDP to the NAS's coa_port with its per-NAS secret, times out at
-// 5 s with one retry, and returns a typed result so callers can fall back
-// (FR-15.3/15.4). NAK/timeout do not fall back automatically here — the caller
-// decides (renewal → Disconnect).
+// CoA / Disconnect low-level exchange (contract C5 / FR-15). As of v4-8
+// (FR-150/151) this service is no longer called directly by anything outside
+// this package: coa_enqueue.go's Enqueue is the only way any caller sends a
+// CoA, and coa_dispatcher.go is the only caller of send() below — the actual
+// UDP round trip, still exactly this shape (per-NAS secret, coa_port, a
+// timeout + one safety retry per attempt). What changed in v4-8 is who
+// decides WHEN to attempt and what happens after a NAK: that state machine
+// now lives entirely in coa_dispatcher.go / coa_outbox_store.go, durable
+// across a restart, instead of being decided inline by whoever wanted a CoA
+// sent.
+//
+// coaTimeout/coaRetries below are exchangeWithRetry's per-attempt safety net
+// (one retry within a single dispatch attempt, distinct from the dispatcher's
+// own row-level retry budget which spans separate worker ticks) — the
+// timeout is now sourced from the coa_timeout_seconds hot-reloadable setting
+// via timeoutDuration, falling back to the old hardcoded default when no
+// Settings service is wired (unit tests).
 
 import (
 	"context"
@@ -17,7 +27,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/hikrad/hikrad/internal/auth"
+	"github.com/hikrad/hikrad/internal/platform"
 	"github.com/hikrad/hikrad/internal/radius/vendor"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -69,9 +79,20 @@ type CoAResult struct {
 func (r CoAResult) Ok() bool { return r.Outcome == CoAACK }
 
 const (
+	// coaTimeout is the fallback used only when no Settings service is wired
+	// (coaService built directly in unit tests); production reads
+	// coa_timeout_seconds via timeoutDuration below.
 	coaTimeout = 5 * time.Second
 	coaRetries = 1
 	coaNATNote = "CoA to a NAS behind NAT is unsupported in v1 (reply cannot route back)"
+	// coaRetryMaxSettingKey/coaTimeoutSettingKey are the FR-151 "existing
+	// hot-reloadable settings" (seeded by migration 0615) governing the
+	// dispatcher's row-level retry budget and each attempt's UDP timeout.
+	// coa_port stays per-NAS (nas.coa_port, already existing) — a retry/
+	// timeout budget is process-wide but a CoA port is a per-router fact.
+	coaRetryMaxSettingKey = "radius.coa_retry_max"
+	coaTimeoutSettingKey  = "radius.coa_timeout_seconds"
+	defaultCoARetryMax    = 3
 	// coaMaxInflight bounds concurrent in-flight CoA/Disconnect exchanges
 	// across the whole process (storm safety): the enforcement worker can
 	// fan out a burst of moves in parallel (e.g. a midnight expiry sweep
@@ -88,26 +109,50 @@ const (
 const CoAMetricsKey = "coa:metrics"
 
 type coaService struct {
-	db  *pgxpool.Pool
-	rdb *redis.Client
-	log *slog.Logger
+	db       *pgxpool.Pool
+	rdb      *redis.Client
+	log      *slog.Logger
+	settings platform.Settings
 	// exchange is the packet round-trip, seam-injectable for tests.
 	exchange func(ctx context.Context, p *radius.Packet, addr string) (*radius.Packet, error)
 	now      func() time.Time
 	inflight chan struct{}
 }
 
-func newCoAService(db *pgxpool.Pool, rdb *redis.Client, log *slog.Logger) *coaService {
+func newCoAService(db *pgxpool.Pool, rdb *redis.Client, log *slog.Logger, settings platform.Settings) *coaService {
 	return &coaService{
-		db: db, rdb: rdb, log: log, exchange: radius.Exchange, now: time.Now,
+		db: db, rdb: rdb, log: log, settings: settings, exchange: radius.Exchange, now: time.Now,
 		inflight: make(chan struct{}, coaMaxInflight),
 	}
 }
 
-// --- package-level C5 API (E-via-C this phase; D's renewals in Phase 3) -----
-//
-// Consumers call radius.Disconnect/ApplyRate/MovePool with a SessionRef; the
-// result is audited with the Manager in ctx (C2). Wired at boot by Register.
+// timeoutDuration reads coa_timeout_seconds (hot-reloadable, FR-151), falling
+// back to the old hardcoded default when unset or when built without a
+// Settings service (unit tests construct coaService directly).
+func (c *coaService) timeoutDuration(ctx context.Context) time.Duration {
+	if c.settings == nil {
+		return coaTimeout
+	}
+	secs, err := platform.Get[int](ctx, c.settings, coaTimeoutSettingKey)
+	if err != nil || secs <= 0 {
+		return coaTimeout
+	}
+	return time.Duration(secs) * time.Second
+}
+
+// retryMax reads coa_retry_max (hot-reloadable, FR-151) — the dispatcher's
+// row-level retry budget (coa_dispatcher.go), distinct from exchangeWithRetry's
+// own single in-attempt safety retry (coaRetries).
+func (c *coaService) retryMax(ctx context.Context) int {
+	if c.settings == nil {
+		return defaultCoARetryMax
+	}
+	n, err := platform.Get[int](ctx, c.settings, coaRetryMaxSettingKey)
+	if err != nil || n <= 0 {
+		return defaultCoARetryMax
+	}
+	return n
+}
 
 var (
 	defaultCoAMu sync.RWMutex
@@ -126,90 +171,21 @@ func currentCoA() *coaService {
 	return defaultCoA
 }
 
-// Disconnect ends a session (C5), auditing the result.
-func Disconnect(ctx context.Context, ref SessionRef) CoAResult {
-	c := currentCoA()
-	if c == nil {
-		return CoAResult{Outcome: CoAError, Err: errors.New("coa: service not configured")}
-	}
-	res := c.Disconnect(ctx, ref)
-	auditCoA(ctx, "coa.disconnect", ref, "", res)
-	return res
-}
-
-// ApplyRate changes a session's rate in place (C5), auditing the result.
-func ApplyRate(ctx context.Context, ref SessionRef, rate string) CoAResult {
-	c := currentCoA()
-	if c == nil {
-		return CoAResult{Outcome: CoAError, Err: errors.New("coa: service not configured")}
-	}
-	res := c.ApplyRate(ctx, ref, rate)
-	auditCoA(ctx, "coa.apply_rate", ref, rate, res)
-	return res
-}
-
-// MovePool re-assigns a session's pool (C5), auditing the result.
-func MovePool(ctx context.Context, ref SessionRef, pool string) CoAResult {
-	c := currentCoA()
-	if c == nil {
-		return CoAResult{Outcome: CoAError, Err: errors.New("coa: service not configured")}
-	}
-	res := c.MovePool(ctx, ref, pool)
-	auditCoA(ctx, "coa.move_pool", ref, pool, res)
-	return res
-}
-
-type coaAuditDetail struct {
-	NASID         string `json:"nas_id"`
-	AcctSessionID string `json:"acct_session_id"`
-	Username      string `json:"username"`
-	Param         string `json:"param,omitempty"`
-	Outcome       string `json:"outcome"`
-	Error         string `json:"error,omitempty"`
-}
-
-// auditCoA writes the audit entry on a context detached from ctx's deadline:
-// a caller retrying a CoA exchange across several attempts (e.g. the
-// enforcement worker's fixed per-cycle budget, FR-9/FR-10) can have already
-// burned that deadline by the time a later attempt's result is ready to
-// audit, which would otherwise drop the entry silently.
-func auditCoA(ctx context.Context, action string, ref SessionRef, param string, res CoAResult) {
-	d := coaAuditDetail{
-		NASID: ref.NASID, AcctSessionID: ref.AcctSessionID, Username: ref.Username,
-		Param: param, Outcome: string(res.Outcome),
-	}
-	if res.Err != nil {
-		d.Error = res.Err.Error()
-	}
-	actx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-	defer cancel()
-	_ = auth.Audit(actx, action, "session", ref.AcctSessionID, nil, d)
-}
-
-// Disconnect ends a session (FR-15.2). No vendor attributes needed — session
-// identity attributes carry the target.
-func (c *coaService) Disconnect(ctx context.Context, ref SessionRef) CoAResult {
-	return c.send(ctx, ref, radius.CodeDisconnectRequest, nil)
-}
-
-// ApplyRate changes a session's rate in place (FR-15.4). Falls back to
-// Disconnect at the caller when the NAS NAKs.
-func (c *coaService) ApplyRate(ctx context.Context, ref SessionRef, rate string) CoAResult {
-	return c.send(ctx, ref, radius.CodeCoARequest, []vendor.Attr{{Intent: vendor.IntentRateLimit, Value: rate}})
-}
-
-// MovePool re-assigns a session's address pool (FR-15.2, key flow 2 step 4).
-func (c *coaService) MovePool(ctx context.Context, ref SessionRef, pool string) CoAResult {
-	return c.send(ctx, ref, radius.CodeCoARequest, []vendor.Attr{{Intent: vendor.IntentAddressPool, Value: pool}})
-}
-
-func (c *coaService) send(ctx context.Context, ref SessionRef, code radius.Code, attrs []vendor.Attr) CoAResult {
+// send builds and dispatches ONE CoA/Disconnect exchange attempt against
+// ref's NAS, returning the typed outcome plus the exact wire-level attributes
+// placed on the outgoing packet (dumpWireAttributes, captured before the
+// exchange so it reflects what was sent regardless of outcome) — the
+// evidence coa_dispatcher.go persists into coa_attempts.wire_attributes for
+// the FR-152 inspect view (gate item 6). This is the package's ONLY sender;
+// as of v4-8 it is called from exactly one place, coa_dispatcher.go's
+// worker-tick loop — every other caller enqueues via coa_enqueue.go.
+func (c *coaService) send(ctx context.Context, ref SessionRef, code radius.Code, attrs []vendor.Attr) (CoAResult, []WireAttr) {
 	n, err := getNAS(ctx, c.db, ref.NASID)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return CoAResult{Outcome: CoAError, Err: fmt.Errorf("coa: nas %s not found", ref.NASID)}
+		return CoAResult{Outcome: CoAError, Err: fmt.Errorf("coa: nas %s not found", ref.NASID)}, nil
 	}
 	if err != nil {
-		return CoAResult{Outcome: CoAError, Err: err}
+		return CoAResult{Outcome: CoAError, Err: err}, nil
 	}
 
 	// Version-aware short-circuit (FR-15.4, ROS quirk matrix): skip the
@@ -228,13 +204,13 @@ func (c *coaService) send(ctx context.Context, ref SessionRef, code radius.Code,
 			c.log.Info("coa attempt skipped (version-aware quirk)",
 				"nas", ref.NASID, "op", codeName(code), "intent", a.Intent, "ros_version", ros, "service", ref.service())
 			c.recordMetric(ctx, codeName(code), res.Outcome)
-			return res
+			return res, nil
 		}
 	}
 
 	secret, err := decryptToString(n.SecretEnc)
 	if err != nil {
-		return CoAResult{Outcome: CoAError, Err: fmt.Errorf("coa: decrypt secret: %w", err)}
+		return CoAResult{Outcome: CoAError, Err: fmt.Errorf("coa: decrypt secret: %w", err)}, nil
 	}
 
 	pkt := radius.New(code, []byte(secret))
@@ -249,9 +225,14 @@ func (c *coaService) send(ctx context.Context, ref SessionRef, code radius.Code,
 	}
 	if len(attrs) > 0 {
 		if err := adapter.Apply(pkt, attrs); err != nil {
-			return CoAResult{Outcome: CoAError, Err: err}
+			return CoAResult{Outcome: CoAError, Err: err}, nil
 		}
 	}
+
+	// Captured now — the packet is fully built, nothing after this point
+	// changes what is on the wire — so the FR-150 §4 "stored as sent, never
+	// regenerated" evidence exists regardless of what the exchange returns.
+	wire := dumpWireAttributes(pkt)
 
 	addr := net.JoinHostPort(n.IP, itoa(n.CoAPort))
 
@@ -267,7 +248,7 @@ func (c *coaService) send(ctx context.Context, ref SessionRef, code radius.Code,
 		case <-ctx.Done():
 			res := CoAResult{Outcome: CoAError, Err: fmt.Errorf("coa: %w waiting for an inflight slot", ctx.Err())}
 			c.recordMetric(ctx, codeName(code), res.Outcome)
-			return res
+			return res, wire
 		}
 	}
 
@@ -276,7 +257,7 @@ func (c *coaService) send(ctx context.Context, ref SessionRef, code radius.Code,
 		"nas", ref.NASID, "op", codeName(code), "outcome", res.Outcome,
 		"username", ref.Username, "acct_session_id", ref.AcctSessionID, "error", res.Err)
 	c.recordMetric(ctx, codeName(code), res.Outcome)
-	return res
+	return res, wire
 }
 
 // recordMetric increments the CoAMetricsKey hash field "<op>:<outcome>" —
@@ -315,8 +296,9 @@ func CoAMetrics(ctx context.Context) (map[string]int64, error) {
 
 func (c *coaService) exchangeWithRetry(ctx context.Context, pkt *radius.Packet, addr string, code radius.Code) CoAResult {
 	var last CoAResult
+	timeout := c.timeoutDuration(ctx)
 	for attempt := 0; attempt <= coaRetries; attempt++ {
-		attemptCtx, cancel := context.WithTimeout(ctx, coaTimeout)
+		attemptCtx, cancel := context.WithTimeout(ctx, timeout)
 		resp, err := c.exchange(attemptCtx, pkt, addr)
 		cancel()
 		if err != nil {

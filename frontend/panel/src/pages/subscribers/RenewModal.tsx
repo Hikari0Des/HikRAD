@@ -278,8 +278,7 @@ function RenewSuccess({
 export function CoaBadge({ outcome }: { outcome: CoAResult }) {
   const t = useT()
   const styles: Record<CoAResult, string> = {
-    restored: 'bg-ok/10 text-ok',
-    disconnect_fallback: 'bg-warn/10 text-warn',
+    enqueued: 'bg-ok/10 text-ok',
     not_online: 'bg-surface-sunken text-ink-muted',
     failed: 'bg-danger/10 text-danger',
   }

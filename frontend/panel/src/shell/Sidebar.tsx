@@ -3,6 +3,7 @@ import { NavLink, useLocation } from 'react-router-dom'
 
 import { useT } from '@hikrad/shared'
 
+import { getCoAOutboxCounters } from '../api/coaOutbox'
 import { listTickets } from '../api/paymentTickets'
 import { useAuth } from '../auth/AuthContext'
 import { brandInitial, useBranding } from '../branding'
@@ -11,6 +12,7 @@ import { NavIcon } from './navIcons'
 import {
   PERM_AUDIT_VIEW,
   PERM_CARDS_VIEW,
+  PERM_COA_OUTBOX_VIEW,
   PERM_PAYMENT_TICKETS_VERIFY,
   PERM_PAYMENT_PROVIDERS_MANAGE,
   PERM_LIVE_VIEW,
@@ -78,6 +80,7 @@ const NAV_GROUPS: readonly NavGroup[] = [
       { key: 'nav.alerts', to: '/alerts', perm: PERM_MONITORING_VIEW },
       { key: 'nav.health', to: '/health', perm: PERM_MONITORING_VIEW },
       { key: 'nav.debug', to: '/debug', perm: PERM_NAS_VIEW },
+      { key: 'nav.coaOutbox', to: '/coa-outbox', perm: PERM_COA_OUTBOX_VIEW },
     ],
   },
   {
@@ -119,10 +122,36 @@ function usePendingTicketCount(enabled: boolean): number {
   return count
 }
 
+/** Polls the pending CoA outbox count for the nav badge (v4-8, FR-152). */
+function usePendingCoACount(enabled: boolean): number {
+  const [count, setCount] = useState(0)
+  useEffect(() => {
+    if (!enabled) return
+    let cancelled = false
+    function load() {
+      getCoAOutboxCounters()
+        .then((c) => {
+          if (!cancelled) setCount(c.pending)
+        })
+        .catch(() => {
+          /* badge is best-effort */
+        })
+    }
+    load()
+    const id = setInterval(load, 30_000)
+    return () => {
+      cancelled = true
+      clearInterval(id)
+    }
+  }, [enabled])
+  return count
+}
+
 export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const t = useT()
   const { can } = useAuth()
   const pendingTickets = usePendingTicketCount(can(PERM_PAYMENT_TICKETS_VERIFY))
+  const pendingCoA = usePendingCoACount(can(PERM_COA_OUTBOX_VIEW))
   const branding = useBranding()
   const location = useLocation()
 
@@ -211,6 +240,11 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
                         {item.to === '/payment-tickets' && pendingTickets > 0 ? (
                           <span className="rounded-full bg-danger px-1.5 py-0.5 text-xs font-medium text-ink-inverse">
                             {pendingTickets}
+                          </span>
+                        ) : null}
+                        {item.to === '/coa-outbox' && pendingCoA > 0 ? (
+                          <span className="rounded-full bg-brand px-1.5 py-0.5 text-xs font-medium text-ink-inverse">
+                            {pendingCoA}
                           </span>
                         ) : null}
                       </NavLink>

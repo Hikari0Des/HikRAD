@@ -6,6 +6,7 @@ import { RequirePerm } from './auth/RequirePerm'
 import {
   PERM_AUDIT_VIEW,
   PERM_CARDS_VIEW,
+  PERM_COA_OUTBOX_VIEW,
   PERM_PAYMENT_TICKETS_VERIFY,
   PERM_PAYMENT_PROVIDERS_MANAGE,
   PERM_LIVE_VIEW,
@@ -38,6 +39,7 @@ import { PricingAdminPage } from './pages/billing/PricingAdminPage'
 import { ProviderCatalogPage } from './pages/billing/ProviderCatalogPage'
 import { VouchersPage } from './pages/billing/VouchersPage'
 import { CardsPage } from './pages/cards/CardsPage'
+import { CoaOutboxPage } from './pages/radius/CoaOutboxPage'
 import { ImportWizardPage } from './pages/import/ImportWizardPage'
 import { LicensePage } from './pages/license/LicensePage'
 import { LiveSessionsPage } from './pages/live/LiveSessionsPage'
@@ -149,6 +151,7 @@ export function App() {
           <Route path="health" element={guard(PERM_MONITORING_VIEW, <HealthPage />)} />
           <Route path="alerts" element={guard(PERM_MONITORING_VIEW, <AlertsPage />)} />
           <Route path="debug" element={guard(PERM_NAS_VIEW, <DebugPage />)} />
+          <Route path="coa-outbox" element={guard(PERM_COA_OUTBOX_VIEW, <CoaOutboxPage />)} />
           <Route path="managers" element={guard(PERM_MANAGERS_VIEW, <ManagersPage />)} />
           <Route path="roles" element={guard(PERM_MANAGERS_VIEW, <RolesPage />)} />
           <Route path="audit-log" element={guard(PERM_AUDIT_VIEW, <AuditLogPage />)} />

@@ -47,9 +47,8 @@ export function LiveWidget({ subscriberId }: { subscriberId: string }) {
 
   async function doDisconnect(s: LiveSession) {
     try {
-      const res = await disconnectSession(s.nas_id, s.acct_session_id)
-      if (res.outcome === 'ack') toast(t('live.disconnectAck'), 'ok')
-      else toast(t('live.disconnectFail', { outcome: res.outcome }), 'danger')
+      await disconnectSession(s.nas_id, s.acct_session_id)
+      toast(t('live.disconnectAck'), 'ok')
     } catch (err) {
       toast(err instanceof Error ? err.message : t('common.error.body'), 'danger')
     }

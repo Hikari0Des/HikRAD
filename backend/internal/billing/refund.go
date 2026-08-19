@@ -260,10 +260,12 @@ func rollbackExpiry(now time.Time, current *time.Time, durationDays int) time.Ti
 	return rolled
 }
 
-// enforceExpiredCoA re-applies FR-9 to a now-expired online subscriber: move to
-// the expired pool when the profile is configured for it and one exists,
-// otherwise disconnect so the session re-auths under the expired policy. Returns
-// the aggregate outcome (restored-to-expired-pool | disconnect | not_online).
+// enforceExpiredCoA re-applies FR-9 to a now-expired online subscriber by
+// ENQUEUEING the CoA (v4-8, FR-150): move to the expired pool when the
+// profile is configured for it and one exists, otherwise disconnect so the
+// session re-auths under the expired policy. Returns the enqueue outcome
+// (enqueued | failed | not_online) — the real ack/nak/disconnect-fallback
+// resolves asynchronously on the CoA Outbox screen, not here.
 func (m *Module) enforceExpiredCoA(ctx context.Context, subID, behavior, expiredPool string) string {
 	sessions, err := live.List(ctx, live.Filter{}, nil)
 	if err != nil {
@@ -281,15 +283,16 @@ func (m *Module) enforceExpiredCoA(ctx context.Context, subID, behavior, expired
 	if len(refs) == 0 {
 		return "not_online"
 	}
-	outcome := "expired_pool"
 	for _, ref := range refs {
-		if behavior == "expired_pool" && expiredPool != "" && radius.MovePool(ctx, ref, expiredPool).Ok() {
-			continue
+		var enqErr error
+		if behavior == "expired_pool" && expiredPool != "" {
+			_, enqErr = radius.EnqueueMovePool(ctx, ref, expiredPool, "billing.refund_rollback_expired", subID)
+		} else {
+			_, enqErr = radius.EnqueueDisconnect(ctx, ref, "billing.refund_rollback_expired", subID)
 		}
-		if !radius.Disconnect(ctx, ref).Ok() {
+		if enqErr != nil {
 			return "failed"
 		}
-		outcome = "disconnect"
 	}
-	return outcome
+	return "enqueued"
 }

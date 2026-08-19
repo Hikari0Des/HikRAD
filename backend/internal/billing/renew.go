@@ -7,8 +7,11 @@ package billing
 // → balance check (agents hard-enforced; admins per settings) → ledger entry +
 // payment/receipt → extend expiry per the anchor rule → quota-cycle reset →
 // status active → commit. After commit (never inside it): InvalidatePolicy, clear
-// the quota-exhausted flag + publish quota:reset, and CoA-restore online sessions
-// to full speed with a NAK→Disconnect fallback surfaced in the result.
+// the quota-exhausted flag + publish quota:reset, and ENQUEUE a CoA-restore for
+// every online session (v4-8, FR-150: this is the hero flow — renew an
+// expired-pool subscriber and full speed returns with no re-dial — so it goes
+// through the same durable outbox as everything else; the dispatcher owns the
+// NAK→Disconnect hybrid fallback now, not this function).
 
 import (
 	"context"
@@ -20,6 +23,7 @@ import (
 	"github.com/hikrad/hikrad/internal/auth"
 	"github.com/hikrad/hikrad/internal/live"
 	"github.com/hikrad/hikrad/internal/radius"
+	"github.com/hikrad/hikrad/internal/radius/vendor"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 )
@@ -79,7 +83,7 @@ type renewResult struct {
 	LedgerTxID   string    `json:"ledger_tx_id"`
 	ReceiptNo    string    `json:"receipt_no"`
 	NewExpiresAt time.Time `json:"new_expires_at"`
-	CoAResult    string    `json:"coa_result"` // restored | disconnect_fallback | failed | not_online
+	CoAResult    string    `json:"coa_result"` // enqueued | failed | not_online (v4-8: async — see the CoA Outbox for the real outcome)
 	Currency     string    `json:"currency"`
 	// internal, not serialized: needed for the post-commit CoA restore.
 	price    int64
@@ -384,10 +388,12 @@ func (m *Module) resetQuota(ctx context.Context, subscriberID string) {
 	_ = m.rdb.Publish(ctx, "quota:reset:"+subscriberID, subscriberID).Err()
 }
 
-// restoreCoA pushes the renewed full-speed policy to every live session (key flow
-// 2 step 4 / AC-19b): MovePool out of the walled garden + ApplyRate to full, with
-// a NAK/timeout → Disconnect fallback (forces a redial that re-reads policy). The
-// aggregate result is surfaced in the response, never silent (C2).
+// restoreCoA enqueues the renewed full-speed policy for every live session
+// (key flow 2 step 4 / AC-19b, the hero flow): MovePool out of the walled
+// garden + ApplyRate to full, combined into ONE CoA-Update row per session so
+// the dispatcher's hybrid fallback (NAK/timeout → Disconnect, FR-151) treats
+// them atomically — a partial apply (pool moved but not rate, or vice versa)
+// is exactly the ambiguous state the hybrid fallback exists to avoid.
 func (m *Module) restoreCoA(ctx context.Context, subscriberID, rate, poolName string) string {
 	sessions, err := live.List(ctx, live.Filter{}, nil)
 	if err != nil {
@@ -406,27 +412,22 @@ func (m *Module) restoreCoA(ctx context.Context, subscriberID, rate, poolName st
 		return "not_online"
 	}
 
-	usedFallback := false
+	var attrs []vendor.Attr
+	if poolName != "" {
+		attrs = append(attrs, vendor.Attr{Intent: vendor.IntentAddressPool, Value: poolName})
+	}
+	if rate != "" {
+		attrs = append(attrs, vendor.Attr{Intent: vendor.IntentRateLimit, Value: rate})
+	}
+	if len(attrs) == 0 {
+		return "not_online"
+	}
 	for _, ref := range refs {
-		ok := true
-		if poolName != "" {
-			ok = radius.MovePool(ctx, ref, poolName).Ok() && ok
-		}
-		if rate != "" {
-			ok = radius.ApplyRate(ctx, ref, rate).Ok() && ok
-		}
-		if !ok {
-			// Fallback: drop the session so it redials into the renewed policy.
-			if !radius.Disconnect(ctx, ref).Ok() {
-				return "failed"
-			}
-			usedFallback = true
+		if _, err := radius.EnqueueUpdate(ctx, ref, attrs, "billing.renew_restore", subscriberID); err != nil {
+			return "failed"
 		}
 	}
-	if usedFallback {
-		return "disconnect_fallback"
-	}
-	return "restored"
+	return "enqueued"
 }
 
 // computeExpiry applies the anchor rule (FR-19.1): from_expiry extends from the

@@ -36,6 +36,7 @@
     "alerts": "Alerts",
     "health": "System health",
     "debug": "RADIUS debug",
+    "coaOutbox": "CoA Outbox",
     "managers": "Managers",
     "roles": "Roles",
     "auditLog": "Audit log",
@@ -294,7 +295,7 @@
     "macReset": "MAC reset.",
     "disableDisconnectTitle": "Disconnect now?",
     "disableDisconnectBody": "This subscriber is online. Drop their live sessions now via CoA, rather than waiting for the next re-authentication?",
-    "disconnectedCount": "Disconnected {count} session(s).",
+    "disconnectedCount": "Queued disconnect for {count} session(s).",
     "serviceType": "Service",
     "serviceTypeHint": "Which service this account may log in on. Hotspot-only accounts are full subscribers — their plan, quota and session limit all apply.",
     "counters": {
@@ -997,7 +998,7 @@
     "disconnect": "Disconnect",
     "disconnectTitle": "Disconnect this session?",
     "disconnectBody": "Sends a CoA Disconnect to the NAS. The row clears when the NAS acknowledges.",
-    "disconnectAck": "Session disconnected.",
+    "disconnectAck": "Disconnect queued — see CoA Outbox for the result.",
     "disconnectFail": "The router did not disconnect the session ({outcome}).",
     "service": {
       "pppoe": "PPPoE",
@@ -1084,10 +1085,9 @@
     "printAr": "Print (AR)",
     "receiptLangNote": "Receipts print in Arabic or English.",
     "coaResult": {
-      "restored": "Speed restored — no re-dial needed",
-      "disconnect_fallback": "Disconnected to reconnect at full speed",
+      "enqueued": "Speed update queued — see CoA Outbox for the result",
       "not_online": "Not online — applies on next connection",
-      "failed": "Live update failed — disconnect manually"
+      "failed": "Could not queue the update — disconnect manually"
     },
     "error": {
       "insufficient_balance": "Not enough balance to renew.",
@@ -1335,7 +1335,8 @@
       "overheads": "Overheads",
       "reseller_prices": "Reseller prices",
       "payment_providers": "Payment providers",
-      "payment_tickets": "Payment tickets"
+      "payment_tickets": "Payment tickets",
+      "coa_outbox": "CoA Outbox"
     },
     "verb": {
       "view": "View",
@@ -2082,6 +2083,67 @@
     "rejectConsequence": "Rejecting expires the subscriber's trial and notifies them.",
     "rejectReason": "Reason",
     "rejectDone": "Payment rejected."
+  },
+  "coaOutbox": {
+    "title": "CoA Outbox",
+    "counter": {
+      "pending": "Pending",
+      "sent": "Sent",
+      "nack": "NAKed",
+      "done": "Done",
+      "failed": "Failed",
+      "total": "Total",
+      "failed24h": "{n} in last 24h"
+    },
+    "searchPlaceholder": "Search username, NAS or reason",
+    "filter": {
+      "state": "State",
+      "action": "Action"
+    },
+    "state": {
+      "pending": "Pending",
+      "sent": "Sent",
+      "nack": "NAKed",
+      "done": "Done",
+      "failed": "Failed"
+    },
+    "action": {
+      "update": "Update",
+      "disconnect": "Disconnect"
+    },
+    "fallbackBadge": "fell back to disconnect",
+    "col": {
+      "username": "Username",
+      "nas": "NAS",
+      "action": "Action",
+      "state": "State",
+      "reason": "Reason",
+      "updated": "Updated"
+    },
+    "empty": {
+      "title": "No CoAs queued",
+      "body": "Enforcement actions, renewals and manual disconnects will appear here as they're enqueued."
+    },
+    "inspect": "Inspect",
+    "retry": "Retry",
+    "cancel": "Cancel",
+    "retryDone": "Retry queued.",
+    "cancelDone": "Row cancelled.",
+    "detailTitle": "CoA outbox row",
+    "currentOp": "Currently attempting",
+    "attemptCount": "Attempts",
+    "fallbackNotice": "Fell back to Disconnect-Request after the update was refused.",
+    "intendedAttributes": "Intended attributes",
+    "noAttributes": "No attributes (disconnect carries none).",
+    "intent": "Intent",
+    "value": "Value",
+    "attempts": "Dispatch attempts",
+    "noAttempts": "Not attempted yet.",
+    "attemptNo": "Attempt {n}",
+    "hideWire": "Hide wire attributes",
+    "showWire": "Show wire attributes (as sent)",
+    "wireType": "Type",
+    "wireValue": "Value"
   },
   "paymentProviders": {
     "title": "Payment providers",

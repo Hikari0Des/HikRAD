@@ -2,9 +2,12 @@ package live
 
 // Disconnect action (contract C5 consumer / FR-31.3). The panel's Disconnect
 // button posts here; this handler resolves the live session, enforces manager
-// scope, then calls B's CoA service (radius.Disconnect), which audits the
-// attempt. The live row is removed by the resulting Stop when the NAS ACKs — we
-// do not optimistically delete it.
+// scope, then ENQUEUES a Disconnect through B's CoA outbox (v4-8, FR-150 —
+// enqueue is the only way to send a CoA; a direct dispatch here would be a
+// review failure). The response is therefore 202 with the outbox row id, not
+// a synchronous ack/nak — coa_dispatcher.go sends it on its own worker tick.
+// The live row is removed by the resulting Stop when the NAS ACKs — we do not
+// optimistically delete it.
 
 import (
 	"context"
@@ -47,24 +50,18 @@ func (m *Module) disconnect(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	res := radius.Disconnect(ctx, radius.SessionRef{
+	outboxID, err := radius.EnqueueDisconnect(ctx, radius.SessionRef{
 		NASID:         req.NASID,
 		AcctSessionID: req.AcctSessionID,
 		Username:      state.Username,
 		FramedIP:      state.IP,
 		Service:       state.Service,
-	})
-	status := http.StatusOK
-	if !res.Ok() {
-		// The CoA reached a decision but the NAS did not ACK (NAK/timeout): 502
-		// so the panel can surface "the router refused / did not answer".
-		status = http.StatusBadGateway
+	}, "manual.panel_disconnect", state.SubscriberID)
+	if err != nil {
+		m.internal(w, "enqueue disconnect", err)
+		return
 	}
-	body := map[string]any{"outcome": string(res.Outcome)}
-	if res.Err != nil {
-		body["error"] = res.Err.Error()
-	}
-	httpapi.JSON(w, status, body)
+	httpapi.JSON(w, http.StatusAccepted, map[string]any{"outbox_id": outboxID, "state": "pending"})
 }
 
 func (m *Module) liveSession(ctx context.Context, nasID, acctSessionID string) (livestate.State, bool) {

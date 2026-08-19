@@ -773,10 +773,15 @@ export interface UsagePoint {
   up: number
 }
 
-/** CoA disconnect outcome (C5). 200 = ack; 502 = NAK/timeout with `error`. */
+/**
+ * CoA disconnect enqueue result (v4-8, FR-150/151). Disconnect is no longer
+ * dispatched inline — this is 202 with the coa_outbox row id; the actual
+ * outcome (ack/nak/timeout, plus the hybrid fallback if it comes to that)
+ * shows up on the CoA Outbox screen, not synchronously here.
+ */
 export interface DisconnectResult {
-  outcome: string
-  error?: string
+  outbox_id: string
+  state: string
 }
 
 // --- audit log (A) --------------------------------------------------------

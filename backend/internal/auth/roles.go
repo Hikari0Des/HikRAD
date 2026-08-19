@@ -50,6 +50,10 @@ var permissionCatalog = []struct {
 	{"system", []string{"license.manage", "backups.view", "backups.manage", "tunnel.manage", "system.update"}},
 	{"managers", []string{"managers.view", "managers.create", "managers.edit", "managers.delete"}},
 	{"live", []string{"live.view", "sessions.view"}},
+	// v4-8 (FR-150-152): the CoA Outbox operations screen. Separate from
+	// nas.* — it is a queue over every NAS's CoAs, not a per-router config
+	// surface, so it gets its own grantable/withholdable pair.
+	{"coa_outbox", []string{"coa_outbox.view", "coa_outbox.manage"}},
 	{"audit", []string{"audit.view"}},
 	{"actions", []string{PermRenew, PermDisconnect, PermTopup, PermExport, "refund"}},
 }

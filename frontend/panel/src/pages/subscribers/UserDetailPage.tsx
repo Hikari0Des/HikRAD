@@ -344,16 +344,18 @@ function DisconnectOffer({
         resolve([])
       }, 4000)
     })
-    let acked = 0
+    // v4-8: disconnect is enqueue-only now — count successful enqueues, not
+    // acks (the real outcome resolves asynchronously on the CoA Outbox screen).
+    let queued = 0
     for (const s of sessions) {
       try {
-        const res = await disconnectSession(s.nas_id, s.acct_session_id)
-        if (res.outcome === 'ack') acked++
+        await disconnectSession(s.nas_id, s.acct_session_id)
+        queued++
       } catch {
         /* surfaced in aggregate below */
       }
     }
-    toast(t('subscriber.disconnectedCount', { count: acked }), acked > 0 ? 'ok' : 'danger')
+    toast(t('subscriber.disconnectedCount', { count: queued }), queued > 0 ? 'ok' : 'danger')
   }
 
   if (!canDisconnect) return null
