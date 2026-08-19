@@ -19,9 +19,11 @@ import (
 	"time"
 
 	"github.com/hikrad/hikrad/internal/monitorsvc"
+	"github.com/hikrad/hikrad/internal/notify"
 	"github.com/hikrad/hikrad/internal/platform"
 	"github.com/hikrad/hikrad/internal/platform/crypto"
 	"github.com/hikrad/hikrad/internal/push"
+	"github.com/hikrad/hikrad/internal/telegrambot"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 )
@@ -89,5 +91,17 @@ func run(cfg config, log *slog.Logger) error {
 	// channel needs its own explicit wiring here (contract C4, see the
 	// package doc comment on why this is required in both binaries).
 	push.Init(db, rdb, settings, log)
+
+	// Notification Center's outbox dispatcher + day-based scanner (v4-10,
+	// FR-160/FR-162): the ONE queue every outbound message drains through.
+	// Non-blocking (launches its own goroutines) — must start before the
+	// blocking monitorsvc.Run call below.
+	notify.Run(ctx, db, rdb, settings, log)
+
+	// Telegram self-service bot (v4-10, FR-165): internet-dependent by
+	// nature, degrades to a no-op when unconfigured, never affects any
+	// other loop in this process (NFR-7).
+	go telegrambot.Run(ctx, db, rdb, settings, log)
+
 	return monitorsvc.Run(ctx, db, rdb, settings, log)
 }
