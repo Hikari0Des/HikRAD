@@ -37,6 +37,10 @@
     "health": "System health",
     "debug": "RADIUS debug",
     "coaOutbox": "CoA Outbox",
+    "statements": "Statements",
+    "invoices": "Invoices",
+    "expenses": "Expenses",
+    "approvals": "Approvals",
     "managers": "Managers",
     "roles": "Roles",
     "auditLog": "Audit log",
@@ -44,6 +48,7 @@
     "group": {
       "overview": "Overview",
       "billing": "Billing",
+      "accounting": "Accounting",
       "network": "Network",
       "admin": "Administration"
     },
@@ -2474,5 +2479,168 @@
     "firstLogin": "First login",
     "usage": "Usage",
     "resetCard": "Reset"
+  },
+  "statements": {
+    "title": "Statements",
+    "from": "From",
+    "to": "To",
+    "asOf": "As of",
+    "tab": {
+      "pl": "Profit & Loss",
+      "balanceSheet": "Balance Sheet",
+      "cashFlow": "Cash Flow",
+      "aging": "Aging",
+      "advanced": "Advanced"
+    },
+    "pl": {
+      "revenue": "Revenue",
+      "costOfService": "Cost of service",
+      "grossMargin": "Gross margin",
+      "commissionExpense": "Commission expense",
+      "operatingExpense": "Operating expense",
+      "depreciationExpense": "Depreciation expense",
+      "netIncome": "Net income"
+    },
+    "bs": {
+      "assets": "Assets",
+      "liabilities": "Liabilities",
+      "capital": "Capital",
+      "retainedEarnings": "Retained earnings",
+      "equity": "Equity"
+    },
+    "cf": {
+      "netChange": "Net change",
+      "account": "Account"
+    },
+    "aging": {
+      "bucket": "Bucket",
+      "amount": "Amount",
+      "receivables": "Receivables",
+      "payables": "Payables"
+    },
+    "advanced": {
+      "journal": "Journal",
+      "trialBalance": "Trial balance",
+      "generalLedger": "General ledger",
+      "at": "Date",
+      "memo": "Memo",
+      "source": "Source",
+      "reference": "Reference",
+      "account": "Account",
+      "accountCode": "Account code",
+      "debit": "Debit",
+      "credit": "Credit",
+      "total": "Total",
+      "running": "Running balance"
+    }
+  },
+  "invoices": {
+    "title": "Invoices",
+    "create": "New invoice",
+    "created": "Invoice created.",
+    "receipt": "Record receipt",
+    "receiptRecorded": "Receipt recorded.",
+    "void": "Void",
+    "voided": "Invoice voided.",
+    "empty": "No invoices match.",
+    "filter": {
+      "status": "Status",
+      "allStatuses": "All statuses"
+    },
+    "status": {
+      "unpaid": "Unpaid",
+      "partial": "Partial",
+      "due": "Due",
+      "paid": "Paid",
+      "void": "Void"
+    },
+    "col": {
+      "no": "Invoice no.",
+      "issueDate": "Issue date",
+      "dueDate": "Due date",
+      "total": "Total",
+      "paid": "Paid",
+      "status": "Status"
+    },
+    "mode": {
+      "full": "Full period",
+      "prorated": "Pro-rated",
+      "noCharge": "No charge"
+    },
+    "field": {
+      "subscriberId": "Subscriber ID",
+      "mode": "Mode",
+      "dueDate": "Due date",
+      "taxRate": "Tax rate (%)",
+      "description": "Description",
+      "unitPrice": "Unit price",
+      "amount": "Amount",
+      "reason": "Reason"
+    }
+  },
+  "expenses": {
+    "title": "Expenses",
+    "create": "New expense",
+    "created": "Expense recorded.",
+    "payment": "Record payment",
+    "paymentRecorded": "Payment recorded.",
+    "void": "Void",
+    "voided": "Expense voided.",
+    "empty": "No expenses match.",
+    "filter": {
+      "status": "Status",
+      "allStatuses": "All statuses"
+    },
+    "col": {
+      "no": "Expense no.",
+      "category": "Category",
+      "vendor": "Vendor",
+      "amount": "Amount",
+      "paid": "Paid",
+      "status": "Status"
+    },
+    "field": {
+      "category": "Category",
+      "vendor": "Vendor",
+      "amount": "Amount",
+      "dueDate": "Due date",
+      "memo": "Memo",
+      "reason": "Reason"
+    }
+  },
+  "approvals": {
+    "title": "Approvals",
+    "mineOnly": "My requests only",
+    "empty": "No pending requests.",
+    "approve": "Approve",
+    "reject": "Reject",
+    "withdraw": "Withdraw",
+    "approved": "Request approved.",
+    "rejected": "Request rejected.",
+    "withdrawn": "Request withdrawn.",
+    "parked": "Parked for a manager's approval.",
+    "col": {
+      "kind": "Type",
+      "description": "Description",
+      "requestedAt": "Requested"
+    },
+    "field": {
+      "reason": "Reason"
+    },
+    "kind": {
+      "undo": "Undo",
+      "invoice_void": "Void invoice",
+      "subscriber_delete": "Delete subscriber"
+    }
+  },
+  "undo": {
+    "action": "Undo",
+    "done": "Undone.",
+    "parked": "Undo parked for a manager's approval.",
+    "kind": {
+      "renewal": "Undo renewal",
+      "topup": "Undo top-up",
+      "undo_reversal": "Undo reversal"
+    }
   }
 }

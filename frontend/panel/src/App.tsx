@@ -4,9 +4,12 @@ import { Route, Routes } from 'react-router-dom'
 import { RequireAuth } from './auth/AuthContext'
 import { RequirePerm } from './auth/RequirePerm'
 import {
+  PERM_ACCOUNTING_VIEW,
   PERM_AUDIT_VIEW,
   PERM_CARDS_VIEW,
   PERM_COA_OUTBOX_VIEW,
+  PERM_EXPENSES_VIEW,
+  PERM_INVOICES_VIEW,
   PERM_PAYMENT_TICKETS_VERIFY,
   PERM_PAYMENT_PROVIDERS_MANAGE,
   PERM_LIVE_VIEW,
@@ -31,6 +34,10 @@ import { LoginPage } from './pages/LoginPage'
 import { NotFoundPage } from './pages/NotFoundPage'
 import { RtlSmokePage } from './pages/RtlSmokePage'
 import { DesignGalleryPage } from './pages/DesignGalleryPage'
+import { ApprovalsQueuePage } from './pages/accounting/ApprovalsQueuePage'
+import { ExpensesPage } from './pages/accounting/ExpensesPage'
+import { InvoicesPage } from './pages/accounting/InvoicesPage'
+import { StatementsPage } from './pages/accounting/StatementsPage'
 import { CurrencyRatesPage } from './pages/billing/CurrencyRatesPage'
 import { LedgerPage } from './pages/billing/LedgerPage'
 import { MyPaymentMethodsPage } from './pages/billing/MyPaymentMethodsPage'
@@ -152,6 +159,10 @@ export function App() {
           <Route path="alerts" element={guard(PERM_MONITORING_VIEW, <AlertsPage />)} />
           <Route path="debug" element={guard(PERM_NAS_VIEW, <DebugPage />)} />
           <Route path="coa-outbox" element={guard(PERM_COA_OUTBOX_VIEW, <CoaOutboxPage />)} />
+          <Route path="statements" element={guard(PERM_ACCOUNTING_VIEW, <StatementsPage />)} />
+          <Route path="invoices" element={guard(PERM_INVOICES_VIEW, <InvoicesPage />)} />
+          <Route path="expenses" element={guard(PERM_EXPENSES_VIEW, <ExpensesPage />)} />
+          <Route path="approvals" element={<ApprovalsQueuePage />} />
           <Route path="managers" element={guard(PERM_MANAGERS_VIEW, <ManagersPage />)} />
           <Route path="roles" element={guard(PERM_MANAGERS_VIEW, <RolesPage />)} />
           <Route path="audit-log" element={guard(PERM_AUDIT_VIEW, <AuditLogPage />)} />

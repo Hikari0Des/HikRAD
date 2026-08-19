@@ -57,6 +57,24 @@ export const PERM_SYSTEM_UPDATE = 'system.update'
 /** v4-8 (FR-152): the CoA Outbox screen. view = see the queue/inspect; manage = retry/cancel. */
 export const PERM_COA_OUTBOX_VIEW = 'coa_outbox.view'
 export const PERM_COA_OUTBOX_MANAGE = 'coa_outbox.manage'
+/**
+ * v4-9 (FR-153-159): double-entry accounting, invoices/expenses, and the
+ * agent approval gate. A reseller/agent holding accounting.view still sees
+ * their own statements — cost/margin fields are simply omitted server-side
+ * (gate item 12), never gated by a separate reseller permission. Undo and
+ * withdrawing/listing one's own pending approval requests need no
+ * permission beyond authentication (checked by ownership server-side).
+ */
+export const PERM_ACCOUNTING_VIEW = 'accounting.view'
+export const PERM_ACCOUNTING_MANAGE = 'accounting.manage'
+export const PERM_INVOICES_VIEW = 'invoices.view'
+export const PERM_INVOICES_CREATE = 'invoices.create'
+export const PERM_INVOICES_MANAGE = 'invoices.manage'
+export const PERM_INVOICES_NO_CHARGE = 'invoices.no_charge'
+export const PERM_EXPENSES_VIEW = 'expenses.view'
+export const PERM_EXPENSES_CREATE = 'expenses.create'
+export const PERM_EXPENSES_MANAGE = 'expenses.manage'
+export const PERM_APPROVALS_MANAGE = 'approvals.manage'
 
 // Bare action permissions granted independently of module verbs (C2/C7).
 export const PERM_DISCONNECT = 'disconnect'

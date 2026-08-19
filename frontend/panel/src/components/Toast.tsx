@@ -76,3 +76,15 @@ export function useToast(): ToastContextValue {
   if (!ctx) throw new Error('useToast must be used inside <ToastProvider>')
   return ctx
 }
+
+/**
+ * Non-throwing variant for components mounted unconditionally in the app
+ * shell (e.g. UndoWidget in TopBar) that must not crash a test harness or
+ * embedding that renders the shell without <ToastProvider> — the same
+ * best-effort posture BalanceWidget already takes for its own data. Prefer
+ * useToast() everywhere the provider is guaranteed (dialogs, page bodies).
+ */
+export function useOptionalToast(): ToastContextValue['toast'] | null {
+  const ctx = useContext(ToastContext)
+  return ctx?.toast ?? null
+}

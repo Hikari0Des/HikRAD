@@ -37,6 +37,10 @@
     "health": "صحة النظام",
     "debug": "تصحيح RADIUS",
     "coaOutbox": "صندوق CoA الصادر",
+    "statements": "القوائم المالية",
+    "invoices": "الفواتير",
+    "expenses": "المصروفات",
+    "approvals": "الموافقات",
     "managers": "المدراء",
     "roles": "الأدوار",
     "auditLog": "سجل التدقيق",
@@ -44,6 +48,7 @@
     "group": {
       "overview": "نظرة عامة",
       "billing": "الفوترة",
+      "accounting": "المحاسبة",
       "network": "الشبكة",
       "admin": "الإدارة"
     },
@@ -2474,5 +2479,168 @@
     "firstLogin": "أول تسجيل دخول",
     "usage": "الاستخدام",
     "resetCard": "إعادة تعيين"
+  },
+  "statements": {
+    "title": "القوائم المالية",
+    "from": "من",
+    "to": "إلى",
+    "asOf": "كما في",
+    "tab": {
+      "pl": "الأرباح والخسائر",
+      "balanceSheet": "الميزانية العمومية",
+      "cashFlow": "التدفق النقدي",
+      "aging": "أعمار الديون",
+      "advanced": "متقدّم"
+    },
+    "pl": {
+      "revenue": "الإيرادات",
+      "costOfService": "تكلفة الخدمة",
+      "grossMargin": "هامش الربح الإجمالي",
+      "commissionExpense": "مصروف العمولات",
+      "operatingExpense": "المصاريف التشغيلية",
+      "depreciationExpense": "مصروف الإهلاك",
+      "netIncome": "صافي الدخل"
+    },
+    "bs": {
+      "assets": "الأصول",
+      "liabilities": "الخصوم",
+      "capital": "رأس المال",
+      "retainedEarnings": "الأرباح المحتجزة",
+      "equity": "حقوق الملكية"
+    },
+    "cf": {
+      "netChange": "صافي التغيّر",
+      "account": "الحساب"
+    },
+    "aging": {
+      "bucket": "الفئة الزمنية",
+      "amount": "المبلغ",
+      "receivables": "الذمم المدينة",
+      "payables": "الذمم الدائنة"
+    },
+    "advanced": {
+      "journal": "دفتر اليومية",
+      "trialBalance": "ميزان المراجعة",
+      "generalLedger": "دفتر الأستاذ العام",
+      "at": "التاريخ",
+      "memo": "الملاحظة",
+      "source": "المصدر",
+      "reference": "المرجع",
+      "account": "الحساب",
+      "accountCode": "رمز الحساب",
+      "debit": "مدين",
+      "credit": "دائن",
+      "total": "الإجمالي",
+      "running": "الرصيد الجاري"
+    }
+  },
+  "invoices": {
+    "title": "الفواتير",
+    "create": "فاتورة جديدة",
+    "created": "تم إنشاء الفاتورة.",
+    "receipt": "تسجيل إيصال",
+    "receiptRecorded": "تم تسجيل الإيصال.",
+    "void": "إلغاء",
+    "voided": "تم إلغاء الفاتورة.",
+    "empty": "لا توجد فواتير مطابقة.",
+    "filter": {
+      "status": "الحالة",
+      "allStatuses": "كل الحالات"
+    },
+    "status": {
+      "unpaid": "غير مدفوعة",
+      "partial": "مدفوعة جزئيًا",
+      "due": "مستحقة",
+      "paid": "مدفوعة",
+      "void": "ملغاة"
+    },
+    "col": {
+      "no": "رقم الفاتورة",
+      "issueDate": "تاريخ الإصدار",
+      "dueDate": "تاريخ الاستحقاق",
+      "total": "الإجمالي",
+      "paid": "المدفوع",
+      "status": "الحالة"
+    },
+    "mode": {
+      "full": "فترة كاملة",
+      "prorated": "بالتناسب",
+      "noCharge": "بدون رسوم"
+    },
+    "field": {
+      "subscriberId": "معرّف المشترك",
+      "mode": "النمط",
+      "dueDate": "تاريخ الاستحقاق",
+      "taxRate": "نسبة الضريبة (%)",
+      "description": "الوصف",
+      "unitPrice": "سعر الوحدة",
+      "amount": "المبلغ",
+      "reason": "السبب"
+    }
+  },
+  "expenses": {
+    "title": "المصروفات",
+    "create": "مصروف جديد",
+    "created": "تم تسجيل المصروف.",
+    "payment": "تسجيل دفعة",
+    "paymentRecorded": "تم تسجيل الدفعة.",
+    "void": "إلغاء",
+    "voided": "تم إلغاء المصروف.",
+    "empty": "لا توجد مصروفات مطابقة.",
+    "filter": {
+      "status": "الحالة",
+      "allStatuses": "كل الحالات"
+    },
+    "col": {
+      "no": "رقم المصروف",
+      "category": "الفئة",
+      "vendor": "المورّد",
+      "amount": "المبلغ",
+      "paid": "المدفوع",
+      "status": "الحالة"
+    },
+    "field": {
+      "category": "الفئة",
+      "vendor": "المورّد",
+      "amount": "المبلغ",
+      "dueDate": "تاريخ الاستحقاق",
+      "memo": "الملاحظة",
+      "reason": "السبب"
+    }
+  },
+  "approvals": {
+    "title": "الموافقات",
+    "mineOnly": "طلباتي فقط",
+    "empty": "لا توجد طلبات معلّقة.",
+    "approve": "موافقة",
+    "reject": "رفض",
+    "withdraw": "سحب",
+    "approved": "تمت الموافقة على الطلب.",
+    "rejected": "تم رفض الطلب.",
+    "withdrawn": "تم سحب الطلب.",
+    "parked": "تم إيقافه بانتظار موافقة أحد المدراء.",
+    "col": {
+      "kind": "النوع",
+      "description": "الوصف",
+      "requestedAt": "تاريخ الطلب"
+    },
+    "field": {
+      "reason": "السبب"
+    },
+    "kind": {
+      "undo": "تراجع",
+      "invoice_void": "إلغاء فاتورة",
+      "subscriber_delete": "حذف مشترك"
+    }
+  },
+  "undo": {
+    "action": "تراجع",
+    "done": "تم التراجع.",
+    "parked": "تم إيقاف التراجع بانتظار موافقة أحد المدراء.",
+    "kind": {
+      "renewal": "التراجع عن التجديد",
+      "topup": "التراجع عن الشحن",
+      "undo_reversal": "التراجع عن التراجع"
+    }
   }
 }

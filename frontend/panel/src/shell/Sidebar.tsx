@@ -10,9 +10,12 @@ import { brandInitial, useBranding } from '../branding'
 import { usePersistentState } from '../hooks/usePersistentState'
 import { NavIcon } from './navIcons'
 import {
+  PERM_ACCOUNTING_VIEW,
   PERM_AUDIT_VIEW,
   PERM_CARDS_VIEW,
   PERM_COA_OUTBOX_VIEW,
+  PERM_EXPENSES_VIEW,
+  PERM_INVOICES_VIEW,
   PERM_PAYMENT_TICKETS_VERIFY,
   PERM_PAYMENT_PROVIDERS_MANAGE,
   PERM_LIVE_VIEW,
@@ -68,6 +71,15 @@ const NAV_GROUPS: readonly NavGroup[] = [
       { key: 'nav.reports', to: '/reports', perm: PERM_REPORTS_VIEW },
       { key: 'nav.currencyRates', to: '/currency-rates', perm: PERM_TOPUP },
       { key: 'nav.pricingAdmin', to: '/pricing-admin', perm: PERM_OVERHEADS_MANAGE },
+    ],
+  },
+  {
+    titleKey: 'nav.group.accounting',
+    items: [
+      { key: 'nav.statements', to: '/statements', perm: PERM_ACCOUNTING_VIEW },
+      { key: 'nav.invoices', to: '/invoices', perm: PERM_INVOICES_VIEW },
+      { key: 'nav.expenses', to: '/expenses', perm: PERM_EXPENSES_VIEW },
+      { key: 'nav.approvals', to: '/approvals' },
     ],
   },
   {

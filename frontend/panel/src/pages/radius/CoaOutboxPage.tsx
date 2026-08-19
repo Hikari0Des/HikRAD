@@ -348,26 +348,28 @@ function CoAOutboxInspectModal({
             {row.attributes.length === 0 ? (
               <p className="text-xs text-ink-muted">{t('coaOutbox.noAttributes')}</p>
             ) : (
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="text-start text-ink-muted">
-                    <th className="py-1 pe-3 text-start font-medium">{t('coaOutbox.intent')}</th>
-                    <th className="py-1 text-start font-medium">{t('coaOutbox.value')}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {row.attributes.map((a, i) => (
-                    <tr key={i} className="border-t border-border/60">
-                      <td className="py-1 pe-3">
-                        <Ltr>{a.intent}</Ltr>
-                      </td>
-                      <td className="py-1">
-                        <Ltr>{a.value}</Ltr>
-                      </td>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="text-start text-ink-muted">
+                      <th className="py-1 pe-3 text-start font-medium">{t('coaOutbox.intent')}</th>
+                      <th className="py-1 text-start font-medium">{t('coaOutbox.value')}</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {row.attributes.map((a, i) => (
+                      <tr key={i} className="border-t border-border/60">
+                        <td className="py-1 pe-3">
+                          <Ltr>{a.intent}</Ltr>
+                        </td>
+                        <td className="py-1">
+                          <Ltr>{a.value}</Ltr>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
           </div>
 
@@ -436,26 +438,28 @@ function AttemptRow({ attempt }: { attempt: CoAOutboxAttempt }) {
             {open ? t('coaOutbox.hideWire') : t('coaOutbox.showWire')}
           </button>
           {open ? (
-            <table className="mt-2 w-full text-xs">
-              <thead>
-                <tr className="text-ink-muted">
-                  <th className="py-1 pe-2 text-start font-medium">{t('coaOutbox.wireType')}</th>
-                  <th className="py-1 text-start font-medium">{t('coaOutbox.wireValue')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {attempt.wire_attributes.map((w, i) => (
-                  <tr key={i} className="border-t border-border/60">
-                    <td className="py-1 pe-2">
-                      <Ltr>{String(w.type)}</Ltr>
-                    </td>
-                    <td className="py-1">
-                      <Ltr>{w.vendor_text ?? w.text ?? w.vendor_hex ?? w.hex}</Ltr>
-                    </td>
+            <div className="overflow-x-auto">
+              <table className="mt-2 w-full text-xs">
+                <thead>
+                  <tr className="text-ink-muted">
+                    <th className="py-1 pe-2 text-start font-medium">{t('coaOutbox.wireType')}</th>
+                    <th className="py-1 text-start font-medium">{t('coaOutbox.wireValue')}</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {attempt.wire_attributes.map((w, i) => (
+                    <tr key={i} className="border-t border-border/60">
+                      <td className="py-1 pe-2">
+                        <Ltr>{String(w.type)}</Ltr>
+                      </td>
+                      <td className="py-1">
+                        <Ltr>{w.vendor_text ?? w.text ?? w.vendor_hex ?? w.hex}</Ltr>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           ) : null}
         </>
       ) : null}

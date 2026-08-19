@@ -138,6 +138,30 @@ const PATHS: Record<string, ReactNode> = {
       <path d="M18 12v3M16.5 13.5h3" />
     </>
   ),
+  'nav.statements': (
+    <>
+      <path d="M4 4h16v16H4z" />
+      <path d="M8 16v-4M12 16v-8M16 16v-2" />
+    </>
+  ),
+  'nav.invoices': (
+    <>
+      <path d="M6 2h9l5 5v15H6z" />
+      <path d="M15 2v5h5M9 12h6M9 16h6" />
+    </>
+  ),
+  'nav.expenses': (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v10M9.5 9.5a2.5 2.5 0 0 1 2.5-1.5c1.5 0 2.5.8 2.5 2s-1 1.7-2.5 2-2.5.6-2.5 2 1 2 2.5 2 2.5-.6 2.5-1.7" />
+    </>
+  ),
+  'nav.approvals': (
+    <>
+      <path d="M9 11l2 2 4-4" />
+      <circle cx="12" cy="12" r="9" />
+    </>
+  ),
   'nav.roles': (
     <>
       <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z" />

@@ -4,6 +4,7 @@ import { GlobalSearch } from '../components/GlobalSearch'
 import { LocaleToggle, ThemeToggle } from '../components/QuickToggles'
 import { BalanceWidget } from './BalanceWidget'
 import { NotificationBell } from './notifications'
+import { UndoWidget } from './UndoWidget'
 import { UserMenu } from './UserMenu'
 
 export function TopBar({ onOpenMenu }: { onOpenMenu: () => void }) {
@@ -35,6 +36,7 @@ export function TopBar({ onOpenMenu }: { onOpenMenu: () => void }) {
       <div className="ms-auto flex items-center gap-1 sm:gap-2">
         <ThemeToggle />
         <LocaleToggle />
+        <UndoWidget />
         <BalanceWidget />
         <NotificationBell />
         <UserMenu />
