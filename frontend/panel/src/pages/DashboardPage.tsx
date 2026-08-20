@@ -496,6 +496,144 @@ function WidgetBody({ id, data }: { id: DashboardWidgetId; data: Dashboard | und
           ))}
         </ul>
       )
+    // v4-12 (FR-174) — clickable KPI tiles.
+    case 'open-tickets':
+      return (
+        <Link to="/support-tickets?status=open" className="block hover:opacity-90">
+          <span className="text-3xl font-bold">{data.open_tickets ?? 0}</span>
+        </Link>
+      )
+    case 'routers-reachable':
+      return (
+        <Link to="/nas" className="block hover:opacity-90">
+          <span className="text-3xl font-bold">
+            {data.routers_reachable?.reachable ?? 0}
+            <span className="text-lg font-normal text-ink-muted">
+              /{data.routers_reachable?.total ?? 0}
+            </span>
+          </span>
+        </Link>
+      )
+    case 'unpaid-invoices':
+      return (
+        <Link to="/invoices?status=unpaid" className="block hover:opacity-90">
+          <span className="text-3xl font-bold">{data.unpaid_invoices?.count ?? 0}</span>
+          <span className="ms-2 text-sm text-ink-muted">
+            <IQDAmount amount={data.unpaid_invoices?.outstanding_iqd ?? 0} />
+          </span>
+        </Link>
+      )
+    case 'ops-health-panel': {
+      const h = data.ops_health
+      const stat = (label: string, value: number | undefined) => (
+        <div key={label} className="rounded-md border border-border bg-surface p-2 text-center">
+          <p className="text-lg font-semibold">{value ?? 0}</p>
+          <p className="text-xs text-ink-muted">{label}</p>
+        </div>
+      )
+      return (
+        <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
+          {stat(t('dashboard.opsHealth.coaQueue'), h?.coa_queue_depth)}
+          {stat(t('dashboard.opsHealth.coaFailed24h'), h?.coa_failed_24h)}
+          {stat(t('dashboard.opsHealth.pendingApprovals'), h?.pending_approvals)}
+          {stat(t('dashboard.opsHealth.throttled'), h?.throttled_sessions)}
+          {stat(t('dashboard.opsHealth.activePlans'), h?.active_plans)}
+          {stat(t('dashboard.opsHealth.onlineNow'), h?.online_now)}
+        </div>
+      )
+    }
+    case 'recent-coa-outbox':
+      return (
+        <>
+          {(data.recent_coa_outbox ?? []).length === 0 ? (
+            <p className="text-sm text-ink-muted">{t('dashboard.noRecentActivity')}</p>
+          ) : (
+            <ul className="space-y-1.5">
+              {(data.recent_coa_outbox ?? []).map((r) => (
+                <li key={r.id} className="flex items-center justify-between gap-2 text-sm">
+                  <span className="truncate">
+                    <bdi dir="ltr">{r.username}</bdi> — {r.action}
+                  </span>
+                  <span className="shrink-0 text-xs text-ink-muted">{r.state}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          <Link to="/coa-outbox" className="mt-2 block text-xs text-brand hover:underline">
+            {t('dashboard.viewAll')}
+          </Link>
+        </>
+      )
+    case 'recent-admin-actions':
+      return (
+        <>
+          {(data.recent_admin_actions ?? []).length === 0 ? (
+            <p className="text-sm text-ink-muted">{t('dashboard.noRecentActivity')}</p>
+          ) : (
+            <ul className="space-y-1.5">
+              {(data.recent_admin_actions ?? []).map((r) => (
+                <li key={r.id} className="flex items-center justify-between gap-2 text-sm">
+                  <span className="truncate">
+                    {r.actor || t('dashboard.systemActor')} — {r.action}
+                  </span>
+                  <span className="shrink-0 text-xs text-ink-muted">{formatDate(r.at)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          <Link to="/audit-log" className="mt-2 block text-xs text-brand hover:underline">
+            {t('dashboard.viewAll')}
+          </Link>
+        </>
+      )
+    case 'recent-subscribers':
+      return (
+        <>
+          {(data.recent_subscribers ?? []).length === 0 ? (
+            <p className="text-sm text-ink-muted">{t('dashboard.noRecentActivity')}</p>
+          ) : (
+            <ul className="space-y-1.5">
+              {(data.recent_subscribers ?? []).map((s) => (
+                <li key={s.id} className="flex items-center justify-between gap-2 text-sm">
+                  <Link to={`/subscribers/${s.id}`} className="truncate hover:underline">
+                    <bdi dir="ltr">{s.username}</bdi>
+                  </Link>
+                  <span className="shrink-0 text-xs text-ink-muted">
+                    {formatDate(s.created_at)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+          <Link to="/subscribers" className="mt-2 block text-xs text-brand hover:underline">
+            {t('dashboard.viewAll')}
+          </Link>
+        </>
+      )
+    case 'recent-router-health':
+      return (
+        <>
+          {(data.recent_router_health ?? []).length === 0 ? (
+            <p className="text-sm text-ink-muted">{t('dashboard.noNas')}</p>
+          ) : (
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {(data.recent_router_health ?? []).map((n) => (
+                <Link
+                  key={n.id}
+                  to={`/nas/${n.id}/status`}
+                  className="flex items-center justify-between rounded-md border border-border bg-surface p-3 text-sm hover:border-brand"
+                >
+                  <span className="font-medium">{n.name}</span>
+                  <NasStatusDot status={n.status} latency={n.latency_ms} />
+                </Link>
+              ))}
+            </div>
+          )}
+          <Link to="/nas" className="mt-2 block text-xs text-brand hover:underline">
+            {t('dashboard.viewAll')}
+          </Link>
+        </>
+      )
     default:
       return null
   }

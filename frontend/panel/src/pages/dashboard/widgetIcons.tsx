@@ -77,6 +77,58 @@ const PATHS: Record<string, ReactNode> = {
       <path d="M12 7v5l3 2" />
     </>
   ),
+  // v4-12 (FR-174)
+  'open-tickets': (
+    <>
+      <path d="M3 8a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v2a2 2 0 0 0 0 4v2a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-2a2 2 0 0 0 0-4Z" />
+      <path d="M13 7v10" strokeDasharray="2 2" />
+    </>
+  ),
+  'routers-reachable': (
+    <>
+      <path d="M5 12.5a10 10 0 0 1 14 0" />
+      <path d="M8.5 16a5 5 0 0 1 7 0" />
+      <circle cx="12" cy="19" r="1.2" fill="currentColor" stroke="none" />
+    </>
+  ),
+  'unpaid-invoices': (
+    <>
+      <path d="M6 2h9l3 3v17l-3-2-3 2-3-2-3 2V2Z" />
+      <path d="M9 8h6M9 12h6M9 16h3" />
+    </>
+  ),
+  'ops-health-panel': (
+    <>
+      <path d="M3 12h4l2 8 4-16 2 8h6" />
+    </>
+  ),
+  'recent-coa-outbox': (
+    <>
+      <path d="M4 4h16v12H8l-4 4Z" />
+      <path d="M8 9h8M8 12h5" />
+    </>
+  ),
+  'recent-admin-actions': (
+    <>
+      <path d="M9 3h6l1 2h3v2H5V5h3Z" />
+      <path d="M6 7v13a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V7" />
+      <path d="M10 11v6M14 11v6" />
+    </>
+  ),
+  'recent-subscribers': (
+    <>
+      <circle cx="9" cy="8" r="3" />
+      <path d="M3 20v-1a5 5 0 0 1 5-5h2a5 5 0 0 1 5 5v1" />
+      <path d="M16 5.5c1.4.3 2.5 1.6 2.5 3s-1.1 2.7-2.5 3" />
+    </>
+  ),
+  'recent-router-health': (
+    <>
+      <rect x="3" y="9" width="18" height="6" rx="1.5" />
+      <path d="M7 12h.01M11 12h.01" />
+      <path d="M16 5v4M18 3v6" />
+    </>
+  ),
 }
 
 export function WidgetIcon({ name }: { name: string }) {

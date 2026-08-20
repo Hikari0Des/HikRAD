@@ -30,7 +30,12 @@ const STATUSES = ['unpaid', 'partial', 'due', 'paid', 'void'] as const
 export function InvoicesPage() {
   const t = useT()
   const { can } = useAuth()
-  const [status, setStatus] = useState('')
+  // v4-12: seeded from ?status= so the dashboard's unpaid-invoices KPI tile
+  // lands on the correctly filtered list (gate item 4) — read once, not a
+  // two-way URL binding (this page had none before and still doesn't).
+  const [status, setStatus] = useState(
+    () => new URLSearchParams(window.location.search).get('status') ?? '',
+  )
   const [createOpen, setCreateOpen] = useState(false)
   const [receiptRow, setReceiptRow] = useState<Invoice | null>(null)
   const [voidRow, setVoidRow] = useState<Invoice | null>(null)

@@ -52,7 +52,12 @@ export function SupportTicketsPage() {
   const t = useT()
   const { formatDate } = useFormatters()
   const [scope, setScope] = useState<'mine' | 'all'>('mine')
-  const [status, setStatus] = useState<TicketStatus | ''>('')
+  // v4-12: seeded from ?status= so the dashboard's open-tickets KPI tile
+  // lands on the correctly filtered list (gate item 4) — read once, not a
+  // two-way URL binding.
+  const [status, setStatus] = useState<TicketStatus | ''>(
+    () => (new URLSearchParams(window.location.search).get('status') as TicketStatus | null) ?? '',
+  )
   const [priority, setPriority] = useState<TicketPriority | ''>('')
   const [search, setSearch] = useState('')
   const { data, error, loading, reload } = useAsync(

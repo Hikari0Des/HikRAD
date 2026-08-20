@@ -127,7 +127,15 @@
       "pending-payment-tickets": "Pending payment tickets",
       "alerts-feed": "Recent alerts",
       "top-usage-subscribers": "Top usage (7 days)",
-      "top-session-subscribers": "Most open sessions"
+      "top-session-subscribers": "Most open sessions",
+      "open-tickets": "Open tickets",
+      "routers-reachable": "Routers reachable",
+      "unpaid-invoices": "Unpaid invoices",
+      "ops-health-panel": "Ops health",
+      "recent-coa-outbox": "Recent CoA outbox",
+      "recent-admin-actions": "Recent admin actions",
+      "recent-subscribers": "Recent subscribers",
+      "recent-router-health": "Router health"
     },
     "empty": {
       "title": "Nothing here yet",
@@ -146,8 +154,27 @@
       "pending-payment-tickets": "Payment tickets awaiting your review.",
       "alerts-feed": "Recent monitoring alerts.",
       "top-usage-subscribers": "Heaviest data users this week.",
-      "top-session-subscribers": "Subscribers with the most open sessions."
-    }
+      "top-session-subscribers": "Subscribers with the most open sessions.",
+      "open-tickets": "Support tickets awaiting a reply.",
+      "routers-reachable": "How many of your NAS devices answer right now.",
+      "unpaid-invoices": "Invoices not yet fully paid.",
+      "ops-health-panel": "CoA queue, approvals, throttling and plans at a glance.",
+      "recent-coa-outbox": "The latest CoA/disconnect actions sent to routers.",
+      "recent-admin-actions": "The latest actions from the audit log.",
+      "recent-subscribers": "The most recently created subscribers.",
+      "recent-router-health": "Reachability of your most recently checked routers."
+    },
+    "opsHealth": {
+      "coaQueue": "CoA queue",
+      "coaFailed24h": "CoA failed (24h)",
+      "pendingApprovals": "Pending approvals",
+      "throttled": "Throttled",
+      "activePlans": "Plans",
+      "onlineNow": "Online"
+    },
+    "noRecentActivity": "No recent activity.",
+    "viewAll": "View all →",
+    "systemActor": "System"
   },
   "notFound": {
     "title": "Page not found",
@@ -1995,6 +2022,10 @@
       "today": "Today",
       "week": "This week",
       "month": "This month",
+      "7d": "7 days",
+      "14d": "14 days",
+      "30d": "30 days",
+      "90d": "90 days",
       "from": "From",
       "to": "To"
     },
@@ -2008,7 +2039,8 @@
       "expiresAt": "Expires",
       "nas": "NAS",
       "down": "Down",
-      "up": "Up"
+      "up": "Up",
+      "total": "Total"
     },
     "index": {
       "revenueThisMonth": "Revenue this month",
@@ -2049,6 +2081,46 @@
         "globalOverheads": "Global overheads",
         "globalNote": "Global overheads are shown for reference only — never subtracted from a site's own net margin."
       }
+    },
+    "trends": {
+      "title": "Trends & traffic",
+      "subtitle": "Active subscribers, online sessions, expired subscribers, and daily traffic.",
+      "desc": "Trend lines, daily traffic, and the top-10 leaderboards.",
+      "series": {
+        "active": "Active subscribers",
+        "online": "Online sessions",
+        "expired": "Expired subscribers"
+      },
+      "chart": {
+        "title": "Trend lines"
+      },
+      "dailyTraffic": {
+        "title": "Daily traffic"
+      },
+      "top10": {
+        "title": "Top 10",
+        "downloadToday": "Download — today",
+        "uploadToday": "Upload — today",
+        "downloadMonth": "Download — this month",
+        "uploadMonth": "Upload — this month"
+      }
+    },
+    "trafficByEntity": {
+      "title": "Traffic by entity",
+      "subtitle": "Today and this month, by user or by card group.",
+      "desc": "Paginated, searchable traffic totals — separate Users and Cards tabs.",
+      "view": {
+        "users": "Users",
+        "cards": "Cards"
+      },
+      "search": "Search",
+      "col": {
+        "group": "Card group",
+        "today": "Today",
+        "month": "This month"
+      },
+      "prev": "Previous",
+      "next": "Next"
     },
     "subscribers": {
       "title": "Subscriber report",

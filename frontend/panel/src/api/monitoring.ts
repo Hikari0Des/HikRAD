@@ -51,6 +51,51 @@ export interface Dashboard {
   alerts_feed?: DashboardAlertItem[]
   top_usage_subscribers?: DashboardTopUsageItem[]
   top_session_subscribers?: DashboardTopSessionItem[]
+  // v4-12 (FR-174) additions — same "absent means not requested/permitted"
+  // contract as every field above.
+  open_tickets?: number
+  routers_reachable?: { reachable: number; total: number }
+  unpaid_invoices?: { count: number; outstanding_iqd: number }
+  ops_health?: DashboardOpsHealth
+  recent_coa_outbox?: DashboardRecentCoARow[]
+  recent_admin_actions?: DashboardRecentAdminActionRow[]
+  recent_subscribers?: DashboardRecentSubscriberRow[]
+  recent_router_health?: DashboardNasCard[]
+}
+
+export interface DashboardOpsHealth {
+  coa_queue_depth: number
+  coa_failed_24h: number
+  pending_approvals: number
+  throttled_sessions: number
+  active_plans: number
+  online_now: number
+  active_subscribers: number
+}
+
+export interface DashboardRecentCoARow {
+  id: string
+  username: string
+  action: string
+  state: string
+  reason: string
+  at: string
+}
+
+export interface DashboardRecentAdminActionRow {
+  id: number
+  actor: string
+  action: string
+  entity_type: string
+  entity_id: string
+  at: string
+}
+
+export interface DashboardRecentSubscriberRow {
+  id: string
+  username: string
+  status: string
+  created_at: string
 }
 
 export interface DashboardTopUsageItem {
