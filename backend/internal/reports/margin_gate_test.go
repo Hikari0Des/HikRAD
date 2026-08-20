@@ -6,6 +6,7 @@ package reports_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"testing"
 	"time"
@@ -119,12 +120,20 @@ func TestMarginReconciliation(t *testing.T) {
 func TestSiteMarginNeverBlendsGlobal(t *testing.T) {
 	e := setup(t)
 	ctx := context.Background()
-	from := time.Now().Add(-time.Minute).UTC()
+	// A tight buffer, not the ±1 minute this test used before: the margin
+	// query's global_overheads sum is a genuine PERIOD OVERLAP (period_start
+	// <= to AND period_end >= from, margin.go), so two invocations of this
+	// exact test within the same wide window legitimately double-count each
+	// other's "global uplink" overhead — found while verifying the uniqIP
+	// fix below by rerunning this test back-to-back. A few seconds is ample
+	// for this test's own HTTP round trips while shrinking the accidental-
+	// overlap window from minutes to single-digit seconds.
+	from := time.Now().Add(-3 * time.Second).UTC()
 
 	var nasID string
 	if err := e.db.QueryRow(ctx,
-		`INSERT INTO nas (name, ip, secret_enc) VALUES ($1, '10.99.0.1'::inet, '\x01'::bytea) RETURNING id::text`,
-		uniqName(t)).Scan(&nasID); err != nil {
+		`INSERT INTO nas (name, ip, secret_enc) VALUES ($1, $2::inet, '\x01'::bytea) RETURNING id::text`,
+		uniqName(t), uniqIP(t)).Scan(&nasID); err != nil {
 		t.Fatalf("insert nas: %v", err)
 	}
 
@@ -142,7 +151,7 @@ func TestSiteMarginNeverBlendsGlobal(t *testing.T) {
 		t.Fatalf("renew = %d: %s", r.status, r.body)
 	}
 
-	to := time.Now().Add(time.Minute).UTC()
+	to := time.Now().Add(3 * time.Second).UTC()
 	e.createOverhead(t, "global uplink", 100000, "IQD", nil, from, to)
 	e.createOverhead(t, "site power", 5000, "IQD", &nasID, from, to)
 
@@ -186,6 +195,15 @@ func TestSiteMarginNeverBlendsGlobal(t *testing.T) {
 func uniqName(t *testing.T) string {
 	t.Helper()
 	return "sess_" + time.Now().Format("150405.000000000")
+}
+
+// uniqIP: known-issues.md 2026-07-18 (Tests/reports) — this test seeded a
+// hardcoded literal NAS ip, unlike every sibling test in the suite, and
+// collided on nas_ip_key across a rerun against the same never-reset test
+// DB. Randomized like every other test's fixtures (uniq() in db_test.go).
+func uniqIP(t *testing.T) string {
+	t.Helper()
+	return fmt.Sprintf("10.99.%d.%d", randInt(t, 254)+1, randInt(t, 254)+1)
 }
 
 // TestResellerScopingNeverLeaksCost — AC-75a: a reseller-scoped margin-report
