@@ -226,6 +226,15 @@ v4 is complete when all of the following pass in one run on a clean machine:
 9. **Portal**: auto-login grants a reduced-scope session from a trusted network, **refuses on an ambiguous or untrusted source**, and password step-up works.
 10. **Books reconcile**: every report figure ties to the journal, verified by test.
 
+> **Result (2026-08-20, v4-12): NOT GREEN.** Items 4, 8, 9, 10 pass (8 and 9 cited from
+> v4-4's/v4-11's own gates; 4 and 10 re-run live in v4-12's own session). Items 1, 2, 3,
+> and the human-review half of 7 are outstanding — hardware, a real RouterOS device, a
+> restored pilot backup, and a human browser, declared at every relevant phase's kickoff
+> and never obtainable from a coding sandbox across the whole program. Item 5 needs a
+> real signing pipeline no sandbox has set up. Item 6 has a real, previously-logged
+> (2026-08-18), still-unfixed licence grace-state bug directly in the mechanism this
+> item names. Full breakdown and reproduction steps: [docs/history/gates/v4-12.md](../history/gates/v4-12.md).
+
 ---
 
 ## 8. Risks
