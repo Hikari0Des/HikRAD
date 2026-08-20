@@ -30,6 +30,12 @@ export function ReportsIndexPage() {
     },
     { to: '/reports/usage', titleKey: 'reports.usage.title', descKey: 'reports.usage.desc' },
     { to: '/reports/margin', titleKey: 'reports.margin.title', descKey: 'reports.margin.desc' },
+    { to: '/reports/trends', titleKey: 'reports.trends.title', descKey: 'reports.trends.desc' },
+    {
+      to: '/reports/traffic-by-entity',
+      titleKey: 'reports.trafficByEntity.title',
+      descKey: 'reports.trafficByEntity.desc',
+    },
   ]
 
   return (

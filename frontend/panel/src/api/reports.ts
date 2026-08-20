@@ -199,3 +199,70 @@ export interface SiteMarginRow {
 export function getSiteMarginReport(range: ReportRange): Promise<{ rows: SiteMarginRow[] }> {
   return request('/reports/margin/sites', { query: { from: range.from, to: range.to } })
 }
+
+// --- trends, daily traffic, top-10s, traffic by entity (v4-12, FR-173) ------
+
+export interface TrendRow {
+  date: string
+  active_subscribers: number
+  online_sessions: number
+  expired_subscribers: number
+}
+
+export function getTrends(range: ReportRange): Promise<{ rows: TrendRow[] }> {
+  return request('/reports/trends', { query: { from: range.from, to: range.to } })
+}
+
+export interface DailyTrafficRow {
+  date: string
+  down_bytes: number
+  up_bytes: number
+}
+
+export function getDailyTraffic(range: ReportRange): Promise<{ rows: DailyTrafficRow[] }> {
+  return request('/reports/daily-traffic', { query: { from: range.from, to: range.to } })
+}
+
+export interface Top10Row {
+  subscriber_id: string
+  username: string
+  bytes: number
+}
+
+export interface Top10Response {
+  download_today: Top10Row[]
+  upload_today: Top10Row[]
+  download_month: Top10Row[]
+  upload_month: Top10Row[]
+}
+
+export function getTop10(): Promise<Top10Response> {
+  return request('/reports/top10')
+}
+
+export type TrafficEntityView = 'users' | 'cards'
+
+export interface TrafficEntityRow {
+  id: string
+  name: string
+  today_down_bytes: number
+  today_up_bytes: number
+  month_down_bytes: number
+  month_up_bytes: number
+}
+
+export interface TrafficEntityPage {
+  items: TrafficEntityRow[]
+  next_cursor: string | null
+}
+
+export function getTrafficByEntity(
+  view: TrafficEntityView,
+  q: string,
+  cursor?: string | null,
+  limit = 25,
+): Promise<TrafficEntityPage> {
+  return request('/reports/traffic-by-entity', {
+    query: { view, q: q || undefined, cursor: cursor || undefined, limit },
+  })
+}

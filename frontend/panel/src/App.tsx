@@ -72,6 +72,8 @@ import { RevenueReportPage } from './pages/reports/RevenueReportPage'
 import { ReportsIndexPage } from './pages/reports/ReportsIndexPage'
 import { SettlementReportPage } from './pages/reports/SettlementReportPage'
 import { SubscribersReportPage } from './pages/reports/SubscribersReportPage'
+import { TrafficByEntityPage } from './pages/reports/TrafficByEntityPage'
+import { TrendsReportPage } from './pages/reports/TrendsReportPage'
 import { UsageReportPage } from './pages/reports/UsageReportPage'
 import { AccountSecurityPage } from './pages/security/AccountSecurityPage'
 import { AuditLogPage } from './pages/security/AuditLogPage'
@@ -149,6 +151,11 @@ export function App() {
             element={guard(PERM_REPORTS_VIEW, <SubscribersReportPage />)}
           />
           <Route path="reports/usage" element={guard(PERM_REPORTS_VIEW, <UsageReportPage />)} />
+          <Route path="reports/trends" element={guard(PERM_REPORTS_VIEW, <TrendsReportPage />)} />
+          <Route
+            path="reports/traffic-by-entity"
+            element={guard(PERM_REPORTS_VIEW, <TrafficByEntityPage />)}
+          />
           <Route path="import" element={guard(PERM_SUBSCRIBERS_CREATE, <ImportWizardPage />)} />
           <Route
             path="import/profiles"

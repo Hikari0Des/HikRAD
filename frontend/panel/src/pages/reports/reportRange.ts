@@ -46,7 +46,11 @@ function startOfMonth(dateStr: string): string {
   return dateStr.slice(0, 7) + '-01'
 }
 
-export type RangePreset = 'today' | 'week' | 'month' | 'custom'
+// v4-12 (FR-173): "Date presets (7/14/30/90d)" for the new trend/traffic
+// reports — trailing-N-day windows ending today, distinct from the
+// existing today/week/month calendar presets the 5 pre-existing reports
+// use (unchanged by this phase).
+export type RangePreset = 'today' | 'week' | 'month' | '7d' | '14d' | '30d' | '90d' | 'custom'
 
 export interface DateRange {
   /** Inclusive start date, YYYY-MM-DD (Asia/Baghdad). */
@@ -65,6 +69,14 @@ export function presetRange(preset: Exclude<RangePreset, 'custom'>): DateRange {
       return { from: startOfWeek(today), to: addDays(today, 1) }
     case 'month':
       return { from: startOfMonth(today), to: addDays(today, 1) }
+    case '7d':
+      return { from: addDays(today, -6), to: addDays(today, 1) }
+    case '14d':
+      return { from: addDays(today, -13), to: addDays(today, 1) }
+    case '30d':
+      return { from: addDays(today, -29), to: addDays(today, 1) }
+    case '90d':
+      return { from: addDays(today, -89), to: addDays(today, 1) }
   }
 }
 
