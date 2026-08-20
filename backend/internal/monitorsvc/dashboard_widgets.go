@@ -38,6 +38,23 @@ var dashboardWidgetCatalog = []dashboardWidgetDef{
 	// Owner request 2026-07-19 (item 2): usage/session leaderboards.
 	{ID: "top-usage-subscribers", Permission: "subscribers.view", Size: widgetSize2x},
 	{ID: "top-session-subscribers", Permission: "sessions.view", Size: widgetSize2x},
+
+	// v4-12 (FR-174) — extends this catalog, does not replace it. New
+	// clickable KPI tiles:
+	{ID: "open-tickets", Permission: "support.view", Size: widgetSize1x},
+	{ID: "routers-reachable", Permission: "nas.view", Size: widgetSize1x},
+	{ID: "unpaid-invoices", Permission: "invoices.view", Size: widgetSize1x},
+	// Ops health panel: CoA queue depth + 24h CoA failures (v4-8), pending
+	// approvals (v4-9), throttled sessions (v4-4), active plans, sessions
+	// snapshot. Deliberately a DIFFERENT id from the pre-existing
+	// "pipeline-health" widget above, which is the accounting-ingest
+	// invariant (a different domain) and is unchanged by this phase.
+	{ID: "ops-health-panel", Permission: PermView, Size: widgetSize2x},
+	// Recent-activity tables, each with a "view all" link client-side.
+	{ID: "recent-coa-outbox", Permission: "coa_outbox.view", Size: widgetSize2x},
+	{ID: "recent-admin-actions", Permission: "audit.view", Size: widgetSize2x},
+	{ID: "recent-subscribers", Permission: "subscribers.view", Size: widgetSize2x},
+	{ID: "recent-router-health", Permission: "nas.view", Size: widgetSize2x},
 }
 
 // widgetPermitted reports whether m (nil-safe: an unauthenticated caller

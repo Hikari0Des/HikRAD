@@ -183,6 +183,31 @@ func handleDashboardFiltered(w http.ResponseWriter, r *http.Request) {
 	if containsWidget(ids, "top-session-subscribers") {
 		out["top_session_subscribers"] = topSessionSubscribers(ctx)
 	}
+	// v4-12 (FR-174) additions.
+	if containsWidget(ids, "open-tickets") {
+		out["open_tickets"] = openTicketsCount(ctx)
+	}
+	if containsWidget(ids, "routers-reachable") {
+		out["routers_reachable"] = routersReachable(ctx)
+	}
+	if containsWidget(ids, "unpaid-invoices") {
+		out["unpaid_invoices"] = unpaidInvoices(ctx)
+	}
+	if containsWidget(ids, "ops-health-panel") {
+		out["ops_health"] = loadOpsHealthPanel(ctx)
+	}
+	if containsWidget(ids, "recent-coa-outbox") {
+		out["recent_coa_outbox"] = recentCoAOutbox(ctx)
+	}
+	if containsWidget(ids, "recent-admin-actions") {
+		out["recent_admin_actions"] = recentAdminActions(ctx)
+	}
+	if containsWidget(ids, "recent-subscribers") {
+		out["recent_subscribers"] = recentSubscribers(ctx)
+	}
+	if containsWidget(ids, "recent-router-health") {
+		out["recent_router_health"] = recentRouterHealth(ctx)
+	}
 	httpapi.JSON(w, http.StatusOK, out)
 }
 
