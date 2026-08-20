@@ -5,6 +5,7 @@ import { useT } from '@hikrad/shared'
 import { useAuth } from '../auth/AuthContext'
 import { brandInitial, useBranding } from '../branding'
 import { LanguageSwitcher } from '../components/LanguageSwitcher'
+import { ReducedScopeBanner } from '../components/ReducedScopeBanner'
 import { ThemeSwitcher } from '../components/ThemeSwitcher'
 import { PoweredByFooter } from './PoweredByFooter'
 
@@ -12,6 +13,7 @@ const TABS = [
   { to: '/home', key: 'portal.nav.home' },
   { to: '/usage', key: 'portal.nav.usage' },
   { to: '/renew', key: 'portal.nav.renew' },
+  { to: '/tickets', key: 'portal.nav.tickets' },
   { to: '/settings', key: 'portal.nav.settings' },
 ] as const
 
@@ -68,6 +70,8 @@ export function PortalLayout() {
           </button>
         </div>
       </header>
+
+      <ReducedScopeBanner />
 
       <main className="flex-1 px-4 pb-20 pt-2">
         <Outlet />

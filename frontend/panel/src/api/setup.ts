@@ -23,6 +23,10 @@ export type SettingsGroup =
    * docs/phases/phase-5-v1-reports-install-license/status-agent-4.md.
    */
   | 'card_payments'
+  /** v4-11, FR-167/Decision 64: connected-client auto-login — off by default. */
+  | 'portal_auto_login'
+  /** v4-11, FR-169/FR-172: self-service guest registration + OTP login. */
+  | 'guest_registration'
 
 export function getSettingsGroup<T = Record<string, unknown>>(group: SettingsGroup): Promise<T> {
   return request<T>(`/settings/${group}`)

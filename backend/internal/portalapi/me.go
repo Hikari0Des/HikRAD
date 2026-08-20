@@ -33,13 +33,18 @@ type speedView struct {
 }
 
 type meResponse struct {
-	Status      string     `json:"status"`
-	OnlineNow   bool       `json:"online_now"`
-	ExpiresAt   *time.Time `json:"expires_at"`
-	DaysLeft    int        `json:"days_left"`
-	Usage       usageView  `json:"usage"`
-	Speed       speedView  `json:"speed"`
-	ProfileName string     `json:"profile_name"`
+	Status      string                      `json:"status"`
+	OnlineNow   bool                        `json:"online_now"`
+	ExpiresAt   *time.Time                  `json:"expires_at"`
+	DaysLeft    int                         `json:"days_left"`
+	Usage       usageView                   `json:"usage"`
+	Speed       speedView                   `json:"speed"`
+	ProfileName string                      `json:"profile_name"`
+	// Throttle is FR-166's plain-language speed explanation: which limit is
+	// currently active (if any) and, only for the daily window, when it
+	// lifts. Reason is "" (omitted) when nothing is currently limiting the
+	// subscriber. Decision 21 still applies — see subscribers.ThrottleStatus.
+	Throttle subscribers.ThrottleStatus `json:"throttle"`
 }
 
 // composeMe is the single read backing both GET /portal/me and the response
@@ -67,6 +72,10 @@ func (m *Module) composeMe(ctx context.Context, subscriberID string) (meResponse
 	}
 
 	usedDown, usedUp := m.consumedSinceCycle(ctx, subscriberID, p.QuotaCycleAnchor)
+	throttle, err := subscribers.LoadThrottleStatus(ctx, m.db, subscriberID)
+	if err != nil {
+		return meResponse{}, err
+	}
 
 	daysLeft := 0
 	if p.ExpiresAt != nil {
@@ -81,6 +90,7 @@ func (m *Module) composeMe(ctx context.Context, subscriberID string) (meResponse
 		Usage:       usageView{UsedDown: usedDown, UsedUp: usedUp, UsedTotal: usedDown + usedUp},
 		Speed:       speedView{ProfileDown: p.ProfileDownKbps, ProfileUp: p.ProfileUpKbps, LiveDown: liveDown, LiveUp: liveUp},
 		ProfileName: p.ProfileName,
+		Throttle:    throttle,
 	}, nil
 }
 

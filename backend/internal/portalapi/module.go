@@ -53,16 +53,60 @@ func (m *Module) Register(r chi.Router, d httpapi.Deps) {
 	r.Post("/api/v1/portal/refresh", m.refreshHandler)
 	r.With(m.requireSubscriber).Post("/api/v1/portal/logout", m.logoutHandler)
 
-	// Self-care (C2 FR-41.2/41.3, FR-44).
+	// Connected-client auto-login (FR-167/FR-168, Decision 64). Unguarded —
+	// it establishes identity, same as login/refresh — but see autologin.go:
+	// this is the one path that authenticates without a credential, so
+	// everything downstream of it is fail-closed by construction. Reuses
+	// this exact endpoint for the captive-portal hand-off too (no second
+	// implementation). Step-up requires an already-authenticated (any
+	// scope) token.
+	r.Post("/api/v1/portal/session/auto", m.autoLoginHandler)
+	r.With(m.requireSubscriber).Post("/api/v1/portal/session/step-up", m.stepUpHandler)
+
+	// Self-care (C2 FR-41.2/41.3, FR-44). PUT /me bundles password + contact
+	// fields in one endpoint, so the WHOLE endpoint requires full scope
+	// (FR-167 gate item 9) — a reduced-scope (auto-login) token gets 403,
+	// never a partial-field allowance that would need its own separate
+	// scope logic to get right.
 	r.With(m.requireSubscriber).Get("/api/v1/portal/me", m.meHandler)
-	r.With(m.requireSubscriber).Put("/api/v1/portal/me", m.updateMeHandler)
+	r.With(m.requireSubscriber, m.requireFullScope).Put("/api/v1/portal/me", m.updateMeHandler)
 	r.With(m.requireSubscriber).Put("/api/v1/portal/language", m.languageHandler)
 	r.With(m.requireSubscriber).Get("/api/v1/portal/usage", m.usageHandler)
+	r.With(m.requireSubscriber).Get("/api/v1/portal/sessions", m.sessionHistoryHandler)
 	r.With(m.requireSubscriber).Get("/api/v1/portal/payments", m.paymentsHandler)
+
+	// Support tickets (FR-170, consuming v4-10's FR-164 seam). Creating/
+	// replying is allowed under reduced scope (neither password, contact,
+	// notification-channel, nor payment-config change — the only four
+	// actions FR-167 reserves for full scope).
+	r.With(m.requireSubscriber).Get("/api/v1/portal/support-tickets", m.listTicketsHandler)
+	r.With(m.requireSubscriber).Get("/api/v1/portal/support-tickets/{id}", m.getTicketHandler)
+	r.With(m.requireSubscriber).Post("/api/v1/portal/support-tickets", m.createTicketHandler)
+	r.With(m.requireSubscriber).Post("/api/v1/portal/support-tickets/{id}/messages", m.replyTicketHandler)
+	r.With(m.requireSubscriber).Post("/api/v1/portal/support-tickets/{id}/withdraw", m.withdrawTicketHandler)
+
+	// Invoices (FR-171). Read-only; paying reuses the existing Pay screen.
+	r.With(m.requireSubscriber).Get("/api/v1/portal/invoices", m.listInvoicesHandler)
+	r.With(m.requireSubscriber).Get("/api/v1/portal/invoices/{id}", m.getInvoiceHandler)
+	r.With(m.requireSubscriber).Get("/api/v1/portal/invoices/{id}/print", m.invoicePrintHandler)
+
+	// Notification-channel preferences (FR-170). Read is fine under reduced
+	// scope; the write is exactly the "notification channels" case FR-167
+	// §4 reserves for full scope.
+	r.With(m.requireSubscriber).Get("/api/v1/portal/notification-preferences", m.notificationPrefsHandler)
+	r.With(m.requireSubscriber, m.requireFullScope).Put("/api/v1/portal/notification-preferences", m.updateNotificationPrefsHandler)
 
 	// v4-10 (FR-165): issues the one-time code the Telegram bot's /link
 	// command consumes. The button that calls this is v4-11's UI.
 	r.With(m.requireSubscriber).Post("/api/v1/portal/telegram/link-code", m.telegramLinkCodeHandler)
+
+	// Self-service guest registration (FR-169) + OTP login for passwordless
+	// hotspot accounts (FR-172) — unauthenticated, same as login/auto-login
+	// (they establish identity). Shared abuse-control machinery: passcodes.go.
+	r.Post("/api/v1/portal/register", m.registerHandler)
+	r.Post("/api/v1/portal/register/verify", m.registerVerifyHandler)
+	r.Post("/api/v1/portal/otp/request", m.otpRequestHandler)
+	r.Post("/api/v1/portal/otp/verify", m.otpVerifyHandler)
 
 	// Renewal (FR-42): voucher redeem + the unified Pay screen (v2-2, C4/C5/C13).
 	r.With(m.requireSubscriber).Post("/api/v1/portal/vouchers/redeem", m.redeemVoucherHandler)

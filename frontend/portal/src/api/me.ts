@@ -26,6 +26,14 @@ export interface PortalMe {
     live_up?: number
   }
   profile_name: string
+  // FR-166: which limit (if any) is currently reducing this subscriber's
+  // speed, and — for the daily window only — when it lifts. Never a
+  // ceiling/remaining figure (Decision 21).
+  throttle: {
+    reason?: 'expiry' | 'quota' | 'uptime' | 'daily'
+    action?: string
+    resets_at?: string
+  }
 }
 
 export function getMe(): Promise<PortalMe> {

@@ -123,6 +123,17 @@ export function HomePage() {
               })}
             </p>
           ) : null}
+          {data.throttle?.reason ? (
+            <p role="status" className="rounded-md bg-warn/10 p-2 text-xs text-ink">
+              {t(`portal.home.throttle.${data.throttle.reason}`)}
+              {data.throttle.reason === 'daily' && data.throttle.resets_at
+                ? ' ' +
+                  t('portal.home.throttle.resetsAt', {
+                    time: formatDate(data.throttle.resets_at, { timeStyle: 'short' }),
+                  })
+                : null}
+            </p>
+          ) : null}
         </div>
       </section>
 

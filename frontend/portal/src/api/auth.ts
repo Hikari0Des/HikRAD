@@ -15,10 +15,15 @@ export interface Subscriber {
   language: 'en' | 'ar' | 'ku'
 }
 
+/** "full" (password-authenticated) or "reduced" (auto-login, FR-167) — the
+ * client never infers this, it only ever reads it from the response. */
+export type SessionScope = 'full' | 'reduced'
+
 export interface LoginResponse {
   access_token: string
-  refresh_token: string
+  refresh_token?: string
   subscriber: Subscriber
+  scope: SessionScope
 }
 
 /** Friendly, narrow set of login failure reasons the UI branches on. */

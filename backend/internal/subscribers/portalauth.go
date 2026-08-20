@@ -73,6 +73,40 @@ func VerifyPassword(ctx context.Context, db *pgxpool.Pool, username, password st
 	return id, true, nil
 }
 
+// VerifyPasswordByID checks password against subscriberID's sealed RADIUS
+// credential — the by-id counterpart to VerifyPassword, needed by v4-11's
+// password step-up (FR-167), where the caller already has an authenticated
+// subscriber id (from a reduced-scope portal token) and must confirm the
+// password without a second username lookup. Same discipline as
+// VerifyPassword: a missing user, a decrypt failure, and a wrong password
+// are all indistinguishable to the caller, and the plaintext never leaves
+// this function.
+func VerifyPasswordByID(ctx context.Context, db *pgxpool.Pool, subscriberID, password string) (bool, error) {
+	var passwordEnc []byte
+	err := db.QueryRow(ctx, `SELECT password_enc FROM subscribers WHERE id = $1::uuid`, subscriberID).Scan(&passwordEnc)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if len(passwordEnc) == 0 {
+		return false, nil
+	}
+	plain, derr := crypto.Decrypt(passwordEnc)
+	if derr != nil {
+		return false, nil
+	}
+	if len(plain) == 0 {
+		return false, nil
+	}
+	match := subtle.ConstantTimeCompare(plain, []byte(password)) == 1
+	for i := range plain {
+		plain[i] = 0
+	}
+	return match, nil
+}
+
 // LoadIdentity loads a PortalIdentity by subscriber id (used on token
 // refresh, where only the id — not the password — is available).
 func LoadIdentity(ctx context.Context, db *pgxpool.Pool, subscriberID string) (PortalIdentity, error) {
@@ -132,6 +166,41 @@ func SetLanguage(ctx context.Context, db *pgxpool.Pool, subscriberID, language s
 	_, err := db.Exec(ctx, `UPDATE subscribers SET language = $2, updated_at = now() WHERE id = $1::uuid`,
 		subscriberID, language)
 	return err
+}
+
+// CreateGuestAccount creates a real, named hotspot subscriber for
+// self-service registration (v4-11, FR-169), after the visitor has already
+// proven ownership of phone via a verified passcode — a much narrower
+// insert than the panel's full createHandler (no manager scope, no FR-64 NAS
+// scopes, no rate/price overrides): a guest account starts unowned
+// (owner_manager_id NULL, the same "instance-level" case 0592's payment
+// defaults already treat as first-class), hotspot service type, and — like
+// every v1.1 no_password account — a sealed EMPTY credential plus
+// has_password=false, so it can never authenticate by password at all; FR-172
+// OTP login is deliberately its only portal credential path. username is the
+// phone number itself (the one stable identifier a visitor supplies with no
+// account yet); a re-registration of an already-registered phone returns the
+// EXISTING account id rather than erroring, so verify is idempotent for a
+// returning visitor.
+func CreateGuestAccount(ctx context.Context, db *pgxpool.Pool, phone, name, profileID string) (id string, err error) {
+	sealedEmpty, eerr := crypto.Encrypt([]byte(""))
+	if eerr != nil {
+		return "", eerr
+	}
+	err = db.QueryRow(ctx,
+		`INSERT INTO subscribers
+		   (username, password_enc, name, phone, status, profile_id, service_type,
+		    has_password, mac_lock_mode, quota_cycle_anchor)
+		 VALUES ($1, $2, $3, $4, 'active', $5::uuid, 'hotspot', false, 'off', now())
+		 ON CONFLICT (username) DO NOTHING
+		 RETURNING id::text`,
+		phone, sealedEmpty, name, phone, profileID).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		// Username (phone) already existed — the ON CONFLICT branch produced no
+		// RETURNING row; look up the existing account instead of erroring.
+		err = db.QueryRow(ctx, `SELECT id::text FROM subscribers WHERE username = $1`, phone).Scan(&id)
+	}
+	return id, err
 }
 
 // PortalProfile is the read-only composition source for GET /portal/me

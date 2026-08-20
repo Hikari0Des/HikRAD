@@ -11,11 +11,17 @@
 //	live:events                       CHANNEL of Event JSON (SSE deltas)
 //	live:sub:<subscriberID>:<service> SET   of live fields → O(1) SCARD for Count (FR-58.2)
 //	live:nas:<nasID>                  SET   of live fields → O(1) SCARD for NAS live count
+//	live:ip:<framedIP>                SET   of live fields → O(1) SCARD/SMEMBERS for ByIP (v4-11, FR-167)
 //
-// The per-subscriber/per-NAS index sets exist so the hot authorize path never
-// has to HGETALL the whole live table to answer a session-limit question
-// (NFR-1). SADD/SREM are idempotent, so a duplicate Start or a replayed packet
-// cannot double-count — which is exactly what the chaos scenarios exercise.
+// The per-subscriber/per-NAS/per-IP index sets exist so the hot authorize path
+// never has to HGETALL the whole live table to answer a session-limit question
+// (NFR-1), and so the portal auto-login path (v4-11) never has to scan every
+// live session to answer "how many sessions currently sit on this source IP" —
+// that question's answer is exact-match-or-refuse (FR-167 condition 4), so an
+// O(n) scan that could race against a growing table is exactly the kind of
+// approximate-under-load bug the threat model rules out by construction.
+// SADD/SREM are idempotent, so a duplicate Start or a replayed packet cannot
+// double-count — which is exactly what the chaos scenarios exercise.
 package livestate
 
 import (
@@ -33,6 +39,7 @@ const (
 	EventsChannel = "live:events"
 	subSetPrefix  = "live:sub:"
 	nasSetPrefix  = "live:nas:"
+	ipSetPrefix   = "live:ip:"
 )
 
 // Services the pipeline distinguishes (FR-58). "" means "all services".
@@ -87,6 +94,7 @@ func subSetKey(subscriberID, service string) string {
 	return subSetPrefix + subscriberID + ":" + service
 }
 func nasSetKey(nasID string) string { return nasSetPrefix + nasID }
+func ipSetKey(ip string) string     { return ipSetPrefix + ip }
 
 // Event is a live-feed delta published on EventsChannel and forwarded by the
 // SSE handler. Op is "upsert" or "remove"; State is nil for "remove".
@@ -130,17 +138,31 @@ func Upsert(ctx context.Context, rdb *redis.Client, s State) error {
 	if s.NASID != "" {
 		pipe.SAdd(ctx, nasSetKey(s.NASID), field)
 	}
+	if s.IP != "" {
+		pipe.SAdd(ctx, ipSetKey(s.IP), field)
+	}
 	pipe.Publish(ctx, EventsChannel, evt)
 	_, err = pipe.Exec(ctx)
 	return err
 }
 
 // Remove deletes a live session and its index memberships, publishing a remove
-// Event. subscriberID/service/nasID are needed to clean the index sets; pass
-// what the closing record resolved (empty values simply skip that set).
+// Event. subscriberID/service/nasID are needed to clean the sub/nas index
+// sets; pass what the closing record resolved (empty values simply skip that
+// set). The IP index is cleaned from the hash's own current value (read
+// before delete) rather than a caller-supplied parameter, so every existing
+// call site keeps working unchanged — none of them carries the IP at the
+// point they call Remove today.
 func Remove(ctx context.Context, rdb *redis.Client, nasID, acctSessionID, subscriberID, service string) error {
 	field := Field(nasID, acctSessionID)
 	evt, _ := json.Marshal(Event{Op: OpRemove, Field: field})
+
+	var ip string
+	if raw, err := rdb.HGet(ctx, HashKey, field).Bytes(); err == nil {
+		if s, err := Unmarshal(raw); err == nil {
+			ip = s.IP
+		}
+	}
 
 	pipe := rdb.Pipeline()
 	pipe.HDel(ctx, HashKey, field)
@@ -150,9 +172,55 @@ func Remove(ctx context.Context, rdb *redis.Client, nasID, acctSessionID, subscr
 	if nasID != "" {
 		pipe.SRem(ctx, nasSetKey(nasID), field)
 	}
+	if ip != "" {
+		pipe.SRem(ctx, ipSetKey(ip), field)
+	}
 	pipe.Publish(ctx, EventsChannel, evt)
 	_, err := pipe.Exec(ctx)
 	return err
+}
+
+// ByIP returns every live session currently on framed IP ip (exact string
+// match). Portal auto-login (v4-11, FR-167 condition 4) requires an EXACT
+// count — 1 match proceeds, 0 or ≥2 refuse — so this returns the full slice
+// rather than a bool/count, letting the caller distinguish "nobody home" from
+// "ambiguous" for its own audit trail. A field present in the index set but
+// no longer in the hash (a race with a concurrent Remove) is skipped rather
+// than erroring — the index is a best-effort accelerator over the hash, which
+// stays the source of truth.
+func ByIP(ctx context.Context, rdb *redis.Client, ip string) ([]State, error) {
+	if rdb == nil || ip == "" {
+		return nil, nil
+	}
+	fields, err := rdb.SMembers(ctx, ipSetKey(ip)).Result()
+	if err != nil {
+		return nil, err
+	}
+	if len(fields) == 0 {
+		return nil, nil
+	}
+	raws, err := rdb.HMGet(ctx, HashKey, fields...).Result()
+	if err != nil {
+		return nil, err
+	}
+	out := make([]State, 0, len(raws))
+	for _, r := range raws {
+		str, ok := r.(string)
+		if !ok || str == "" {
+			continue
+		}
+		s, err := Unmarshal([]byte(str))
+		if err != nil {
+			continue
+		}
+		// Defensive: only count entries whose stored IP still matches — a
+		// stale index membership (the race noted above) must never inflate
+		// the match count for a security decision.
+		if s.IP == ip {
+			out = append(out, s)
+		}
+	}
+	return out, nil
 }
 
 // Count returns the number of live sessions for a subscriber, optionally scoped

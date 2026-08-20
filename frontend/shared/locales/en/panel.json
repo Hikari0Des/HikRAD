@@ -2091,6 +2091,8 @@
       "backups": "Backups",
       "dataRetention": "Data retention",
       "remoteAccess": "Remote access",
+      "portalAutoLogin": "Portal auto-login",
+      "guestRegistration": "Guest registration",
       "system": "System & updates"
     },
     "system": {
@@ -2221,6 +2223,28 @@
       "token": "Token",
       "tokenHint": "Enter your Cloudflare tunnel token.",
       "tokenSet": "A token is set. Enter a new one to replace it."
+    },
+    "portalAutoLogin": {
+      "warning": "A credential-free login path. Off by default — only enable this once trusted networks and proxies below are configured correctly.",
+      "enable": "Enable connected-client auto-login",
+      "enableHint": "A subscriber opening the portal from a device with a live session on a trusted network is signed in without a password.",
+      "trustedNetworks": "Trusted networks (CIDR, one per line)",
+      "trustedNetworksHint": "Only requests whose true source IP falls inside one of these networks can auto-login. Leave empty to trust nothing.",
+      "trustedProxies": "Trusted proxies (CIDR, one per line)",
+      "trustedProxiesHint": "X-Forwarded-For is honoured only when the immediate connection comes from one of these — usually just your reverse proxy's own address.",
+      "sessionTtl": "Session length (minutes)",
+      "sessionTtlHint": "How long an auto-login session lasts before it must sign in again — it never silently extends itself."
+    },
+    "guestRegistration": {
+      "enable": "Enable self-service guest registration",
+      "enableHint": "Visitors can register a new hotspot account from the login page using a phone number and an SMS/WhatsApp passcode.",
+      "defaultProfile": "Default plan for new accounts",
+      "defaultProfileHint": "Required before this feature can be enabled — self-registered accounts are created on this plan.",
+      "defaultProfileNone": "Not set",
+      "dailyCap": "Daily passcode volume cap",
+      "dailyCapHint": "Maximum passcodes (registration + OTP login combined) sent per day.",
+      "passcodeTtl": "Passcode validity (minutes)",
+      "cooldown": "Cooldown after an unused code expires (minutes)"
     }
   },
   "paymentTickets": {

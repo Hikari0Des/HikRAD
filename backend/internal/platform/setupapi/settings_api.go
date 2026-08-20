@@ -48,6 +48,22 @@ var settingsGroups = map[string][]string{
 	// per-cycle trial-eligibility rule (reset only on approval) supersedes
 	// the old fixed cooldown, so there is nothing left to configure here.
 	"card_payments": {"types"},
+	// v4-11 (FR-167, Decision 64): connected-client auto-login. Off by
+	// default (gate item 4) — migration 0631 seeds every field so a fresh
+	// install's GET returns real zero/false/empty values, never a 404 that
+	// would tempt a caller to treat "not configured" as "unrestricted".
+	// trusted_networks/trusted_proxies are validated fail-closed by the
+	// reader (portalapi.loadAutoLoginConfig), not here: an unparseable CIDR
+	// must never silently become "matches everything" or "matches nothing
+	// is trusted" in a way that widens access — see that function's doc
+	// comment. No field here carries a credential, so none needs the
+	// notificationSecretFields-style encryption path.
+	"portal_auto_login": {"enabled", "trusted_networks", "trusted_proxies", "session_ttl_minutes"},
+	// v4-11 (FR-169/FR-172): self-service guest registration + OTP login.
+	// Also off by default; page_text is the trilingual hotspot register-tab
+	// copy (register tab label, intro line, field labels, button, reply
+	// messages), one JSON object keyed by locale then string key.
+	"guest_registration": {"enabled", "daily_cap", "passcode_ttl_minutes", "cooldown_minutes", "default_profile_id", "page_text"},
 }
 
 // remoteAccessTokenEncKey is where the encrypted tunnel token actually lives;

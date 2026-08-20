@@ -23,6 +23,7 @@ async function doRefresh(): Promise<boolean> {
     const res = await apiRefresh(token)
     tokenStore.setTokens(res.access_token, res.refresh_token)
     tokenStore.setSubscriber(res.subscriber)
+    tokenStore.setScope(res.scope)
     return true
   } catch {
     return false

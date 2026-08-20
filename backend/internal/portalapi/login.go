@@ -34,8 +34,14 @@ type subscriberBrief struct {
 
 type tokenResponse struct {
 	AccessToken  string          `json:"access_token"`
-	RefreshToken string          `json:"refresh_token"`
+	RefreshToken string          `json:"refresh_token,omitempty"`
 	Subscriber   subscriberBrief `json:"subscriber"`
+	// Scope is "full" or "reduced" (v4-11, FR-167 frozen contract: "returns a
+	// token with an explicit scope field; the client never infers scope").
+	// Every pre-v4-11 caller of this shape (password login, refresh) always
+	// gets "full" — additive field, does not change their wire shape's
+	// meaning for an already-written client that ignores it.
+	Scope string `json:"scope"`
 }
 
 func (m *Module) loginHandler(w http.ResponseWriter, r *http.Request) {
@@ -78,11 +84,14 @@ func (m *Module) issueSession(ctx context.Context, id subscribers.PortalIdentity
 	if err != nil {
 		return tokenResponse{}, err
 	}
-	sessionID, err := createSession(ctx, m.db, id.ID, hash, ip, ua)
+	// A password login always grants full scope with no hard cap — the
+	// pre-v4-11 behavior, unchanged. Only autologin.go's reduced-scope
+	// grants pass a scope/hardCap other than (scopeFull, nil).
+	sessionID, err := createSession(ctx, m.db, id.ID, hash, ip, ua, scopeFull, nil)
 	if err != nil {
 		return tokenResponse{}, err
 	}
-	access, err := issueAccess(m.jwtSecret, id.ID, sessionID, time.Now())
+	access, err := issueAccess(m.jwtSecret, id.ID, sessionID, scopeFull, time.Now(), nil)
 	if err != nil {
 		return tokenResponse{}, err
 	}
@@ -90,6 +99,7 @@ func (m *Module) issueSession(ctx context.Context, id subscribers.PortalIdentity
 		AccessToken:  access,
 		RefreshToken: composeRefreshToken(sessionID, secret),
 		Subscriber:   subscriberBrief{ID: id.ID, Username: id.Username, Name: id.Name, Language: id.Language},
+		Scope:        scopeFull,
 	}, nil
 }
 
@@ -110,12 +120,20 @@ func (m *Module) refreshHandler(w http.ResponseWriter, r *http.Request) {
 		httpapi.Error(w, http.StatusUnauthorized, "invalid_token", "invalid refresh token")
 		return
 	}
-	subscriberID, storedHash, revoked, err := getSessionForRefresh(ctx, m.db, sessionID)
+	subscriberID, storedHash, revoked, scope, hardCap, err := getSessionForRefresh(ctx, m.db, sessionID)
 	if err != nil {
 		httpapi.Error(w, http.StatusUnauthorized, "invalid_token", "invalid refresh token")
 		return
 	}
 	if revoked {
+		httpapi.Error(w, http.StatusUnauthorized, "invalid_token", "session is no longer valid")
+		return
+	}
+	// FR-167 gate item 11: an auto-login session's hard cap is a real ceiling
+	// on the SESSION, not just the access token — once past it, refresh
+	// itself is refused, so there is no path (rotation or otherwise) that
+	// keeps the session alive past its configured TTL.
+	if hardCap != nil && !time.Now().Before(*hardCap) {
 		httpapi.Error(w, http.StatusUnauthorized, "invalid_token", "session is no longer valid")
 		return
 	}
@@ -147,7 +165,10 @@ func (m *Module) refreshHandler(w http.ResponseWriter, r *http.Request) {
 		httpapi.Error(w, http.StatusUnauthorized, "invalid_token", "session is no longer valid")
 		return
 	}
-	access, err := issueAccess(m.jwtSecret, subscriberID, sessionID, time.Now())
+	// The refreshed access token carries the session's CURRENT scope (a
+	// step-up between refreshes must stick) and stays bounded by the same
+	// hard cap — rotation never resets or extends it.
+	access, err := issueAccess(m.jwtSecret, subscriberID, sessionID, scope, time.Now(), hardCap)
 	if err != nil {
 		m.internalError(w, "refresh issue", err)
 		return
@@ -156,6 +177,7 @@ func (m *Module) refreshHandler(w http.ResponseWriter, r *http.Request) {
 		AccessToken:  access,
 		RefreshToken: composeRefreshToken(sessionID, newSecret),
 		Subscriber:   subscriberBrief{ID: id.ID, Username: id.Username, Name: id.Name, Language: id.Language},
+		Scope:        scope,
 	})
 }
 

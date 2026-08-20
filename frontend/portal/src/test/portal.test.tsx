@@ -32,8 +32,10 @@ describe('portal shell (gate item 4: trilingual + RTL)', () => {
     const user = userEvent.setup()
     renderPortal()
 
-    // en (default)
-    expect(screen.getByText(en.portal.login.title)).toBeInTheDocument()
+    // en (default) — the FR-167 auto-login probe runs silently on mount
+    // (and fails fast in this test environment, no live session to find),
+    // so the login form appears once that settles, not synchronously.
+    expect(await screen.findByText(en.portal.login.title)).toBeInTheDocument()
     expect(document.documentElement.dir).toBe('ltr')
 
     // ar — flips RTL
@@ -53,16 +55,19 @@ describe('portal shell (gate item 4: trilingual + RTL)', () => {
     const user = userEvent.setup()
     renderPortal()
 
-    const username = screen.getByLabelText(en.portal.login.username)
+    const username = await screen.findByLabelText(en.portal.login.username)
     await user.type(username, 'noor01')
     await user.click(screen.getByRole('button', { name: 'العربية' }))
 
     expect(screen.getByLabelText(ar.portal.login.username)).toHaveValue('noor01')
   })
 
-  it('redirects an unauthenticated subscriber away from protected routes (IDOR/session gate)', () => {
+  it('redirects an unauthenticated subscriber away from protected routes (IDOR/session gate)', async () => {
     renderPortal('/home')
-    // <RequireAuth> sends anyone without a session back to the login screen.
-    expect(screen.getByText(en.portal.login.title)).toBeInTheDocument()
+    // <RequireAuth> sends anyone without a session back to the login screen
+    // — after the auto-login probe (FR-167) settles, since a device with no
+    // live session must also fall through to a normal login, not a blank
+    // screen forever.
+    expect(await screen.findByText(en.portal.login.title)).toBeInTheDocument()
   })
 })

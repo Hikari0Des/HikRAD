@@ -1,10 +1,13 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 
 import { ErrorState, IQDAmount, LoadingState, useFormatters, useT } from '@hikrad/shared'
 
+import { getSessions } from '../api/sessions'
 import { getPayments, getUsage } from '../api/usage'
 import { UsageChart } from '../components/UsageChart'
 import { useAsync } from '../hooks/useAsync'
+import { formatBytes } from '../lib/units'
 
 const PAYMENT_TYPE_KEYS: Record<string, string> = {
   renewal: 'portal.usage.paymentType.renewal',
@@ -24,10 +27,11 @@ function paymentTypeKey(type: string): string {
  * server-scoped to the signed-in subscriber only (IDOR rule, contract C2). */
 export function UsagePage() {
   const t = useT()
-  const { formatDate } = useFormatters()
+  const { formatDate, formatNumber } = useFormatters()
   const [granularity, setGranularity] = useState<'daily' | 'monthly'>('daily')
   const usage = useAsync(() => getUsage(granularity), [granularity])
   const payments = useAsync(() => getPayments({ limit: 20 }), [])
+  const sessions = useAsync(() => getSessions({ limit: 10 }), [])
 
   return (
     <section className="flex flex-col gap-4">
@@ -87,6 +91,40 @@ export function UsagePage() {
           </ul>
         )}
       </div>
+
+      <div className="flex flex-col gap-2 rounded-xl bg-surface-raised p-4 shadow-sm">
+        <h2 className="text-sm font-semibold">{t('portal.usage.sessionsTitle')}</h2>
+        {sessions.loading ? (
+          <LoadingState />
+        ) : sessions.error || !sessions.data ? (
+          <ErrorState body={t('portal.usage.loadError')} onRetry={sessions.reload} />
+        ) : sessions.data.items.length === 0 ? (
+          <p className="py-4 text-center text-sm text-ink-muted">
+            {t('portal.usage.sessionsEmpty')}
+          </p>
+        ) : (
+          <ul className="flex flex-col divide-y divide-surface-sunken">
+            {sessions.data.items.map((s) => (
+              <li key={s.id} className="flex items-center justify-between gap-2 py-2 text-sm">
+                <div>
+                  <p className="font-medium">
+                    {s.started_at ? formatDate(s.started_at) : '—'}
+                    {s.stopped_at ? '' : ` · ${t('portal.usage.sessionsOnline')}`}
+                  </p>
+                  <p className="text-xs text-ink-muted">{s.service_name || s.service}</p>
+                </div>
+                <span className="text-xs text-ink-muted">
+                  {formatBytes(s.bytes_in + s.bytes_out, formatNumber)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      <Link to="/invoices" className="text-center text-sm font-semibold text-brand underline">
+        {t('portal.usage.invoicesLink')}
+      </Link>
     </section>
   )
 }

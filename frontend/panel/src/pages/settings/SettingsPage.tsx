@@ -7,8 +7,10 @@ import { BackupsSettings } from './BackupsSettings'
 import { BillingSettings } from './BillingSettings'
 import { BrandingSettings } from './BrandingSettings'
 import { DataRetentionSettings } from './DataRetentionSettings'
+import { GuestRegistrationSettings } from './GuestRegistrationSettings'
 import { LocaleSettings } from './LocaleSettings'
 import { NotificationsSettings } from './NotificationsSettings'
+import { PortalAutoLoginSettings } from './PortalAutoLoginSettings'
 import { RemoteAccessSettings } from './RemoteAccessSettings'
 import { SystemSettings } from './SystemSettings'
 
@@ -20,6 +22,8 @@ const TABS = [
   { to: 'backups', key: 'settings.tab.backups' },
   { to: 'data-retention', key: 'settings.tab.dataRetention' },
   { to: 'remote-access', key: 'settings.tab.remoteAccess' },
+  { to: 'portal-auto-login', key: 'settings.tab.portalAutoLogin' },
+  { to: 'guest-registration', key: 'settings.tab.guestRegistration' },
   { to: 'system', key: 'settings.tab.system' },
 ]
 
@@ -57,6 +61,8 @@ export function SettingsPage() {
             <Route path="backups" element={<BackupsSettings />} />
             <Route path="data-retention" element={<DataRetentionSettings />} />
             <Route path="remote-access" element={<RemoteAccessSettings />} />
+            <Route path="portal-auto-login" element={<PortalAutoLoginSettings />} />
+            <Route path="guest-registration" element={<GuestRegistrationSettings />} />
             <Route path="system" element={<SystemSettings />} />
           </Routes>
         </div>

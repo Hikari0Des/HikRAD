@@ -12,15 +12,54 @@
       "errorInvalid": "Wrong username or password.",
       "errorRateLimited": "Too many attempts. Please wait a moment and try again.",
       "errorDisabled": "This account is disabled. Contact your ISP for help.",
-      "errorNetwork": "Can't reach the server. Check your connection and try again."
+      "errorNetwork": "Can't reach the server. Check your connection and try again.",
+      "registerPrompt": "New here?",
+      "registerAction": "Register",
+      "otp": {
+        "switchToOtp": "Trouble signing in? Use a one-time code instead",
+        "switchToPassword": "Use my password instead",
+        "title": "Sign in with a one-time code",
+        "subtitle": "We'll send a code to your registered phone number.",
+        "codeLabel": "One-time code",
+        "requestSubmit": "Send code",
+        "requesting": "Sending…",
+        "verifySubmit": "Verify and sign in",
+        "errorRequest": "Couldn't send a code for that account. Check the username and try again.",
+        "errorVerify": "That code is invalid or expired."
+      }
     },
     "nav": {
       "label": "Navigation",
       "home": "Home",
       "usage": "Usage",
       "renew": "Renew",
+      "tickets": "Support",
       "settings": "Settings",
       "logout": "Sign out"
+    },
+    "stepUp": {
+      "bannerText": "You're signed in automatically. Verify your password for full account access.",
+      "verifyAction": "Verify",
+      "submit": "Verify",
+      "errorInvalid": "That password isn't correct.",
+      "settingsGateText": "Enter your password to change your account details or notification preferences."
+    },
+    "register": {
+      "title": "Create your account",
+      "subtitle": "Enter your name and mobile number to get connected.",
+      "nameLabel": "Your name",
+      "phoneLabel": "Mobile number",
+      "codeLabel": "One-time code",
+      "requestSubmit": "Send code",
+      "verifySubmit": "Verify and continue",
+      "backToLogin": "Back to sign in",
+      "error": {
+        "cooldown": "Please wait a few minutes before requesting another code.",
+        "dailyCap": "Registration is temporarily unavailable — please try again later.",
+        "unavailable": "Registration isn't available right now. Please contact your provider.",
+        "generic": "Something went wrong. Please try again.",
+        "invalidCode": "That code is invalid or expired."
+      }
     },
     "common": {
       "refreshing": "Refreshing…",
@@ -43,7 +82,14 @@
       "cardPendingTitle": "Test internet active",
       "cardPendingBody": "Your 1-day trial is active while your payment is verified. It expires at {time} if not approved sooner.",
       "cardRejectedTitle": "Payment couldn't be verified",
-      "cardRejectedAction": "Renew another way"
+      "cardRejectedAction": "Renew another way",
+      "throttle": {
+        "expiry": "Your plan has expired — renew to restore full speed.",
+        "quota": "Your data allowance is used for this cycle — renew to restore full speed.",
+        "uptime": "Your connected-time allowance is used for this cycle.",
+        "daily": "Your daily allowance is used.",
+        "resetsAt": "Full speed returns at {time}."
+      }
     },
     "usage": {
       "title": "Usage",
@@ -65,6 +111,45 @@
         "card": "Manual payment",
         "refund": "Refund",
         "other": "Payment"
+      },
+      "sessionsTitle": "Recent sessions",
+      "sessionsEmpty": "No sessions yet.",
+      "sessionsOnline": "online now",
+      "invoicesLink": "View invoices"
+    },
+    "tickets": {
+      "title": "Support",
+      "newAction": "New ticket",
+      "loadError": "Couldn't load this. Please try again.",
+      "empty": "No support tickets yet.",
+      "subjectLabel": "Subject",
+      "bodyLabel": "How can we help?",
+      "submit": "Open ticket",
+      "back": "Back",
+      "replyPlaceholder": "Write a reply…",
+      "replySubmit": "Send",
+      "error": {
+        "generic": "Something went wrong. Please try again."
+      },
+      "status": {
+        "open": "Open",
+        "in_progress": "In progress",
+        "resolved": "Resolved",
+        "closed": "Closed",
+        "withdrawn": "Withdrawn"
+      }
+    },
+    "invoices": {
+      "title": "Invoices",
+      "loadError": "Couldn't load your invoices. Please try again.",
+      "empty": "No invoices yet.",
+      "printAction": "View / print",
+      "status": {
+        "unpaid": "Unpaid",
+        "partial": "Partially paid",
+        "due": "Due",
+        "paid": "Paid",
+        "void": "Void"
       }
     },
     "renew": {
@@ -145,6 +230,12 @@
       "error": {
         "passwordMismatch": "Passwords don't match.",
         "generic": "Couldn't save your changes. Please try again."
+      },
+      "notifications": {
+        "title": "Notification preferences",
+        "sms": "SMS",
+        "email": "Email",
+        "whatsapp": "WhatsApp"
       }
     },
     "pwa": {

@@ -38,14 +38,21 @@ function renderSwitcher() {
 }
 
 describe('language persistence (FR-43, task 4)', () => {
-  it('persists the choice to localStorage even when signed out, without calling the API', async () => {
+  it('persists the choice to localStorage even when signed out, without calling the language API', async () => {
     const user = userEvent.setup()
     renderSwitcher()
 
+    // AuthProvider's FR-167 auto-login probe fires on mount regardless of
+    // this test (a real, separate, silent request — see AuthContext.tsx),
+    // so the assertion below is scoped to the language endpoint
+    // specifically, not "no fetch call at all".
     await user.click(screen.getByRole('button', { name: 'العربية' }))
 
     expect(window.localStorage.getItem('hikrad.locale')).toBe('ar')
-    expect(fetchMock).not.toHaveBeenCalled()
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      expect.stringContaining('/portal/language'),
+      expect.anything(),
+    )
   })
 
   it('also persists server-side via PUT /portal/language when a subscriber is signed in', async () => {

@@ -25,22 +25,47 @@ const (
 	tokenTypePortalAccess = "portal_access"
 	accessTTL             = 15 * time.Minute // short-lived; theft mitigation (task edge case)
 	refreshSecretLen      = 32
+
+	// Scope claim values (v4-11, FR-167). scopeFull is every existing
+	// password-authenticated session's scope (the zero value on any token
+	// minted before this phase would decode to "", which parseAccess treats
+	// as scopeFull too — see below — so no historical token is silently
+	// downgraded). scopeReduced is auto-login's credential-free grant:
+	// view/renew/pay only, enforced server-side by requireFullScope on every
+	// endpoint that changes password/contact/notification/payment config
+	// (frozen contract, phase brief §4 — never a client-side-only check).
+	scopeFull    = "full"
+	scopeReduced = "reduced"
 )
 
 var errBadToken = errors.New("portalapi: invalid token")
 
-func issueAccess(secret []byte, subscriberID, sessionID string, now time.Time) (string, error) {
+// issueAccess mints a portal access token. hardCap, when non-nil, caps the
+// token's exp at min(now+accessTTL, *hardCap) — the mechanism behind FR-167's
+// "does not silently refresh": an auto-login session's TTL is a real ceiling
+// on the token itself, not just a value checked at the next refresh, so even
+// the LAST token issued before the ceiling cannot outlive it by up to a full
+// accessTTL window.
+func issueAccess(secret []byte, subscriberID, sessionID, scope string, now time.Time, hardCap *time.Time) (string, error) {
+	exp := now.Add(accessTTL)
+	if hardCap != nil && hardCap.Before(exp) {
+		exp = *hardCap
+	}
 	tok := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"sub": subscriberID,
 		"sid": sessionID,
 		"typ": tokenTypePortalAccess,
+		"scp": scope,
 		"iat": now.Unix(),
-		"exp": now.Add(accessTTL).Unix(),
+		"exp": exp.Unix(),
 	})
 	return tok.SignedString(secret)
 }
 
-func parseAccess(secret []byte, raw string) (subscriberID, sessionID string, err error) {
+// parseAccess returns the subscriber id, session id and scope. A token with
+// no "scp" claim (every token minted before this phase existed) decodes as
+// scopeFull — the only scope those tokens could ever have meant.
+func parseAccess(secret []byte, raw string) (subscriberID, sessionID, scope string, err error) {
 	claims := jwt.MapClaims{}
 	_, err = jwt.ParseWithClaims(raw, claims, func(t *jwt.Token) (any, error) {
 		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
@@ -49,17 +74,21 @@ func parseAccess(secret []byte, raw string) (subscriberID, sessionID string, err
 		return secret, nil
 	}, jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Name}), jwt.WithExpirationRequired())
 	if err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
 	if typ, _ := claims["typ"].(string); typ != tokenTypePortalAccess {
-		return "", "", errBadToken
+		return "", "", "", errBadToken
 	}
 	sub, _ := claims["sub"].(string)
 	if sub == "" {
-		return "", "", errBadToken
+		return "", "", "", errBadToken
 	}
 	sid, _ := claims["sid"].(string)
-	return sub, sid, nil
+	scp, _ := claims["scp"].(string)
+	if scp == "" {
+		scp = scopeFull
+	}
+	return sub, sid, scp, nil
 }
 
 // newRefreshSecret generates a fresh opaque refresh secret and its stored hash.

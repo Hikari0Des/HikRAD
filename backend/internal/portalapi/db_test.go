@@ -29,6 +29,7 @@ import (
 	_ "github.com/hikrad/hikrad/internal/auth"
 	_ "github.com/hikrad/hikrad/internal/billing"
 	_ "github.com/hikrad/hikrad/internal/live"
+	_ "github.com/hikrad/hikrad/internal/platform/setupapi"
 	_ "github.com/hikrad/hikrad/internal/portalapi"
 	_ "github.com/hikrad/hikrad/internal/profiles"
 	_ "github.com/hikrad/hikrad/internal/radius"
@@ -38,6 +39,7 @@ import (
 type env struct {
 	srv        *httptest.Server
 	db         *pgxpool.Pool
+	rdb        *redis.Client // nil unless HIKRAD_TEST_REDIS_URL is set
 	adminToken string
 }
 
@@ -98,7 +100,7 @@ func setup(t *testing.T) env {
 	srv := httptest.NewServer(httpapi.NewRouter(deps, true))
 	t.Cleanup(srv.Close)
 
-	e := env{srv: srv, db: db}
+	e := env{srv: srv, db: db, rdb: rdb}
 	e.adminToken = e.panelLogin(t, adminUser, "admin")
 	return e
 }
@@ -188,6 +190,7 @@ func (e env) createSubscriberWithPassword(t *testing.T, profileID, password stri
 type portalTokens struct {
 	AccessToken  string `json:"access_token"`
 	RefreshToken string `json:"refresh_token"`
+	Scope        string `json:"scope"`
 	Subscriber   struct {
 		ID       string `json:"id"`
 		Username string `json:"username"`
