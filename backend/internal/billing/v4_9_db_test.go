@@ -133,6 +133,18 @@ func TestJournal_DualWriteAgrees_TopupRenewRefund(t *testing.T) {
 	agentID, agentToken := e.seedAgent(t)
 	prof := e.createProfile(t, 15000, 30)
 	sub := e.createSubscriber(t, prof)
+	// v4-12 (FR-175): must be owned by the agent — a scoped agent's own
+	// /renew call 404s "subscriber not found" against an unowned
+	// subscriber (ScopeFilter hides it), which is why this test never
+	// reached its own reconciliation assertions below. Found while
+	// verifying a real sign bug in postLedgerJournal's wallet-mediated
+	// case (journal.go) that this exact test exists to catch — same
+	// ownership-assignment pattern every other test in this file already
+	// uses. See docs/ops/known-issues.md.
+	if _, err := e.db.Exec(context.Background(),
+		`UPDATE subscribers SET owner_manager_id=$1::uuid WHERE id=$2::uuid`, agentID, sub); err != nil {
+		t.Fatalf("assign owner: %v", err)
+	}
 
 	// Top up the agent's wallet.
 	r := e.do(t, "POST", "/api/v1/managers/"+agentID+"/topup", e.token, map[string]any{"amount": 100000})
@@ -200,11 +212,20 @@ func TestJournal_BackfillReconciles(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Re-run migration 0618's backfill SQL (idempotent — NOT EXISTS guarded
-	// per row — this is exactly what running it fresh against real
-	// historical data does; re-running it here against freshly-inserted
-	// synthetic rows is a faithful proxy for that, not a different code
-	// path).
+	// Re-run migration 0618's backfill SQL against these freshly-inserted
+	// synthetic "historical" rows — a faithful proxy for what a real
+	// upgrade's ONE-TIME run of this migration does against pre-existing
+	// data. golang-migrate itself never re-runs a migration file twice
+	// against one database (it tracks applied versions), so re-running the
+	// raw file here is test-only; migration 0618's bare `CREATE TABLE
+	// journal_backfill_report` (correct for its one real run) would collide
+	// with the copy `setup()`'s own platform.Migrate already created, so the
+	// test drops that report table first — the backfill logic that matters
+	// (NOT EXISTS-guarded per journal entry) is otherwise untouched and
+	// still exercised exactly as shipped.
+	if _, err := e.db.Exec(ctx, `DROP TABLE IF EXISTS journal_backfill_report`); err != nil {
+		t.Fatalf("drop journal_backfill_report before re-run: %v", err)
+	}
 	sql, err := os.ReadFile("../../migrations/0618_v4_9_journal_backfill.up.sql")
 	if err != nil {
 		t.Fatalf("read backfill migration: %v", err)
@@ -354,9 +375,15 @@ func TestInvoices_FullMode(t *testing.T) {
 	if r.status != http.StatusCreated {
 		t.Fatalf("create invoice = %d: %s", r.status, r.body)
 	}
+	// v4-12 (FR-175): json tags were missing — Go's untagged case-insensitive
+	// field match doesn't bridge "tax_amount" (JSON) to "TaxAmount" (Go),
+	// only case, so TaxAmount silently stayed 0 and this assertion never
+	// actually checked the server's real (correct) tax computation.
 	var v struct {
-		Subtotal, TaxAmount, Total int64
-		Status                     string
+		Subtotal  int64  `json:"subtotal"`
+		TaxAmount int64  `json:"tax_amount"`
+		Total     int64  `json:"total"`
+		Status    string `json:"status"`
 	}
 	r.into(t, &v)
 	if v.Subtotal != 20000 || v.TaxAmount != 2000 || v.Total != 22000 {
@@ -625,6 +652,13 @@ func TestApprovals_ScopedUndoParksAndReplaysTheSamePath(t *testing.T) {
 	agentID, agentToken := e.seedAgent(t)
 	prof := e.createProfile(t, 15000, 30)
 	sub := e.createSubscriber(t, prof)
+	// v4-12 (FR-175): same ownership fix as TestJournal_DualWriteAgrees_TopupRenewRefund
+	// above — a scoped agent's renew 404s "subscriber not found" against an
+	// unowned subscriber.
+	if _, err := e.db.Exec(context.Background(),
+		`UPDATE subscribers SET owner_manager_id=$1::uuid WHERE id=$2::uuid`, agentID, sub); err != nil {
+		t.Fatalf("assign owner: %v", err)
+	}
 	e.do(t, "POST", "/api/v1/managers/"+agentID+"/topup", e.token, map[string]any{"amount": 100000})
 
 	r := e.do(t, "POST", "/api/v1/subscribers/"+sub+"/renew", agentToken, map[string]any{})
@@ -707,6 +741,11 @@ func TestCreditLimitBlocksAgentAtTheConfiguredLimit(t *testing.T) {
 	e.setCreditLimit(t, agentID, 5000)
 	prof := e.createProfile(t, 10000, 30)
 	sub := e.createSubscriber(t, prof)
+	// v4-12 (FR-175): same ownership fix as TestJournal_DualWriteAgrees_TopupRenewRefund.
+	if _, err := e.db.Exec(context.Background(),
+		`UPDATE subscribers SET owner_manager_id=$1::uuid WHERE id=$2::uuid`, agentID, sub); err != nil {
+		t.Fatalf("assign owner: %v", err)
+	}
 
 	// Balance 0, limit 5000: charging 10000 would take the balance to
 	// -10000, past the -5000 floor — refused.
@@ -775,6 +814,11 @@ func TestCommissionLandsAsExplicitJournalLines(t *testing.T) {
 	e.setCommission(t, agentID, 10) // 10%
 	prof := e.createProfile(t, 10000, 30)
 	sub := e.createSubscriber(t, prof)
+	// v4-12 (FR-175): same ownership fix as TestJournal_DualWriteAgrees_TopupRenewRefund.
+	if _, err := e.db.Exec(context.Background(),
+		`UPDATE subscribers SET owner_manager_id=$1::uuid WHERE id=$2::uuid`, agentID, sub); err != nil {
+		t.Fatalf("assign owner: %v", err)
+	}
 	e.do(t, "POST", "/api/v1/managers/"+agentID+"/topup", e.token, map[string]any{"amount": 100000})
 
 	r := e.do(t, "POST", "/api/v1/subscribers/"+sub+"/renew", agentToken, map[string]any{})

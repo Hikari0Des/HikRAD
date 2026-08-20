@@ -285,7 +285,19 @@ func postLedgerJournal(ctx context.Context, tx pgx.Tx, at time.Time, entry ledge
 		var lines []jLine
 		switch {
 		case entry.ActorManagerID != "" && entry.Amount != 0:
-			lines = signedPair(acctAgentWallet, acctRevenue, entry.Amount, "wallet-mediated "+entry.Type, entry.ActorManagerID)
+			// v4-12 (FR-175): the two account codes here were swapped, which
+			// for the negative-amount case every ordinary wallet-funded
+			// renewal takes (entry.Amount = -balanceAmount) posted Dr Revenue
+			// / Cr Agent Prepaid Balances — increasing the liability on a
+			// SPEND and decreasing revenue on a SALE, the opposite of both.
+			// Confirmed against a live database: the wallet subledger
+			// (journal_lines WHERE account=2100 AND manager_id=X) diverged
+			// from the real ledger_transactions balance on every renewal.
+			// Migration 0618's backfill SQL (lines ~105-114) already has the
+			// correct direction — Dr Agent Prepaid Balances / Cr Revenue for
+			// a spend — this brings the live dual-write path in line with
+			// it, not the other way around. See docs/ops/known-issues.md.
+			lines = signedPair(acctRevenue, acctAgentWallet, entry.Amount, "wallet-mediated "+entry.Type, entry.ActorManagerID)
 		case hasPayment && paymentGross != 0:
 			lines = signedPair(acctCash, acctRevenue, paymentGross, "direct cash "+entry.Type, "")
 		default:
