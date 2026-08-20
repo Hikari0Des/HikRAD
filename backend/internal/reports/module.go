@@ -38,6 +38,11 @@ func (m *Module) Register(r chi.Router, d httpapi.Deps) {
 	// cut on top of the row-level ScopeFilter cut).
 	r.With(auth.Require("reports.view")).Get("/api/v1/reports/margin", m.marginHandler)
 	r.With(auth.Require("reports.view")).Get("/api/v1/reports/margin/sites", m.siteMarginHandler)
+	// v4-12 (FR-173): trend lines, daily traffic, top-10s, traffic by entity.
+	r.With(auth.Require("reports.view")).Get("/api/v1/reports/trends", m.trendsHandler)
+	r.With(auth.Require("reports.view")).Get("/api/v1/reports/daily-traffic", m.dailyTrafficHandler)
+	r.With(auth.Require("reports.view")).Get("/api/v1/reports/top10", m.top10Handler)
+	r.With(auth.Require("reports.view")).Get("/api/v1/reports/traffic-by-entity", m.trafficByEntityHandler)
 
 	// Internal service surface (unproxied, like billing's /internal/stats):
 	// the FR-48 daily-digest composition C's scheduler consumes.
