@@ -131,7 +131,7 @@ jobs:
       - name: install.sh idempotency (sandboxed root, no packages installed)
         run: |
           export HIKRAD_ROOT_OVERRIDE="$RUNNER_TEMP/hikrad-root"
-          export HIKRAD_SKIP_OS_CHECK=1 HIKRAD_SKIP_PACKAGES=1 HIKRAD_HTTP_PORT=8080
+          export HIKRAD_SKIP_OS_CHECK=1 HIKRAD_SKIP_PACKAGES=1 HIKRAD_HTTP_PORT=8880  # not 8080: hikrad-api's own fixed internal port, install.sh refuses it
           sudo -E bash scripts/install.sh --no-start
           test -f "$HIKRAD_ROOT_OVERRIDE/etc/hikrad/hikrad.env"
           before="$(sha256sum "$HIKRAD_ROOT_OVERRIDE/etc/hikrad/hikrad.env")"

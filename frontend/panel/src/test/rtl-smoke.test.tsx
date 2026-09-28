@@ -45,8 +45,11 @@ describe('RTL smoke', () => {
     await waitFor(() => expect(document.documentElement.dir).toBe('rtl'))
     expect(document.documentElement.lang).toBe('ar')
 
-    // Sidebar nav is localized (no hardcoded strings).
-    expect(screen.getByText(ar.nav.dashboard)).toBeInTheDocument()
+    // Sidebar nav is localized (no hardcoded strings). Asserted on a group
+    // heading: groups start collapsed unless they contain the current route,
+    // and /dev/rtl-smoke is in none of them, so item labels (e.g.
+    // nav.dashboard) are deliberately not rendered here.
+    expect(screen.getByText(ar.nav.group.overview)).toBeInTheDocument()
 
     // Usernames / MACs / IPs stay LTR inside the RTL page via the shared
     // bidi-isolate component.
