@@ -58,27 +58,121 @@ func testEnv(t *testing.T) (*Service, context.Context, func()) {
 	}
 	rdb := redis.NewClient(ropts)
 
+	// Serialize against every other process running this suite on the same
+	// Postgres database or Redis db (a second `go test` in another worktree, a
+	// concurrent CI job, …). The pipeline's state is process-global by design —
+	// one acct:stream, one consumer group with a fixed consumer name, one
+	// pipeline_counters row, a reaper that scans every open session — so two
+	// suites sharing either store steal each other's stream entries (read ">"
+	// hands an entry to whichever process asks first), delete each other's
+	// stream in setup/teardown, and skew each other's counter baseline. That
+	// produced "persisted delta: got 2 want 3", "got 0 want 3 (dedup)", a
+	// lifetime_session_seconds short by the lost Start, and a late interim that
+	// never reopened a reaped session — none of it a pipeline defect.
+	unlock := lockSuite(t, ctx, db, rdb)
+
 	// Clean only the pipeline's own Redis keys (never FLUSHALL — the CI Redis is
 	// shared with other suites). The stream + group are reset so each test drains
 	// a known set.
 	rdb.Del(ctx, streamKey)
 	cleanLiveKeys(ctx, rdb)
+	resetCounterBaseline(t, ctx, db, rdb)
 
 	svc, cleanup, err := New(ctx, Config{SpillDir: t.TempDir(), InterimInterval: 60 * time.Second}, db, rdb, log)
 	if err != nil {
+		unlock()
 		t.Fatalf("service: %v", err)
 	}
 	if err := ensureGroup(ctx, rdb); err != nil {
+		unlock()
 		t.Fatalf("group: %v", err)
 	}
 	done := func() {
 		cleanup()
 		rdb.Del(ctx, streamKey)
 		cleanLiveKeys(ctx, rdb)
+		unlock()
 		_ = rdb.Close()
 		db.Close()
 	}
 	return svc, ctx, done
+}
+
+// suiteLockKey is this suite's cross-process mutex: the same int8 names the
+// Postgres advisory lock, the string names the Redis lock.
+const (
+	suiteLockKey      int64 = 0x61636374 // "acct"
+	suiteRedisLockKey       = "acct:test:suite-lock"
+	suiteLockWait           = 5 * time.Minute
+	suiteRedisLockTTL       = 2 * time.Minute
+)
+
+// lockSuite takes a session-level Postgres advisory lock (serializes suites
+// sharing the database) and then a Redis SET-NX lock (serializes suites
+// sharing the Redis db but pointed at different databases). Always in that
+// order, so two holders can never deadlock. The Redis lock carries a TTL so a
+// killed test process cannot wedge the next run; the advisory lock dies with
+// its connection for the same reason.
+func lockSuite(t *testing.T, ctx context.Context, db *pgxpool.Pool, rdb *redis.Client) func() {
+	t.Helper()
+	wctx, cancel := context.WithTimeout(ctx, suiteLockWait)
+	defer cancel()
+
+	conn, err := db.Acquire(wctx)
+	if err != nil {
+		t.Fatalf("suite lock: acquire conn: %v", err)
+	}
+	if _, err := conn.Exec(wctx, `SELECT pg_advisory_lock($1)`, suiteLockKey); err != nil {
+		conn.Release()
+		t.Fatalf("suite lock: pg_advisory_lock (another run of this suite holding it for >%s?): %v", suiteLockWait, err)
+	}
+	unlockPG := func() {
+		_, _ = conn.Exec(context.Background(), `SELECT pg_advisory_unlock($1)`, suiteLockKey)
+		conn.Release()
+	}
+
+	token := runID() + runID()
+	for {
+		ok, err := rdb.SetNX(wctx, suiteRedisLockKey, token, suiteRedisLockTTL).Result()
+		if err == nil && ok {
+			break
+		}
+		if wctx.Err() != nil {
+			unlockPG()
+			t.Fatalf("suite lock: redis lock %q still held after %s (err=%v)", suiteRedisLockKey, suiteLockWait, err)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	// Compare-and-delete: never release a lock that expired and was re-taken
+	// by another process.
+	release := redis.NewScript(`if redis.call("GET", KEYS[1]) == ARGV[1] then return redis.call("DEL", KEYS[1]) end return 0`)
+	return func() {
+		_ = release.Run(context.Background(), rdb, []string{suiteRedisLockKey}, token).Err()
+		unlockPG()
+	}
+}
+
+// resetCounterBaseline zeroes the durable FR-40 counter mirror (the
+// pipeline_counters row and the Redis received/enqueued mirrors) so the
+// Service under test boots from a self-consistent baseline, exactly as the
+// out-of-process chaos rig does between scenarios (test/chaos
+// resetForNextScenario). Without it the absolute invariant a test asserts is
+// really asserting the history of every earlier run against these stores:
+// received lives in Redis and persisted/deduplicated in Postgres, so
+// recreating one store but not the other (a fresh test DB against a reused
+// Redis db, or vice versa) boots with received ≠ persisted+deduplicated and
+// the invariant reads false before a single packet arrives. Held under
+// lockSuite, so no concurrent Service is counting against these.
+func resetCounterBaseline(t *testing.T, ctx context.Context, db *pgxpool.Pool, rdb *redis.Client) {
+	t.Helper()
+	if _, err := db.Exec(ctx, `UPDATE pipeline_counters SET
+		received=0, enqueued=0, spilled=0, drained=0, persisted=0,
+		deduplicated=0, reaped=0, orphan_stops=0, updated_at=now() WHERE id`); err != nil {
+		t.Fatalf("reset pipeline_counters: %v", err)
+	}
+	if err := rdb.Del(ctx, counterReceivedKey, counterEnqueuedKey).Err(); err != nil {
+		t.Fatalf("reset redis counter mirrors: %v", err)
+	}
 }
 
 func cleanLiveKeys(ctx context.Context, rdb *redis.Client) {
@@ -333,17 +427,24 @@ func TestSpillReplayNoLoss(t *testing.T) {
 	base := time.Now().Add(-time.Hour).UTC()
 
 	before := s.counters.snapshot(0)
-	// Model Redis-down at ingest: append straight to the spill WAL.
+	// Model Redis-down at ingest: append straight to the spill WAL, counting
+	// the packet exactly as ingestHandler does on that path — received first
+	// (the instant it is accepted for durability), then spilled. Leaving out
+	// received used to persist 3 records the counters never saw arrive.
 	for _, r := range []map[string]any{
 		rec(nasID, ip, acct, "spill-"+rid, "start", base, 0, 0, 0, 0),
 		rec(nasID, ip, acct, "spill-"+rid, "interim", base, 30, 800, 1600, 0),
 		rec(nasID, ip, acct, "spill-"+rid, "stop", base, 60, 800, 1600, 0),
 	} {
 		body, _ := json.Marshal(mustRecord(t, r))
+		s.counters.received.Add(1)
 		if err := s.spill.append(body); err != nil {
 			t.Fatal(err)
 		}
 		s.counters.spilled.Add(1)
+	}
+	if !s.counters.snapshot(s.inQueue(ctx)).InvariantOK {
+		t.Fatal("counter invariant broken with records parked in the spill")
 	}
 	if s.spill.pending() != 3 {
 		t.Fatalf("pending spill: got %d want 3", s.spill.pending())
@@ -368,6 +469,9 @@ func TestSpillReplayNoLoss(t *testing.T) {
 	}
 	if s.inQueue(ctx) != 0 {
 		t.Fatalf("in_queue after replay: got %d", s.inQueue(ctx))
+	}
+	if !s.counters.snapshot(s.inQueue(ctx)).InvariantOK {
+		t.Fatal("counter invariant broken after spill replay")
 	}
 }
 
