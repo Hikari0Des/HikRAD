@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/netip"
 	"strconv"
 	"strings"
 	"time"
@@ -42,24 +43,27 @@ func (m *Module) subscriberCapStatus(ctx context.Context, adding int) (platform.
 // writeInput is the create/update body. Pointers distinguish "field omitted"
 // (leave/clear per handler) from a zero value; username is create-only.
 type writeInput struct {
-	Username             string     `json:"username"`
-	Password             *string    `json:"password"` // create: required; update: reset if present
-	Name                 *string    `json:"name"`
-	Phone                *string    `json:"phone"`
-	Email                *string    `json:"email"`
-	Address              *string    `json:"address"`
-	Notes                *string    `json:"notes"`
-	Status               *string    `json:"status"`
-	ProfileID            *string    `json:"profile_id"`
-	OwnerManagerID       *string    `json:"owner_manager_id"`
-	ExpiresAt            *time.Time `json:"expires_at"`
-	MacLockMode          *string    `json:"mac_lock_mode"`
-	StaticIP             *string    `json:"static_ip"`
-	SessionLimitOverride *int       `json:"session_limit_override"`
-	RateOverride         *string    `json:"rate_override"`
-	PriceOverride        *int64     `json:"price_override"`
-	AddressListOverride  *string    `json:"address_list_override"` // FR-109: override the profile's address-list
-	DisabledReason       *string    `json:"disabled_reason"`
+	Username       string     `json:"username"`
+	Password       *string    `json:"password"` // create: required; update: reset if present
+	Name           *string    `json:"name"`
+	Phone          *string    `json:"phone"`
+	Email          *string    `json:"email"`
+	Address        *string    `json:"address"`
+	Notes          *string    `json:"notes"`
+	Status         *string    `json:"status"`
+	ProfileID      *string    `json:"profile_id"`
+	OwnerManagerID *string    `json:"owner_manager_id"`
+	ExpiresAt      *time.Time `json:"expires_at"`
+	MacLockMode    *string    `json:"mac_lock_mode"`
+	StaticIP       *string    `json:"static_ip"`
+	// IPv6StaticPrefix (FR-149): an IPv6 CIDR such as 2001:db8:10::/56;
+	// an explicit "" clears the pin.
+	IPv6StaticPrefix     *string `json:"ipv6_static_prefix"`
+	SessionLimitOverride *int    `json:"session_limit_override"`
+	RateOverride         *string `json:"rate_override"`
+	PriceOverride        *int64  `json:"price_override"`
+	AddressListOverride  *string `json:"address_list_override"` // FR-109: override the profile's address-list
+	DisabledReason       *string `json:"disabled_reason"`
 	// ServiceType (FR-61) is pppoe | hotspot | dual; it replaced v1's
 	// allow_hotspot bool. Omitted on create defaults to pppoe.
 	ServiceType   *string `json:"service_type"`
@@ -282,13 +286,13 @@ func (m *Module) createHandler(w http.ResponseWriter, r *http.Request) {
 		   (username, password_enc, name, phone, email, address, notes, status, profile_id,
 		    owner_manager_id, expires_at, mac_lock_mode, static_ip, session_limit_override,
 		    rate_override, price_override, disabled_reason, service_type, whatsapp_opt_in,
-		    has_password, address_list_override, quota_cycle_anchor)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::uuid,$10::uuid,$11,$12,$13::inet,$14,$15,$16,$17,$18,$19,$20,$21, now())
+		    has_password, address_list_override, quota_cycle_anchor, ipv6_static_prefix)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::uuid,$10::uuid,$11,$12,$13::inet,$14,$15,$16,$17,$18,$19,$20,$21, now(), $22)
 		 RETURNING `+columns,
 		in.Username, enc, in.Name, norm.phonePtr, norm.emailPtr, in.Address, in.Notes, status, in.ProfileID,
 		owner, in.ExpiresAt, macMode, norm.staticIP, in.SessionLimitOverride,
 		in.RateOverride, in.PriceOverride, in.DisabledReason, serviceType,
-		boolOr(in.WhatsappOptIn, false), !noPassword, in.AddressListOverride))
+		boolOr(in.WhatsappOptIn, false), !noPassword, in.AddressListOverride, norm.ipv6Prefix))
 	if err != nil {
 		if isUniqueViolation(err) {
 			httpapi.Error(w, http.StatusConflict, "conflict", "username already exists")
@@ -402,7 +406,8 @@ func (m *Module) updateHandler(w http.ResponseWriter, r *http.Request) {
 		    service_type          = COALESCE($31, service_type),
 		    whatsapp_opt_in       = COALESCE($32, whatsapp_opt_in),
 		    has_password          = COALESCE($33, has_password),
-		    address_list_override = CASE WHEN $34::bool THEN $35 ELSE address_list_override END
+		    address_list_override = CASE WHEN $34::bool THEN $35 ELSE address_list_override END,
+		    ipv6_static_prefix    = CASE WHEN $36::bool THEN $37 ELSE ipv6_static_prefix END
 		  WHERE id = $1::uuid
 		 RETURNING `+columns,
 		id, encArg,
@@ -421,7 +426,8 @@ func (m *Module) updateHandler(w http.ResponseWriter, r *http.Request) {
 		in.DisabledReason != nil, in.DisabledReason,
 		nilIfEmpty(in.ServiceType), in.WhatsappOptIn,
 		hasPasswordArg,
-		in.AddressListOverride != nil, in.AddressListOverride))
+		in.AddressListOverride != nil, in.AddressListOverride,
+		in.IPv6StaticPrefix != nil, norm.ipv6Prefix))
 	if err != nil {
 		if isForeignKeyViolation(err) {
 			httpapi.Error(w, http.StatusUnprocessableEntity, "validation_failed", "request validation failed",
@@ -509,6 +515,7 @@ type normalized struct {
 	phonePtr    *string
 	emailPtr    *string
 	staticIP    *string
+	ipv6Prefix  *string // FR-149; nil = NULL (no pin / cleared)
 	macLockMode *string
 	owner       *string
 	// nasScopes is the validated FR-64 scope set; writeNASScope reports whether
@@ -590,6 +597,22 @@ func (m *Module) normalizeWrite(ctx context.Context, in *writeInput, excludeID s
 	} else if in.StaticIP != nil {
 		// Explicit empty string clears the static IP.
 		out.staticIP = nil
+	}
+
+	// FR-149: stored canonical (network address, lower-case) so the reply
+	// attribute is exactly what the router expects. Prefix lengths outside
+	// 32..64 are not delegable to a CPE and are almost certainly typos.
+	if in.IPv6StaticPrefix != nil && strings.TrimSpace(*in.IPv6StaticPrefix) != "" {
+		pfx, err := netip.ParsePrefix(strings.TrimSpace(*in.IPv6StaticPrefix))
+		switch {
+		case err != nil || !pfx.Addr().Is6() || pfx.Addr().Is4In6():
+			add("ipv6_static_prefix", "must be an IPv6 prefix in CIDR form, e.g. 2001:db8:10::/56")
+		case pfx.Bits() < 32 || pfx.Bits() > 64:
+			add("ipv6_static_prefix", "prefix length must be between /32 and /64")
+		default:
+			canon := pfx.Masked().String()
+			out.ipv6Prefix = &canon
+		}
 	}
 
 	if in.ServiceType != nil && *in.ServiceType != "" {

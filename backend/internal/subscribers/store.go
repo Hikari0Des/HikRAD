@@ -20,25 +20,28 @@ import (
 // Subscriber is the full read shape (C7-D). Nullable columns are pointers so
 // "unset" (inherit) round-trips distinctly from a zero value.
 type Subscriber struct {
-	ID                   string     `json:"id"`
-	Username             string     `json:"username"`
-	Name                 *string    `json:"name"`
-	Phone                *string    `json:"phone"`
+	ID       string  `json:"id"`
+	Username string  `json:"username"`
+	Name     *string `json:"name"`
+	Phone    *string `json:"phone"`
 	// Email (FR-85.1) is nullable, unvalidated at the DB level (validated in
 	// Go alongside phone), and not a credential — no encryption at rest.
-	Email                *string    `json:"email"`
-	Address              *string    `json:"address"`
-	Notes                *string    `json:"notes"`
-	Status               string     `json:"status"`
-	ProfileID            *string    `json:"profile_id"`
-	OwnerManagerID       *string    `json:"owner_manager_id"`
-	ExpiresAt            *time.Time `json:"expires_at"`
-	MacLockMode          string     `json:"mac_lock_mode"`
-	LearnedMac           *string    `json:"learned_mac"`
-	StaticIP             *string    `json:"static_ip"`
-	SessionLimitOverride *int       `json:"session_limit_override"`
-	RateOverride         *string    `json:"rate_override"`
-	PriceOverride        *int64     `json:"price_override"`
+	Email          *string    `json:"email"`
+	Address        *string    `json:"address"`
+	Notes          *string    `json:"notes"`
+	Status         string     `json:"status"`
+	ProfileID      *string    `json:"profile_id"`
+	OwnerManagerID *string    `json:"owner_manager_id"`
+	ExpiresAt      *time.Time `json:"expires_at"`
+	MacLockMode    string     `json:"mac_lock_mode"`
+	LearnedMac     *string    `json:"learned_mac"`
+	StaticIP       *string    `json:"static_ip"`
+	// IPv6StaticPrefix (FR-149) pins a delegated IPv6 prefix (business
+	// accounts); NULL = take one from the service's IPv6 pool at login.
+	IPv6StaticPrefix     *string `json:"ipv6_static_prefix"`
+	SessionLimitOverride *int    `json:"session_limit_override"`
+	RateOverride         *string `json:"rate_override"`
+	PriceOverride        *int64  `json:"price_override"`
 	// AddressListOverride (FR-109): per-subscriber override of the profile's
 	// address-list; NULL = inherit the profile's. Empty/NULL both ⇒ inherit.
 	AddressListOverride *string `json:"address_list_override"`
@@ -68,7 +71,8 @@ const columns = `id::text, username::text, name, phone, email, address, notes, s
 	host(static_ip), session_limit_override, rate_override, price_override,
 	address_list_override, disabled_reason,
 	service_type, whatsapp_opt_in,
-	pending_profile_id::text, has_password, created_at, updated_at`
+	pending_profile_id::text, has_password, created_at, updated_at,
+	ipv6_static_prefix`
 
 func scanSubscriber(row pgx.Row) (Subscriber, error) {
 	var s Subscriber
@@ -77,7 +81,8 @@ func scanSubscriber(row pgx.Row) (Subscriber, error) {
 		&s.StaticIP, &s.SessionLimitOverride, &s.RateOverride, &s.PriceOverride,
 		&s.AddressListOverride, &s.DisabledReason,
 		&s.ServiceType, &s.WhatsappOptIn,
-		&s.PendingProfileID, &s.HasPassword, &s.CreatedAt, &s.UpdatedAt)
+		&s.PendingProfileID, &s.HasPassword, &s.CreatedAt, &s.UpdatedAt,
+		&s.IPv6StaticPrefix)
 	if err != nil {
 		return Subscriber{}, err
 	}

@@ -54,6 +54,7 @@ func (p *policyProvider) GetAuthView(ctx context.Context, username string) (radi
 		rateOverride *string
 		learnedMac   *string
 		staticIP     *string
+		ipv6Prefix   *string
 		poolName     *string
 		expiredPool  *string
 		// Burst/priority segments (FR-11): abstract rx/tx intents D populates from
@@ -90,7 +91,7 @@ func (p *policyProvider) GetAuthView(ctx context.Context, username string) (radi
 		        p.throttle_rate, p.session_limit_default,
 		        p.hotspot_rate_down_kbps, p.hotspot_rate_up_kbps,
 		        s.session_limit_override, s.rate_override, s.mac_lock_mode, s.learned_mac,
-		        host(s.static_ip), s.service_type,
+		        host(s.static_ip), s.ipv6_static_prefix, s.service_type,
 		        (SELECT name FROM ip_pools WHERE id = p.pool_id),
 		        (SELECT name FROM ip_pools WHERE purpose = 'expired' ORDER BY name LIMIT 1),
 		        p.burst_rate, p.burst_threshold, p.burst_time, p.rate_priority, p.min_rate,
@@ -131,7 +132,7 @@ func (p *policyProvider) GetAuthView(ctx context.Context, username string) (radi
 		&expiryBeh, &quotaBeh, &rateDown, &rateUp,
 		&throttle, &sessDefault, &hsDown, &hsUp,
 		&sessOverride, &rateOverride, &v.MacLockMode, &learnedMac,
-		&staticIP, &v.ServiceType, &poolName, &expiredPool,
+		&staticIP, &ipv6Prefix, &v.ServiceType, &poolName, &expiredPool,
 		&burstRate, &burstThresh, &burstTime, &ratePriority, &minRate,
 		&addrListOverride, &addrListProfile,
 		&expiryExhaustTarget, &quotaExhaustTarget,
@@ -156,6 +157,7 @@ func (p *policyProvider) GetAuthView(ctx context.Context, username string) (radi
 	v.ExpiredPoolName = strOr(expiredPool, "")
 	v.LearnedMac = strOr(learnedMac, "")
 	v.StaticIP = strOr(staticIP, "")
+	v.DelegatedPrefix = strOr(ipv6Prefix, "") // FR-149 static IPv6 pin
 	v.BurstRate = strOr(burstRate, "")
 	v.BurstThreshold = strOr(burstThresh, "")
 	v.BurstTime = strOr(burstTime, "")
