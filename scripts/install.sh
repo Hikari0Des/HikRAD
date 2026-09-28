@@ -596,6 +596,20 @@ log "Configuring nginx (additive — no other site is touched)…"
 install -d -m 0755 "$NGINX_AVAILABLE" "$NGINX_ENABLED"
 sed -e "s/@@HTTP_PORT@@/$HTTP_PORT/g" -e "s/@@HTTPS_PORT@@/$HTTPS_PORT/g" \
     "$STAGE_NGINX_TEMPLATE" > "$NGINX_AVAILABLE/hikrad.conf"
+# The template's standalone `http2 on;` directive exists only from nginx
+# 1.25.1. The tested tier ships older nginx (Ubuntu 22.04: 1.18, Ubuntu
+# 24.04: 1.24, Debian 12: 1.22), where `nginx -t` rejects it as an unknown
+# directive and the install aborts. On those, use the older
+# `listen … ssl http2` form instead, which they all accept.
+if command -v nginx >/dev/null 2>&1; then
+    nginx_ver="$(nginx -v 2>&1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
+    if [ -n "$nginx_ver" ] && [ "$(printf '%s\n%s\n' "$nginx_ver" 1.25.1 | sort -V | head -1)" != "1.25.1" ]; then
+        vlog "nginx $nginx_ver predates 'http2 on;' — using 'listen … ssl http2' instead"
+        sed -i -e '/^[[:space:]]*http2 on;[[:space:]]*$/d' \
+               -e 's/^\([[:space:]]*listen[[:space:]].*\) ssl\( default_server\)\{0,1\};/\1 ssl http2\2;/' \
+               "$NGINX_AVAILABLE/hikrad.conf"
+    fi
+fi
 ln -sf "$NGINX_AVAILABLE/hikrad.conf" "$NGINX_ENABLED/hikrad.conf"
 
 # nginx allows ONE default_server per listen port. Stock Ubuntu/Debian nginx
