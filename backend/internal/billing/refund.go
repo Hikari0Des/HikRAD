@@ -68,7 +68,7 @@ func (m *Module) refundHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	res, err := m.refundCore(ctx, subID, in.LedgerTxID, in.Reason, "panel", "billing.refund")
+	res, err := m.refundCore(ctx, subID, in.LedgerTxID, in.Reason, "panel", "billing.refund", nil)
 	if m.writeRefundError(w, err) {
 		return
 	}
@@ -109,7 +109,12 @@ func (m *Module) writeRefundError(w http.ResponseWriter, err error) bool {
 // payment/receipt, roll back expiry, and (post-commit) re-apply FR-9 via CoA.
 // source/journalSource let a caller other than the panel (undo.go) attribute
 // the reversal accurately without duplicating this logic.
-func (m *Module) refundCore(ctx context.Context, subID, ledgerTxID, reason, source, journalSource string) (refundCoreResult, error) {
+//
+// restore, when non-nil, replaces the roll-back-by-duration rule with an exact
+// expiry restore (At nil = never expires): FR-158 undo passes the renewal's
+// recorded prior expiry so undoing a renewal puts the subscriber back exactly
+// where it was. A panel refund passes nil (FR-25 rule unchanged).
+func (m *Module) refundCore(ctx context.Context, subID, ledgerTxID, reason, source, journalSource string, restore *expiryRestore) (refundCoreResult, error) {
 	receiptPrefix := m.getString(ctx, keyReceiptPrefix, "HR-")
 
 	tx, err := m.db.Begin(ctx)
@@ -255,8 +260,14 @@ func (m *Module) refundCore(ctx context.Context, subID, ledgerTxID, reason, sour
 
 	// Expiry rollback: floor now. Roll back by the current profile's granted
 	// duration (the cancelled renewal's grant in the common cancel-renewal case).
-	newExpiry := rollbackExpiry(dbNow, curExpires, duration)
-	nowExpired := !newExpiry.After(dbNow)
+	var newExpiry *time.Time
+	if restore != nil {
+		newExpiry = restore.At
+	} else {
+		rolled := rollbackExpiry(dbNow, curExpires, duration)
+		newExpiry = &rolled
+	}
+	nowExpired := newExpiry != nil && !newExpiry.After(dbNow)
 	status := "active"
 	if nowExpired {
 		status = "expired"
@@ -278,7 +289,16 @@ func (m *Module) refundCore(ctx context.Context, subID, ledgerTxID, reason, sour
 	if nowExpired {
 		coa = m.enforceExpiredCoA(ctx, subID, behavior, strOr(expiredPool, ""))
 	}
-	return refundCoreResult{RefundLedgerTxID: refundID, NewExpiresAt: newExpiry.UTC(), CoAResult: coa}, nil
+	out := refundCoreResult{RefundLedgerTxID: refundID, CoAResult: coa}
+	if newExpiry != nil {
+		out.NewExpiresAt = newExpiry.UTC()
+	}
+	return out, nil
+}
+
+// expiryRestore is refundCore's exact-restore override (see refundCore).
+type expiryRestore struct {
+	At *time.Time
 }
 
 // rollbackExpiry rolls a subscriber's expiry back by durationDays, floored at now

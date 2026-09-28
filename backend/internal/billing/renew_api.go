@@ -62,7 +62,7 @@ func (m *Module) renewHandler(w http.ResponseWriter, r *http.Request) {
 	// this record to a crash right here only makes this one renewal
 	// non-undoable, never a money-safety issue (see undo.go).
 	res.UndoID, _ = m.recordUndo(r.Context(), "renewal", "subscriber", id, managerID(mgr), res.LedgerTxID,
-		undoRenewalSnapshot{NewExpiresAt: res.NewExpiresAt}, "")
+		undoRenewalSnapshot{NewExpiresAt: res.NewExpiresAt, PriorRecorded: true, PriorExpiresAt: res.priorExpiresAt}, "")
 	httpapi.JSON(w, http.StatusOK, res)
 }
 

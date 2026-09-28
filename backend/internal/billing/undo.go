@@ -38,6 +38,12 @@ var (
 
 type undoRenewalSnapshot struct {
 	NewExpiresAt time.Time `json:"new_expires_at"`
+	// PriorRecorded marks a snapshot that carries PriorExpiresAt (nil there =
+	// the subscriber never expired). Undo restores that exact prior expiry;
+	// a snapshot written before this field existed falls back to refund's
+	// roll-back-by-duration rule.
+	PriorRecorded  bool       `json:"prior_recorded,omitempty"`
+	PriorExpiresAt *time.Time `json:"prior_expires_at,omitempty"`
 }
 type undoTopupSnapshot struct {
 	ManagerID string `json:"manager_id"`
@@ -128,7 +134,11 @@ func (m *Module) performUndo(ctx context.Context, undoID, actorID string) (undoR
 			// row was recreated under the same id.
 			return undoResult{}, errUndoChanged
 		}
-		res, err := m.refundCore(ctx, entityID, ledgerTxID, "undo", "undo", "billing.undo")
+		var restore *expiryRestore
+		if snap.PriorRecorded {
+			restore = &expiryRestore{At: snap.PriorExpiresAt}
+		}
+		res, err := m.refundCore(ctx, entityID, ledgerTxID, "undo", "undo", "billing.undo", restore)
 		if err != nil {
 			return undoResult{}, err
 		}

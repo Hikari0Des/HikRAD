@@ -93,6 +93,10 @@ type renewResult struct {
 	price    int64
 	rate     string
 	poolName string
+	// priorExpiresAt is the expiry this renewal replaced (nil = never
+	// expires), recorded in the FR-158 undo snapshot so an undo restores it
+	// exactly instead of rolling back by duration.
+	priorExpiresAt *time.Time
 }
 
 // renew executes the transactional renewal then the post-commit side effects. It
@@ -390,13 +394,14 @@ func (m *Module) renewInTx(ctx context.Context, tx pgx.Tx, dbNow time.Time, p re
 	}
 
 	return renewResult{
-		LedgerTxID:   txID,
-		ReceiptNo:    receiptNo,
-		NewExpiresAt: newExpiry.UTC(),
-		Currency:     profCurrency,
-		price:        price,
-		rate:         resolveRate(rateOverride, rateUp, rateDown),
-		poolName:     strOr(poolName, ""),
+		LedgerTxID:     txID,
+		ReceiptNo:      receiptNo,
+		NewExpiresAt:   newExpiry.UTC(),
+		Currency:       profCurrency,
+		price:          price,
+		rate:           resolveRate(rateOverride, rateUp, rateDown),
+		poolName:       strOr(poolName, ""),
+		priorExpiresAt: curExpires,
 	}, nil
 }
 
