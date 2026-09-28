@@ -209,6 +209,12 @@ if [ "${HIKRAD_SKIP_PACKAGES:-0}" != "1" ]; then
     . /etc/os-release
     log "Installing OS package dependencies…"
     apt-get update -qq
+    # The repo-key steps below pipe curl into gpg — both must exist BEFORE
+    # the main install further down. Minimal Ubuntu/Debian server images ship
+    # neither gnupg nor (sometimes) curl, and the install died right here on
+    # "gpg: command not found" (found in a clean ubuntu:24.04 rehearsal).
+    apt-get install -y -qq curl gnupg ca-certificates lsb-release \
+        || die "could not install the bootstrap packages (curl, gnupg, ca-certificates)"
 
     # PostgreSQL + TimescaleDB: add the upstream repos only if not already
     # present (idempotent — a second run must not duplicate apt sources).
