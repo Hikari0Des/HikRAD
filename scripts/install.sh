@@ -198,6 +198,12 @@ fi
 [ "$HTTPS_PORT" != "$HIKRAD_INTERNAL_API_PORT" ] \
     || die "the derived HTTPS port ($HTTPS_PORT, one above HIKRAD_HTTP_PORT=$HTTP_PORT) collides with hikrad-api's own fixed internal port — choose a different HIKRAD_HTTP_PORT."
 
+# Whether nginx was already on this host BEFORE this run — decides, in step
+# 9, whether the distro's stock default site may be disabled (only if WE just
+# installed nginx, so nobody can be relying on it yet).
+NGINX_PREEXISTING=0
+command -v nginx >/dev/null 2>&1 && NGINX_PREEXISTING=1
+
 # --- 3. OS package dependencies (idempotent — apt-get install is already a --
 # no-op on an already-satisfied package; TimescaleDB/PGDG repo files are only
 # added if missing).
@@ -591,6 +597,33 @@ install -d -m 0755 "$NGINX_AVAILABLE" "$NGINX_ENABLED"
 sed -e "s/@@HTTP_PORT@@/$HTTP_PORT/g" -e "s/@@HTTPS_PORT@@/$HTTPS_PORT/g" \
     "$STAGE_NGINX_TEMPLATE" > "$NGINX_AVAILABLE/hikrad.conf"
 ln -sf "$NGINX_AVAILABLE/hikrad.conf" "$NGINX_ENABLED/hikrad.conf"
+
+# nginx allows ONE default_server per listen port. Stock Ubuntu/Debian nginx
+# enables sites-enabled/default with `listen 80 default_server`, so on a
+# fresh server `nginx -t` failed ("duplicate default server") and the install
+# aborted (found in a clean ubuntu:24.04 rehearsal).
+#   - nginx installed by THIS run: its stock placeholder site serves nobody
+#     yet — disable its symlink (the file stays in sites-available), so the
+#     panel answers on http://<server-ip>/.
+#   - nginx pre-existed: another site deliberately owns the default server;
+#     never touch it (gate item 4) — HikRAD drops default_server instead.
+other_default=""
+for site in "$NGINX_ENABLED"/*; do
+    [ "$(basename "$site")" = "hikrad.conf" ] && continue
+    if grep -qE "^[[:space:]]*listen[[:space:]]+(\[::\]:)?($HTTP_PORT|$HTTPS_PORT)[[:space:]].*default_server" "$site" 2>/dev/null; then
+        other_default="$site"
+        break
+    fi
+done
+if [ -n "$other_default" ]; then
+    if [ "$NGINX_PREEXISTING" = "0" ] && [ "$(basename "$other_default")" = "default" ]; then
+        log "Disabling nginx's stock placeholder site (installed by this run; the file stays in $NGINX_AVAILABLE/default)."
+        rm -f "$other_default"
+    else
+        warn "$other_default already owns nginx's default server on port $HTTP_PORT/$HTTPS_PORT — leaving it untouched; HikRAD's site will answer only when no other server_name matches."
+        sed -i 's/ default_server;/;/' "$NGINX_AVAILABLE/hikrad.conf"
+    fi
+fi
 
 if [ ! -f "$TLS_DIR/cert.pem" ]; then
     log "Generating a self-signed TLS certificate covering this server's detected address(es)…"
