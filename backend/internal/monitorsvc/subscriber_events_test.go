@@ -111,9 +111,16 @@ func TestSubscriberEvents_RenewedEnqueuesAndDispatchesWhatsAppReceipt(t *testing
 	defer cancel()
 	go se.run(runCtx)
 
-	// Give the subscription loop a moment to establish before publishing —
-	// Redis pub/sub only delivers to already-subscribed listeners.
-	time.Sleep(150 * time.Millisecond)
+	// Redis pub/sub only delivers to already-subscribed listeners, so wait
+	// until the channel has one (polled, not a fixed sleep: a fixed 150ms was
+	// too short under a parallel full-suite run and the event was lost).
+	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); {
+		if rdb.PubSubNumSub(ctx, "billing.renewed").Val()["billing.renewed"] > 0 {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	time.Sleep(50 * time.Millisecond) // this listener, not just any, is subscribed
 
 	payload, _ := json.Marshal(renewedEvent{
 		SubscriberID: subscriberID,
@@ -127,21 +134,25 @@ func TestSubscriberEvents_RenewedEnqueuesAndDispatchesWhatsAppReceipt(t *testing
 		t.Fatalf("publish billing.renewed: %v", err)
 	}
 
-	// Give the enqueue a moment to land, then drain the queue exactly once —
-	// deterministic, no reliance on the dispatcher's own ticker interval.
-	time.Sleep(150 * time.Millisecond)
+	// Poll for the enqueue to land (bounded), then drain the queue exactly
+	// once — deterministic, no reliance on the dispatcher's own ticker.
 	// The outbox is shared with every other test/package on this database and
 	// claimBatch serves rows oldest-next_attempt_at first, so a backlog of
 	// older due rows could fill the tick (and other WhatsApp rows could reach
 	// the fake first). Make exactly this subscriber's queued rows the oldest
 	// and claim exactly that many, so the single tick drains only them.
 	var ours int
-	if err := db.QueryRow(ctx,
-		`WITH bumped AS (
-		     UPDATE notification_outbox SET next_attempt_at = now() - interval '10 years'
-		      WHERE subscriber_id = $1::uuid AND state = 'queued' RETURNING 1)
-		 SELECT count(*) FROM bumped`, subscriberID).Scan(&ours); err != nil {
-		t.Fatalf("prioritise this test's outbox rows: %v", err)
+	for deadline := time.Now().Add(5 * time.Second); ours == 0 && time.Now().Before(deadline); {
+		if err := db.QueryRow(ctx,
+			`WITH bumped AS (
+			     UPDATE notification_outbox SET next_attempt_at = now() - interval '10 years'
+			      WHERE subscriber_id = $1::uuid AND state = 'queued' RETURNING 1)
+			 SELECT count(*) FROM bumped`, subscriberID).Scan(&ours); err != nil {
+			t.Fatalf("prioritise this test's outbox rows: %v", err)
+		}
+		if ours == 0 {
+			time.Sleep(50 * time.Millisecond)
+		}
 	}
 	if ours == 0 {
 		t.Fatal("billing.renewed enqueued nothing for the subscriber")
