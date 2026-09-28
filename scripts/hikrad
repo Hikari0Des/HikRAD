@@ -241,26 +241,60 @@ cmd_restore() {
     log "Stopping the stack…"
     for u in $(all_units); do systemctl stop "$u" 2>/dev/null || true; done
 
-    log "Dropping and recreating $PG_DB…"
-    psql_admin -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '$PG_DB' AND pid <> pg_backend_pid();"
-    psql_admin -c "DROP DATABASE IF EXISTS \"$PG_DB\";"
-    psql_admin -c "CREATE DATABASE \"$PG_DB\" OWNER \"$PG_USER\";"
+    # Restore into a SCRATCH database and swap it in only once pg_restore has
+    # succeeded. The old flow dropped the live database first, so any failure
+    # after that point (found live: timescaledb_pre_restore() refused to run
+    # as the non-superuser app role) left the operator with an EMPTY database
+    # and a restore that had destroyed the very data it was meant to recover.
+    # The previous database is kept as ${PG_DB}_pre_restore until the next
+    # restore, as a manual safety net.
+    local staging="${PG_DB}_restore" previous="${PG_DB}_pre_restore"
+    log "Restoring into a staging database ($staging) first — the current database is untouched until this succeeds…"
+    psql_admin -c "DROP DATABASE IF EXISTS \"$staging\";"
+    psql_admin -c "CREATE DATABASE \"$staging\" OWNER \"$PG_USER\";"
     # TimescaleDB hypertables need the extension created and the catalog put
     # into restore mode before pg_restore touches chunk tables, or COPY fails
-    # with "could not find hypertable" — this is TimescaleDB's own documented
-    # pg_dump/pg_restore procedure, timescaledb_pre_restore()/_post_restore().
-    psql_admin -d "$PG_DB" -c "CREATE EXTENSION IF NOT EXISTS timescaledb;"
-    psql_app -c "SELECT timescaledb_pre_restore();"
+    # with "could not find hypertable" — TimescaleDB's own documented
+    # pg_dump/pg_restore procedure. Both calls ALTER DATABASE, which needs a
+    # superuser, hence psql_admin (the app role gets "permission denied to set
+    # parameter timescaledb.restoring").
+    psql_admin -d "$staging" -c "CREATE EXTENSION IF NOT EXISTS timescaledb;"
+    psql_admin -d "$staging" -c "SELECT timescaledb_pre_restore();"
 
     log "Restoring dump…"
-    if ! pg_restore_app --no-owner --no-privileges < "$work/db.pgdump"; then
-        die "pg_restore reported errors — the pre-restore stack is stopped; investigate before retrying (the archive itself is untouched)"
+    # As the postgres superuser, keeping the dump's owners and ACLs: the
+    # timescaledb extension (and its _timescaledb_internal schema, where
+    # every hypertable chunk and continuous-aggregate table lives) is owned
+    # by postgres, so the app role got "permission denied for schema
+    # _timescaledb_internal" on every chunk and the restore failed. Owners
+    # are preserved (every app object stays owned by $PG_USER), so nothing
+    # ends up postgres-owned and unreadable to hikrad-api.
+    if ! sudo -u postgres pg_restore -d "$staging" < "$work/db.pgdump"; then
+        psql_admin -c "DROP DATABASE IF EXISTS \"$staging\";" >/dev/null 2>&1 || true
+        for u in $(all_units); do systemctl start "$u" 2>/dev/null || true; done
+        die "pg_restore reported errors — the current database was NOT modified and the stack has been restarted on it (the archive itself is untouched)"
     fi
-    psql_app -c "SELECT timescaledb_post_restore();"
+    psql_admin -d "$staging" -c "SELECT timescaledb_post_restore();"
+
+    log "Swapping the restored database in (previous one kept as $previous)…"
+    psql_admin -c "DROP DATABASE IF EXISTS \"$previous\";"
+    psql_admin -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname IN ('$PG_DB', '$staging') AND pid <> pg_backend_pid();"
+    psql_admin -c "ALTER DATABASE \"$PG_DB\" RENAME TO \"$previous\";" 2>/dev/null || true
+    psql_admin -c "ALTER DATABASE \"$staging\" RENAME TO \"$PG_DB\";"
 
     cp "$ENV_FILE" "$ENV_FILE.pre-restore.bak"
     cp "$work/hikrad.env" "$ENV_FILE"
     log "hikrad.env restored (previous copy saved as $ENV_FILE.pre-restore.bak) — this is required: it carries the AES-GCM key that decrypts subscriber/NAS secrets."
+    # The restored hikrad.env carries the SOURCE server's DB password. Restoring
+    # onto a fresh server (the disaster-recovery case) left the local role on
+    # its own install-time password, so hikrad-api could never connect. Re-key
+    # the role to the password the services will now read.
+    local restored_pw
+    restored_pw="$(grep '^POSTGRES_PASSWORD=' "$ENV_FILE" | cut -d= -f2-)"
+    if [ -n "$restored_pw" ]; then
+        psql_admin -c "ALTER ROLE \"$PG_USER\" PASSWORD '$(printf '%s' "$restored_pw" | sed "s/'/''/g")';" >/dev/null             || log "WARNING: could not re-key role $PG_USER to the restored hikrad.env password — hikrad-api may fail to connect"
+        PG_PASSWORD="$restored_pw"
+    fi
 
     log "Starting the stack (hikrad-api applies forward migrations on boot)…"
     for u in $(all_units); do systemctl start "$u" 2>/dev/null || true; done
