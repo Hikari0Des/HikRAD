@@ -18,6 +18,7 @@ WWW_DIR="$PREFIX/opt/hikrad/www"
 FR_DIR="$ETC_DIR/freeradius"
 VERSION_FILE="$PREFIX/opt/hikrad/VERSION"
 RELEASE_ROLLBACK_DIR="$PREFIX/opt/hikrad/release.rollback"
+LIB_DIR="$PREFIX/opt/hikrad/lib"
 LOCK_DIR="$VAR_DIR/data/updater"
 
 # Dev fallback: running from a checkout with no real install yet (matches
@@ -354,17 +355,40 @@ cmd_update() {
     log "Pre-update backup…"
     cmd_backup_now pre_update
 
-    local script_dir; script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    local install_sh="$script_dir/install.sh"
-    [ -f "$install_sh" ] || install_sh="/opt/hikrad/release/scripts/install.sh"
-
+    # Which install.sh applies the update. It used to be looked up next to
+    # this CLI (/usr/local/bin) or at the Docker-era /opt/hikrad/release path
+    # — neither exists on a native install, so every `hikrad update` (and the
+    # panel's update button, which drives it) failed and rolled back.
+    #   bundle: the NEW release's own installer, but only after the bundle
+    #           verifies against the INSTALLED (trusted) verifier.
+    #   source: the checkout install.sh recorded (operator git-pulls first).
+    local install_sh="" work=""
     local install_status=0
     if [ -n "$bundle" ]; then
         [ -f "$bundle" ] || die "--bundle file not found: $bundle"
-        # install.sh's own first step verifies the bundle (scripts/verify-
-        # bundle.sh) before touching anything — this line's wording is what
-        # run.go's classifyStage keys off, see that file's own comment.
+        # This line's wording is what run.go's classifyStage keys off, see
+        # that file's own comment.
         log "Verifying release bundle $bundle before using anything from it…"
+        work="$(mktemp -d)"
+        # shellcheck disable=SC2064
+        trap "rm -rf '$work'" RETURN
+        tar -xf "$bundle" -C "$work" || die "could not extract $bundle — nothing was changed"
+        local verifier="$LIB_DIR/verify-bundle.sh"
+        if [ ! -f "$verifier" ]; then
+            # Installs from before the trusted copy existed: fall back to the
+            # recorded source checkout's verifier, never the bundle's own.
+            local src; src="$(meta_get HIKRAD_SOURCE_DIR)"
+            [ -n "$src" ] && [ -f "$src/scripts/verify-bundle.sh" ] && verifier="$src/scripts/verify-bundle.sh"
+        fi
+        [ -f "$verifier" ] || die "no trusted verify-bundle.sh at $LIB_DIR — re-run install.sh from your current release first, then retry."
+        bash "$verifier" "$work" || die "bundle verification failed — refusing to update from $bundle (nothing was changed)"
+        install_sh="$work/scripts/install.sh"
+    else
+        local src; src="$(meta_get HIKRAD_SOURCE_DIR)"
+        if [ -z "$src" ] || [ ! -f "$src/scripts/install.sh" ]; then
+            die "no --bundle given and no source checkout recorded in $META_FILE — use: hikrad update --bundle hikrad-vX.Y.Z.tar"
+        fi
+        install_sh="$src/scripts/install.sh"
     fi
 
     log "Applying update (hikrad-api runs forward-only migrations on boot)…"

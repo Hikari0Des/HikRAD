@@ -75,6 +75,7 @@ WWW_DIR="$PREFIX/opt/hikrad/www"
 MIGRATIONS_DIR="$PREFIX/opt/hikrad/migrations"
 VERSION_FILE="$PREFIX/opt/hikrad/VERSION"
 RELEASE_ROLLBACK_DIR="$PREFIX/opt/hikrad/release.rollback"
+LIB_DIR="$PREFIX/opt/hikrad/lib"
 ETC_DIR="$PREFIX/etc/hikrad"
 ENV_FILE="$ETC_DIR/hikrad.env"
 META_FILE="$ETC_DIR/install.meta"
@@ -742,6 +743,16 @@ install -d -m 0755 "$PREFIX/usr/local/bin"
 install -m 0755 "$STAGE_CLI" "$PREFIX/usr/local/bin/hikrad" \
     && log "Installed CLI wrapper: $PREFIX/usr/local/bin/hikrad" \
     || warn "could not install $PREFIX/usr/local/bin/hikrad — copy scripts/hikrad there manually."
+# Trusted bundle verifier (it embeds the release public key): `hikrad update
+# --bundle` verifies a new bundle with THIS installed copy before executing
+# anything from inside it — running the bundle's own installer unverified
+# would let a tampered bundle skip its own verification step.
+install -d -m 0755 "$LIB_DIR"
+if [ -n "$BUNDLE" ]; then verifier_src="$SCRATCH/scripts/verify-bundle.sh"; else verifier_src="$SCRIPT_DIR/verify-bundle.sh"; fi
+install -m 0755 "$verifier_src" "$LIB_DIR/verify-bundle.sh"     || warn "could not install $LIB_DIR/verify-bundle.sh — 'hikrad update --bundle' will refuse to run until it exists."
+
+SOURCE_DIR_META=""
+[ "$HIKRAD_DELIVERY_MODE" = "source" ] && SOURCE_DIR_META="$REPO_DIR"
 
 # --- 13. install.meta (read back by `hikrad` and by this script's own -----
 # port-reuse logic above).
@@ -751,6 +762,7 @@ HIKRAD_HTTP_PORT=$HTTP_PORT
 HIKRAD_HTTPS_PORT=$HTTPS_PORT
 HIKRAD_DELIVERY_MODE=$HIKRAD_DELIVERY_MODE
 HIKRAD_ENV_FILE=$ENV_FILE
+HIKRAD_SOURCE_DIR=$SOURCE_DIR_META
 EOF
 
 # --- 14. Summary --------------------------------------------------------------
