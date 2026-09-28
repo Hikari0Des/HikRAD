@@ -104,7 +104,11 @@ func TestNormalizeMAC_FormatsCompareEqual(t *testing.T) {
 
 func TestIssueAccess_HardCapNeverExceeded(t *testing.T) {
 	secret := []byte("test-secret-at-least-32-bytes-long!!")
-	now := time.Date(2026, 8, 20, 12, 0, 0, 0, time.UTC)
+	// Wall-clock now, not a fixed date: parseAccess validates exp against the
+	// real clock, so a hardcoded date turned this into a time bomb that
+	// started failing ("token is expired") 5 minutes after it was written.
+	// Truncated to the second because exp is a whole-second Unix claim.
+	now := time.Now().UTC().Truncate(time.Second)
 	hardCap := now.Add(5 * time.Minute) // shorter than accessTTL (15m)
 
 	tok, err := issueAccess(secret, "sub-1", "sess-1", scopeReduced, now, &hardCap)
