@@ -171,6 +171,7 @@ func installLicense(w http.ResponseWriter, r *http.Request, auditAction string) 
 	rec := license.Record{
 		KeyID:             payload.KeyID,
 		Payload:           payload,
+		PayloadRaw:        blob.Payload, // exact signed bytes — re-verified on every refresh
 		IssuedFingerprint: payload.Fingerprint,
 		State:             license.StateValid,
 	}
