@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"testing"
+	"time"
 )
 
 var allCatalogIDs = []string{
@@ -94,21 +95,45 @@ func TestDashboardForbiddenWidgetAbsent(t *testing.T) {
 func TestDashboardDefaultEqualsToday(t *testing.T) {
 	e := setup(t)
 
-	legacy := e.do(t, "GET", "/api/v1/dashboard", e.adminToken, nil)
-	if legacy.status != http.StatusOK {
-		t.Fatalf("legacy dashboard = %d: %s", legacy.status, legacy.body)
+	compared := []string{"subs", "revenue_today_iqd", "nas_cards", "radius_rps", "pipeline"}
+	fetchLegacy := func() (map[string]json.RawMessage, string) {
+		legacy := e.do(t, "GET", "/api/v1/dashboard", e.adminToken, nil)
+		if legacy.status != http.StatusOK {
+			t.Fatalf("legacy dashboard = %d: %s", legacy.status, legacy.body)
+		}
+		var b map[string]json.RawMessage
+		legacy.into(t, &b)
+		sig := ""
+		for _, k := range compared {
+			sig += k + "=" + string(b[k]) + ";"
+		}
+		return b, sig
 	}
-	var legacyBody map[string]json.RawMessage
-	legacy.into(t, &legacyBody)
 
-	filtered := e.do(t, "GET", widgetsQuery(allCatalogIDs), e.adminToken, nil)
-	if filtered.status != http.StatusOK {
-		t.Fatalf("filtered dashboard = %d: %s", filtered.status, filtered.body)
+	// The test database is shared with other packages that `go test ./...`
+	// runs concurrently (e.g. internal/notify seeds 1,000 subscribers), so
+	// the data can change between the two requests. Sandwich the filtered
+	// call between two legacy calls and only compare a pair taken while the
+	// data was quiescent (both legacy snapshots identical on the compared
+	// keys); retry otherwise. Equality itself is still strictly asserted.
+	var legacyBody, filteredBody map[string]json.RawMessage
+	for attempt := 0; ; attempt++ {
+		before, beforeRaw := fetchLegacy()
+		filtered := e.do(t, "GET", widgetsQuery(allCatalogIDs), e.adminToken, nil)
+		if filtered.status != http.StatusOK {
+			t.Fatalf("filtered dashboard = %d: %s", filtered.status, filtered.body)
+		}
+		filteredBody = nil
+		filtered.into(t, &filteredBody)
+		_, afterRaw := fetchLegacy()
+		legacyBody = before
+		if beforeRaw == afterRaw || attempt >= 20 {
+			break
+		}
+		time.Sleep(250 * time.Millisecond)
 	}
-	var filteredBody map[string]json.RawMessage
-	filtered.into(t, &filteredBody)
 
-	for _, k := range []string{"subs", "revenue_today_iqd", "nas_cards", "radius_rps", "pipeline"} {
+	for _, k := range compared {
 		lv, ok := legacyBody[k]
 		if !ok {
 			t.Fatalf("legacy response missing expected key %q", k)
