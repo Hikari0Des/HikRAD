@@ -43,7 +43,11 @@ SELECT
     b.creator_manager_id,
     b.created_at
 FROM voucher_batches b
-LEFT JOIN profiles p ON p.id = b.profile_id;
+LEFT JOIN profiles p ON p.id = b.profile_id
+-- Re-runnable: golang-migrate applies this once per install, but
+-- cards/migrate_vouchers_db_test.go re-executes it against a shared test DB
+-- whose earlier batches are already projected — skip those, never fail.
+ON CONFLICT DO NOTHING;
 
 INSERT INTO cards (id, group_id, code_hash, state, first_login_at, created_at, updated_at)
 SELECT
@@ -59,4 +63,5 @@ SELECT
     b.created_at,
     COALESCE(v.used_at, b.created_at)
 FROM vouchers v
-JOIN voucher_batches b ON b.id = v.batch_id;
+JOIN voucher_batches b ON b.id = v.batch_id
+ON CONFLICT DO NOTHING;
