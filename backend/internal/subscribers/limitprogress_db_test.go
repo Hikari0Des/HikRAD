@@ -101,3 +101,58 @@ func TestList_LimitProgress_QuotaExhaustedTriggersPlanSwapBadge(t *testing.T) {
 		t.Errorf("plan_swap.to_profile_name = %q, want target-plan", lp.PlanSwap.ToProfileName)
 	}
 }
+
+// An online subscriber (open session, sub-second timestamps — every real
+// session) made the uptime SUM(EXTRACT(EPOCH …)) fractional; scanning it into
+// int64 failed and the WHOLE subscriber list page returned 500 whenever such a
+// subscriber was on it. Uptime is now reported in whole seconds.
+func TestList_LimitProgress_OpenSessionWithFractionalSecondsDoesNot500(t *testing.T) {
+	e := setup(t)
+	profileID := e.createProfile(t, "uptime-frac", 1024, 1024)
+
+	uname := e.prefix + "online"
+	sr := e.do(t, "POST", "/api/v1/subscribers", map[string]any{
+		"username": uname, "password": "x", "profile_id": profileID,
+		"expires_at": time.Now().Add(30 * 24 * time.Hour).Format(time.RFC3339),
+	})
+	if sr.status != http.StatusCreated {
+		t.Fatalf("create subscriber = %d: %s", sr.status, sr.body)
+	}
+	var sub struct {
+		ID string `json:"id"`
+	}
+	sr.into(t, &sub)
+
+	// Uptime counts from the cycle anchor, which defaults to created_at — so
+	// backdate the account or a session older than it is clipped to ~0s.
+	if _, err := e.db.Exec(t.Context(),
+		`UPDATE subscribers SET created_at = now() - interval '1 hour' WHERE id = $1::uuid`, sub.ID); err != nil {
+		t.Fatalf("backdate subscriber: %v", err)
+	}
+	// Still-open session that started 90.5s ago: COALESCE(stopped_at, now())
+	// minus a microsecond-precision started_at is never a whole number.
+	if _, err := e.db.Exec(t.Context(),
+		`INSERT INTO sessions (nas_id, acct_session_id, subscriber_id, username, started_at)
+		 VALUES (gen_random_uuid(), $1, $2::uuid, $3, now() - interval '90.5 seconds')`,
+		e.prefix+"frac-sess", sub.ID, uname); err != nil {
+		t.Fatalf("seed session: %v", err)
+	}
+
+	lr := e.do(t, "GET", "/api/v1/subscribers?q="+uname, nil)
+	if lr.status != http.StatusOK {
+		t.Fatalf("list = %d, want 200: %s", lr.status, lr.body)
+	}
+	var out struct {
+		Limits map[string]struct {
+			UptimeUsedSeconds int64 `json:"uptime_used_seconds"`
+		} `json:"limits"`
+	}
+	lr.into(t, &out)
+	lp, ok := out.Limits[sub.ID]
+	if !ok {
+		t.Fatalf("no limit progress attached for subscriber %s: %+v", sub.ID, out.Limits)
+	}
+	if lp.UptimeUsedSeconds < 90 || lp.UptimeUsedSeconds > 120 {
+		t.Errorf("uptime_used_seconds = %d, want ~90", lp.UptimeUsedSeconds)
+	}
+}

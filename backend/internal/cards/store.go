@@ -215,9 +215,9 @@ func attachCardUsage(ctx context.Context, db *pgxpool.Pool, list []Card) error {
 		       WHERE card_id = c.id AND time >= c.usage_cycle_anchor
 		  ) u ON true
 		  LEFT JOIN LATERAL (
-		      SELECT COALESCE(SUM(EXTRACT(EPOCH FROM (
+		      SELECT FLOOR(COALESCE(SUM(EXTRACT(EPOCH FROM (
 		               COALESCE(stopped_at, now()) - GREATEST(started_at, c.usage_cycle_anchor)
-		             ))), 0) AS seconds
+		             ))), 0))::bigint AS seconds
 		        FROM sessions
 		       WHERE card_id = c.id AND started_at IS NOT NULL
 		         AND COALESCE(stopped_at, now()) > c.usage_cycle_anchor
