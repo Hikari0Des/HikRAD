@@ -1,0 +1,28 @@
+# HikRAD ICMP/SNMP NAS probe + alerts engine (v4-2, FR-118).
+[Unit]
+Description=HikRAD monitor (device probes + alerts)
+Documentation=https://github.com/Hikari0Des/HikRAD
+After=network-online.target postgresql.service redis-server.service hikrad-api.service
+Wants=network-online.target
+Requires=postgresql.service
+
+[Service]
+Type=simple
+User=hikrad-monitor
+Group=hikrad-monitor
+EnvironmentFile=/etc/hikrad/hikrad.env
+ExecStart=/opt/hikrad/bin/hikrad-monitor
+Restart=on-failure
+RestartSec=2
+
+# CAP_NET_RAW replaces deploy/docker/monitor.Dockerfile's cap_add — ICMP
+# echo without running as root.
+AmbientCapabilities=CAP_NET_RAW
+CapabilityBoundingSet=CAP_NET_RAW
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

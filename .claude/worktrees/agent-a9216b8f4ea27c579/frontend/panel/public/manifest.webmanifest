@@ -1,0 +1,22 @@
+{
+  "name": "HikRAD Panel",
+  "short_name": "HikRAD",
+  "description": "Admin/manager panel: subscribers, NAS, billing, monitoring.",
+  "start_url": "/",
+  "scope": "/",
+  "id": "/",
+  "display": "standalone",
+  "background_color": "#f4f6f8",
+  "theme_color": "#08748f",
+  "dir": "auto",
+  "lang": "en",
+  "icons": [
+    { "src": "/icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    {
+      "src": "/icons/icon-maskable.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+# Optional Cloudflare Zero Trust tunnel (FR-57, v4-2 native replacement for
+# the old `docker compose --profile tunnel` service). NEVER started by
+# install.sh unless HIKRAD_CF_TOKEN was given at install time; otherwise
+# started only by `hikrad tunnel enable` — see scripts/hikrad. Disabled by
+# default (not one of the six units install.sh's ENABLE_LIST enables
+# unconditionally). Fronts nginx only — RADIUS/CoA UDP ports are never
+# reachable through it (FR-57.4), same posture as before.
+[Unit]
+Description=HikRAD Cloudflare tunnel (optional remote access)
+Documentation=https://github.com/Hikari0Des/HikRAD
+After=network-online.target hikrad-api.service nginx.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/cloudflared tunnel --no-autoupdate run --token-file /etc/hikrad/cloudflared-token
+Restart=on-failure
+RestartSec=5
+User=nobody
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,28 @@
+# HikRAD (v4-2, FR-118): bridges the dynamic-clients virtual server
+# (sites-available/dynamic-clients) to hikrad-api's
+# POST /internal/radius/dynamic-client — the lookup that lets a NAS added
+# through the panel authenticate through FreeRADIUS with ZERO restart
+# (gate item 9). Same exec-module rationale as hikrad_authorize (see
+# deploy/freeradius/README.md's "DB-driven clients" section and
+# scripts/authorize.pl's own header comment): rlm_rest's connect_uri
+# reachability check runs at server startup, and this build's rlm_json has
+# no response-decode support — one script owns the HTTP round trip and the
+# JSON-to-attribute mapping together.
+#
+# output_pairs = control: this module runs inside sites-available/
+# dynamic-clients' authorize {} section, which builds a client definition
+# from control-list FreeRADIUS-Client-* attributes (FreeRADIUS's own
+# documented mechanism) — NOT the reply list authorize.pl uses. On a miss
+# (source IP is not an enabled NAS in HikRAD) the script prints nothing and
+# exits non-zero, so `ok` is false and the calling site rejects instead of
+# creating a client — no secret, no source IP is ever an implicit trust.
+exec hikrad_dynamic_client {
+	wait = yes
+	program = "${confdir}/scripts/dynamic-client.pl"
+	input_pairs = request
+	output_pairs = control
+	# Same 2s bound as hikrad_authorize — a slow/unreachable hikrad-api
+	# fails this ONE unrecognized-source-IP lookup, never the server.
+	timeout = 2
+	shell_escape = yes
+}

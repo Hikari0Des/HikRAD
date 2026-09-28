@@ -1,0 +1,34 @@
+# HikRAD host update daemon (v2 phase 7, FR-86; retargeted onto systemd in
+# v4-2, FR-121 — the daemon's own Go code is unchanged, see backend/cmd/
+# hikrad-updaterd: it shells into `hikrad update` and scans its output, so
+# retargeting scripts/hikrad's cmd_update from `docker compose` to
+# `systemctl` is the entire change this unit needed). Runs as root — it must
+# be able to run `hikrad update`, which itself needs root to install
+# binaries, write systemd units, and restart every other HikRAD service,
+# including any that would host a caller talking to it (why this is not a
+# container, C1 of the v2-7 phase brief).
+[Unit]
+Description=HikRAD host update daemon
+Documentation=https://github.com/Hikari0Des/HikRAD
+After=network.target
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/hikrad/hikrad.env
+Environment=HIKRAD_ROOT=/var/lib/hikrad
+Environment=HIKRAD_UPDATER_SOCKET=/run/hikrad/updater.sock
+Environment=HIKRAD_VERSION_FILE=/opt/hikrad/VERSION
+Environment=HIKRAD_UPDATE_CMD=/usr/local/bin/hikrad
+ExecStart=/opt/hikrad/bin/hikrad-updaterd
+Restart=on-failure
+RestartSec=2
+
+# /run/hikrad is where hikrad-api's HIKRAD_UPDATER_SOCKET also points — both
+# units share this one directory natively (no bind-mount indirection needed
+# now that neither process is containerized). Recreated on every start;
+# main.go chmods the socket file itself to 0777 after listening.
+RuntimeDirectory=hikrad
+RuntimeDirectoryMode=0755
+
+[Install]
+WantedBy=multi-user.target

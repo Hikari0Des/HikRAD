@@ -1,0 +1,253 @@
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+import { I18nProvider } from '@hikrad/shared'
+import en from '@hikrad/shared/locales/en/panel.json'
+
+import { AuthProvider } from '../../auth/AuthContext'
+import { tokenStore } from '../../auth/tokenStore'
+import { ToastProvider } from '../../components/Toast'
+import { BulkBar } from './BulkBar'
+
+const fetchMock = vi.fn()
+
+function json(status: number, body: unknown): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  })
+}
+
+function renderBar() {
+  return render(
+    <I18nProvider>
+      <AuthProvider>
+        <ToastProvider>
+          <BulkBar
+            filter={{ status: 'active' }}
+            selectedIds={[]}
+            profiles={[]}
+            managers={[]}
+            onDone={() => {}}
+          />
+        </ToastProvider>
+      </AuthProvider>
+    </I18nProvider>,
+  )
+}
+
+beforeEach(() => {
+  fetchMock.mockReset()
+  vi.stubGlobal('fetch', fetchMock)
+  window.localStorage.clear()
+})
+
+afterEach(() => {
+  vi.unstubAllGlobals()
+  vi.useRealTimers()
+})
+
+describe('BulkBar (FR-4)', () => {
+  it('polls the async job and renders per-row failures', async () => {
+    tokenStore.setManager({ id: 'm1', username: 'admin', role: 'admin' })
+    const running = {
+      id: 'j1',
+      action: 'enable',
+      status: 'running',
+      total: 2,
+      done: 0,
+      succeeded: 0,
+      failed: 0,
+      failures: [],
+      started_at: '2026-07-10T10:00:00Z',
+    }
+    const completed = {
+      ...running,
+      status: 'completed',
+      done: 2,
+      succeeded: 1,
+      failed: 1,
+      failures: [{ subscriber_id: 's1', username: 'bob', error: 'boom' }],
+    }
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      if ((init?.method ?? 'GET') === 'POST' && url.endsWith('/subscribers/bulk')) {
+        return Promise.resolve(json(202, running))
+      }
+      if (url.includes('/subscribers/bulk/j1')) {
+        return Promise.resolve(json(200, completed))
+      }
+      throw new Error(`unexpected fetch ${url}`)
+    })
+
+    renderBar()
+
+    fireEvent.click(screen.getByText(en.bulk.enable))
+
+    // The POST starts the job, then a 700ms poll returns the completed job with
+    // the per-row failure. waitFor drives the interval on real timers.
+    await waitFor(() => expect(screen.getByText('bob')).toBeInTheDocument(), { timeout: 3000 })
+    expect(screen.getByText('boom', { exact: false })).toBeInTheDocument()
+  })
+
+  it('hides mutating + export actions from an agent (permission gating)', () => {
+    tokenStore.setManager({ id: 'a1', username: 'hassan', role: 'agent' })
+    renderBar()
+    // Agents hold neither subscribers.edit nor export.
+    expect(screen.queryByText(en.bulk.enable)).not.toBeInTheDocument()
+    expect(screen.queryByText(en.bulk.disable)).not.toBeInTheDocument()
+    expect(screen.queryByText(en.bulk.export)).not.toBeInTheDocument()
+  })
+
+  // FR-61: the action that replaced v1's set_allow_hotspot. It must post the
+  // three-valued service_type, and it must carry the caller's filter through
+  // untouched — a bulk runs against the SERVER-side filter, so a dropped filter
+  // would silently retype every subscriber instead of the ones on screen.
+  it('posts set_service_type with the chosen type and the caller filter', async () => {
+    tokenStore.setManager({ id: 'm1', username: 'admin', role: 'admin' })
+    let posted: Record<string, unknown> | null = null
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      if ((init?.method ?? 'GET') === 'POST' && url.endsWith('/subscribers/bulk')) {
+        posted = JSON.parse(String(init?.body))
+        return Promise.resolve(
+          json(202, {
+            id: 'j2',
+            action: 'set_service_type',
+            status: 'completed',
+            total: 1,
+            done: 1,
+            succeeded: 1,
+            failed: 0,
+            failures: [],
+            started_at: '2026-07-16T10:00:00Z',
+          }),
+        )
+      }
+      throw new Error(`unexpected fetch ${url}`)
+    })
+
+    render(
+      <I18nProvider>
+        <AuthProvider>
+          <ToastProvider>
+            <BulkBar
+              filter={{ status: 'active', service_type: 'hotspot' }}
+              selectedIds={[]}
+              profiles={[]}
+              managers={[]}
+              onDone={() => {}}
+            />
+          </ToastProvider>
+        </AuthProvider>
+      </I18nProvider>,
+    )
+
+    fireEvent.click(screen.getByText(en.bulk.setServiceType))
+    // The prompt has exactly one select — the service-type picker. Radix
+    // Select renders a role="combobox" trigger; opening it and clicking the
+    // target role="option" replaces the old native fireEvent.change (v2-12).
+    fireEvent.click(screen.getByRole('combobox'))
+    fireEvent.click(await screen.findByRole('option', { name: en.serviceType.dual }))
+    fireEvent.click(screen.getByText(en.ui.apply))
+
+    await waitFor(() => expect(posted).not.toBeNull())
+    expect(posted).toMatchObject({
+      action: 'set_service_type',
+      params: { service_type: 'dual' },
+      filter: { status: 'active', service_type: 'hotspot' },
+    })
+  })
+})
+
+// A selection must reach the backend as subscriber_ids — that is the whole
+// feature. Without it the action silently hits the filter's whole match set,
+// which for "delete" is the difference between three rows and everyone.
+describe('selection', () => {
+  it('sends the ticked ids and says so', async () => {
+    tokenStore.setManager({ id: 'm1', username: 'admin', role: 'admin' })
+    let posted: Record<string, unknown> | null = null
+    fetchMock.mockImplementation(async (url: string, init: RequestInit) => {
+      if (url.endsWith('/subscribers/bulk') && init.method === 'POST') {
+        posted = JSON.parse(init.body as string)
+        return json(202, {
+          id: 'j1',
+          action: 'enable',
+          status: 'completed',
+          total: 2,
+          done: 2,
+          succeeded: 2,
+          failed: 0,
+          failures: [],
+          started_at: '2026-07-16T10:00:00Z',
+        })
+      }
+      throw new Error(`unexpected fetch ${url}`)
+    })
+
+    render(
+      <I18nProvider>
+        <AuthProvider>
+          <ToastProvider>
+            <BulkBar
+              filter={{ status: 'active' }}
+              selectedIds={['id-a', 'id-b']}
+              profiles={[]}
+              managers={[]}
+              onDone={() => {}}
+            />
+          </ToastProvider>
+        </AuthProvider>
+      </I18nProvider>,
+    )
+
+    // The bar states which set the buttons will hit, before anything is clicked.
+    expect(screen.getByText(/2 selected subscriber/)).toBeInTheDocument()
+
+    fireEvent.click(screen.getByText(en.bulk.enable))
+    await waitFor(() => expect(posted).not.toBeNull())
+    expect(posted).toMatchObject({ action: 'enable', subscriber_ids: ['id-a', 'id-b'] })
+  })
+
+  // With nothing ticked the filter is the target, and no ids are sent at all —
+  // an empty array must not be mistaken for "these zero rows".
+  it('omits subscriber_ids when nothing is selected', async () => {
+    tokenStore.setManager({ id: 'm1', username: 'admin', role: 'admin' })
+    let posted: Record<string, unknown> | null = null
+    fetchMock.mockImplementation(async (url: string, init: RequestInit) => {
+      if (url.endsWith('/subscribers/bulk') && init.method === 'POST') {
+        posted = JSON.parse(init.body as string)
+        return json(202, {
+          id: 'j1',
+          action: 'enable',
+          status: 'completed',
+          total: 0,
+          done: 0,
+          succeeded: 0,
+          failed: 0,
+          failures: [],
+          started_at: '2026-07-16T10:00:00Z',
+        })
+      }
+      throw new Error(`unexpected fetch ${url}`)
+    })
+
+    render(
+      <I18nProvider>
+        <AuthProvider>
+          <ToastProvider>
+            <BulkBar
+              filter={{ status: 'active' }}
+              selectedIds={[]}
+              profiles={[]}
+              managers={[]}
+              onDone={() => {}}
+            />
+          </ToastProvider>
+        </AuthProvider>
+      </I18nProvider>,
+    )
+
+    fireEvent.click(screen.getByText(en.bulk.enable))
+    await waitFor(() => expect(posted).not.toBeNull())
+    expect(posted).not.toHaveProperty('subscriber_ids')
+  })
+})
