@@ -803,6 +803,10 @@ func TestInvoices_ScopeIsolation_AgentCannotTouchAnotherAgentsInvoice(t *testing
 	e := setup(t)
 	ownerAgentID, _ := e.seedAgent(t)
 	otherAgentID, _ := e.seedAgent(t)
+	// Hold every invoices.* verb the three routes require, so each request
+	// clears its permission gate (which 403s regardless of the id) and the
+	// scoping check under test (invoiceVisible → 404) is what answers.
+	e.grantOverride(t, otherAgentID, "invoices.view")
 	e.grantOverride(t, otherAgentID, "invoices.manage")
 	e.grantOverride(t, otherAgentID, "invoices.create")
 	otherToken := agentReloginToken(t, e, otherAgentID)
