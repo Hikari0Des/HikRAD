@@ -50,6 +50,14 @@ while IFS= read -r dir; do
     # If so, it must reference the audit writer somewhere in the package.
     if grep -hEq 'auth\.Audit(Actor)?\(' "$dir"/*.go 2>/dev/null; then
         [ "${AUDIT_LINT_DEBUG:-0}" = "1" ] && echo "ok (audited):     $pkg"
+    elif grep -hEq '^// audit-lint: delegated — .{10,}' "$dir"/*.go 2>/dev/null; then
+        # A package whose every mutation goes through ANOTHER package's
+        # already-audited write path (importer → the real subscriber/profile
+        # create handlers; live → radius.Enqueue's "coa.enqueue" audit) is
+        # audited, just not textually here. It must say so, with the reason,
+        # in a `// audit-lint: delegated — <where the audit row is written>`
+        # line — an explicit, reviewable claim rather than a silent pass.
+        [ "${AUDIT_LINT_DEBUG:-0}" = "1" ] && echo "ok (delegated):   $pkg"
     else
         echo "AUDIT-LINT VIOLATION: package '$pkg' registers a mutating /api/v1 route but never calls auth.Audit" >&2
         status=1

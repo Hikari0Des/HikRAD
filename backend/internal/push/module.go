@@ -27,6 +27,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"net/url"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/hikrad/hikrad/internal/auth"
@@ -104,6 +105,9 @@ func handleSubscribe(w http.ResponseWriter, r *http.Request) {
 		internalErr(w, "subscribe", err)
 		return
 	}
+	// Endpoint host only — the full endpoint URL and keys are per-device
+	// delivery credentials and never belong in the audit trail.
+	_ = auth.Audit(r.Context(), "push_subscription.create", "manager", m.ID, nil, map[string]any{"surface": surfacePanel, "endpoint_host": endpointHost(req.Subscription.Endpoint)})
 	httpapi.JSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
@@ -126,6 +130,7 @@ func handleUnsubscribe(w http.ResponseWriter, r *http.Request) {
 		internalErr(w, "unsubscribe", err)
 		return
 	}
+	_ = auth.Audit(r.Context(), "push_subscription.delete", "manager", m.ID, map[string]any{"surface": surfacePanel, "endpoint_host": endpointHost(req.Endpoint)}, nil)
 	httpapi.JSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
@@ -141,6 +146,16 @@ func handleVapidPublicKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpapi.JSON(w, http.StatusOK, map[string]string{"key": pubB64})
+}
+
+// endpointHost reduces a push endpoint URL to its host (e.g.
+// fcm.googleapis.com) for the audit trail; "" if it doesn't parse.
+func endpointHost(endpoint string) string {
+	u, err := url.Parse(endpoint)
+	if err != nil {
+		return ""
+	}
+	return u.Host
 }
 
 func internalErr(w http.ResponseWriter, what string, err error) {

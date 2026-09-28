@@ -24,6 +24,11 @@ PATTERN='Mikrotik-'
 hits="$(grep -rnE "$PATTERN" "$BACKEND" \
     --include='*.go' \
     --exclude-dir='vendor' 2>/dev/null || true)"
+# Drop hits that are whole-line // comments: a doc comment explaining a VSA
+# name collision necessarily names the VSA, and is not a literal the core
+# emits (grep output is "path:line:content", so match on the content part).
+hits="$(printf '%s
+' "$hits" | grep -vE '^[^:]+:[0-9]+:[[:space:]]*//' || true)"
 
 # --exclude-dir=vendor also skips a top-level Go module vendor dir if present;
 # that is fine — third-party vendored code is not our core either.
