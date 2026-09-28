@@ -46,7 +46,7 @@ func (e env) lastTopupStamp(t *testing.T, mgr string) (amount int64, entered *in
 // original figure + rate, and the single IQD book reconciles (cache == ledger).
 func TestEntryTimeConversionStamp(t *testing.T) {
 	e := setup(t)
-	_, agentID := e.seedAgent(t)
+	agentID, _ := e.seedAgent(t)
 	rateID := e.insertCurrencyRate(t, "USD", "IQD", 1310)
 
 	// 5000 USD minor units = $50.00 → 50 * 1310 = 65,500 IQD.
@@ -82,7 +82,7 @@ func TestEntryTimeConversionStamp(t *testing.T) {
 // no conversion stamp.
 func TestNativeIqdTopupHasNoStamp(t *testing.T) {
 	e := setup(t)
-	_, agentID := e.seedAgent(t)
+	agentID, _ := e.seedAgent(t)
 	r := e.do(t, "POST", "/api/v1/managers/"+agentID+"/topup", e.token,
 		map[string]any{"amount": 25000, "currency": "IQD"})
 	if r.status != http.StatusOK {
@@ -98,7 +98,7 @@ func TestNativeIqdTopupHasNoStamp(t *testing.T) {
 // is refused (422 no_rate), never silently converted 1:1.
 func TestTopupUnknownRateRefused(t *testing.T) {
 	e := setup(t)
-	_, agentID := e.seedAgent(t)
+	agentID, _ := e.seedAgent(t)
 	r := e.do(t, "POST", "/api/v1/managers/"+agentID+"/topup", e.token,
 		map[string]any{"amount": 5000, "currency": "EUR"})
 	if r.status != http.StatusUnprocessableEntity {
@@ -109,11 +109,29 @@ func TestTopupUnknownRateRefused(t *testing.T) {
 	}
 }
 
+// TestTopupBadManagerIDIs404 — a malformed or unknown manager path id is a 404
+// not_found (the managers_api convention), never a 500 from the ::uuid cast or
+// the manager_balances FK — and no ledger row is written.
+func TestTopupBadManagerIDIs404(t *testing.T) {
+	e := setup(t)
+	for _, id := range []string{"not-a-uuid", "00000000-0000-0000-0000-000000000000"} {
+		r := e.do(t, "POST", "/api/v1/managers/"+id+"/topup", e.token,
+			map[string]any{"amount": 1000, "currency": "IQD"})
+		if r.status != http.StatusNotFound {
+			t.Fatalf("topup to %q = %d, want 404: %s", id, r.status, r.body)
+		}
+		b := e.do(t, "GET", "/api/v1/managers/"+id+"/balance", e.token, nil)
+		if id == "not-a-uuid" && b.status != http.StatusNotFound {
+			t.Fatalf("balance of %q = %d, want 404: %s", id, b.status, b.body)
+		}
+	}
+}
+
 // TestExchangeEndpointRetired — FR-100.3: the wallet-to-wallet exchange endpoint
 // is gone (nothing to exchange between in a single IQD book).
 func TestExchangeEndpointRetired(t *testing.T) {
 	e := setup(t)
-	_, agentID := e.seedAgent(t)
+	agentID, _ := e.seedAgent(t)
 	r := e.do(t, "POST", "/api/v1/managers/"+agentID+"/exchange", e.token,
 		map[string]any{"from_currency": "IQD", "to_currency": "USD", "amount": 1000})
 	if r.status != http.StatusNotFound && r.status != http.StatusMethodNotAllowed {
