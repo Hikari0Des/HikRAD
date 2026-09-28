@@ -32,7 +32,10 @@ You need:
 
 ## 1. Get the release and run the installer
 
-**Recommended — one command**, no source access needed:
+**Recommended — one command**, no source access needed (works once the
+first release has been published to the `hikrad-releases` mirror — see
+[release-checklist.md](release-checklist.md); until then the URL returns
+404 and you must use the manual bundle or source-mode install below):
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/Hikari0Des/hikrad-releases/main/install.sh | sudo bash
@@ -95,11 +98,13 @@ any change is made, never mid-run.
    keep serving. Port 80/443 by default; if 80 is already taken, you're
    prompted for an alternative (or set `HIKRAD_HTTP_PORT`), and that choice
    is remembered on every future re-run.
-7. Installs and enables the six `hikrad-*` systemd units (`hikrad-api`,
-   `hikrad-radius-worker`, `hikrad-acct`, `hikrad-monitor`,
-   `hikrad-notification` — not started until its binary ships in a later
-   phase, `hikrad-updaterd`), each running as a dedicated non-root user
-   with `ProtectSystem=strict`/`PrivateTmp`/`Restart=on-failure`.
+7. Installs the seven `hikrad-*` systemd units and enables `hikrad-api`,
+   `hikrad-radius-worker`, `hikrad-acct`, `hikrad-monitor` and
+   `hikrad-updaterd`. `hikrad-notification` is installed but not started
+   until its binary ships in a later phase; `hikrad-tunnel` only starts once
+   a Cloudflare token is configured. The API/acct/monitor services run as
+   dedicated non-root users with `ProtectSystem=strict`/`Restart=on-failure`;
+   FreeRADIUS drops to `freerad` after reading its config.
 8. Installs WireGuard and `cloudflared` (inert until configured — Settings
    > Remote Access, or `hikrad tunnel enable`).
 9. Prints a summary: panel URL, config/data paths, and the backup

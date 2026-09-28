@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # install.sh — HikRAD native installer (v4-2, FR-118). Provisions PostgreSQL
 # + TimescaleDB, FreeRADIUS 3 (with zero-restart dynamic NAS clients), nginx,
-# and the six hikrad-* systemd units directly on a Linux host — Docker is
+# and the seven hikrad-* systemd units directly on a Linux host — Docker is
 # CANCELLED as the delivery mechanism (Decision 57); nothing here installs
 # or depends on it. The RouterOS container target (Decision 58) is a
 # completely separate, single-image artifact built by
@@ -315,8 +315,24 @@ if [ "${HIKRAD_SKIP_PACKAGES:-0}" != "1" ]; then
     [ -n "$PG_PASSWORD" ] || PG_PASSWORD="$(openssl rand -hex 24)"
 
     role_exists="$(sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='hikrad'" 2>/dev/null || true)"
-    if [ "$role_exists" = "1" ]; then
+    if [ "$role_exists" = "1" ] && [ -f "$ENV_FILE" ]; then
         vlog "role 'hikrad' already exists — leaving its password untouched (never re-set on an existing role, matches the 'never regenerate secrets' contract)"
+    elif [ "$role_exists" = "1" ]; then
+        # The role survived but hikrad.env did not (deleted /etc/hikrad, a
+        # half-finished uninstall, a reinstall onto a kept database). Step 6
+        # is about to write a brand-new hikrad.env with $PG_PASSWORD, so the
+        # role MUST be re-keyed to match — leaving it untouched guaranteed
+        # hikrad-api could never log in ("password authentication failed").
+        # There is no old secret left to preserve: it lived only in the
+        # hikrad.env that is already gone.
+        warn "PostgreSQL role 'hikrad' exists but $ENV_FILE does not — re-keying the role to the password being written to the new hikrad.env."
+        sudo -u postgres psql -v ON_ERROR_STOP=1 -c \
+            "ALTER ROLE hikrad LOGIN PASSWORD '$(printf '%s' "$PG_PASSWORD" | sed "s/'/''/g")';" \
+            || die "failed to re-key the existing 'hikrad' PostgreSQL role"
+        db_has_data="$(sudo -u postgres psql -d hikrad -tAc "SELECT 1 FROM information_schema.tables WHERE table_name='subscribers'" 2>/dev/null || true)"
+        if [ "$db_has_data" = "1" ]; then
+            warn "the existing 'hikrad' database already holds data, but a NEW HIKRAD_ENCRYPTION_KEY is about to be generated — subscriber RADIUS passwords and NAS secrets encrypted under the old key will NOT decrypt. Restore the old hikrad.env (or a 'hikrad restore' backup + its passphrase) instead if you still have it."
+        fi
     else
         sudo -u postgres psql -v ON_ERROR_STOP=1 -c \
             "CREATE ROLE hikrad LOGIN PASSWORD '$(printf '%s' "$PG_PASSWORD" | sed "s/'/''/g")';" \
@@ -423,6 +439,12 @@ if [ -n "$BUNDLE" ]; then
     BUNDLE_BIN_DIR="$SCRATCH/bin"
     HIKRAD_DELIVERY_MODE="bundle"
 else
+    # sudo's secure_path drops /usr/local/go/bin (the go.dev tarball's
+    # documented location), so a Go the invoking user can run is invisible
+    # here under plain `sudo ./scripts/install.sh`.
+    if ! command -v go >/dev/null 2>&1 && [ -x /usr/local/go/bin/go ]; then
+        PATH="$PATH:/usr/local/go/bin"
+    fi
     command -v go >/dev/null 2>&1 || die "no --bundle given and no Go toolchain found — source-mode install needs Go to build the binaries. Either install Go, or use --bundle with a signed release (see docs/ops/install-guide.md)."
     log "Source mode: building binaries from $REPO_DIR/backend…"
     ( cd "$REPO_DIR/backend" && for svc in hikrad-api hikrad-acct hikrad-monitor hikrad-updaterd; do

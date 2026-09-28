@@ -16,7 +16,7 @@ durable ingest, idempotent replay, and audited counters, plus real-time session 
 | Path | What it is |
 |---|---|
 | `deploy/freeradius/` | FreeRADIUS config, retargeted at native paths by `install.sh` |
-| `deploy/systemd/` | The six `hikrad-*` unit files installed to `/etc/systemd/system/` |
+| `deploy/systemd/` | The seven `hikrad-*` unit files installed to `/etc/systemd/system/` |
 | `deploy/nginx/` | The nginx site template (additive to any existing nginx config) |
 | `deploy/routeros/` | The single RouterOS-container OCI image build (Decision 58) |
 | `scripts/` | `install.sh` (native installer), `gen-env.sh` (secret generation), `hikrad` (ops CLI), `migrate-to-native.sh` |
@@ -42,7 +42,7 @@ and how to reset a dev environment): [docs/ops/dev-setup.md](docs/ops/dev-setup.
 
 ## Production install
 
-**Recommended — one command**, no source access needed (fetches the latest signed release bundle from the public, source-free mirror repo — see [docs/ops/release-checklist.md](docs/ops/release-checklist.md) and PRD Decision 56):
+**Recommended — one command**, no source access needed (fetches the latest signed release bundle from the public, source-free mirror repo — see [docs/ops/release-checklist.md](docs/ops/release-checklist.md) and PRD Decision 56). The mirror only exists once the first tagged release has been published; until then this URL returns 404 — use source mode below:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/Hikari0Des/hikrad-releases/main/install.sh | sudo bash
@@ -63,7 +63,7 @@ distributions work too with a warning:
 sudo ./scripts/install.sh
 ```
 
-Either way: provisions PostgreSQL + TimescaleDB, FreeRADIUS, nginx, and the six `hikrad-*`
+Either way: provisions PostgreSQL + TimescaleDB, FreeRADIUS, nginx, and the seven `hikrad-*`
 systemd units; creates `/opt/hikrad/bin`, `/etc/hikrad`, `/var/lib/hikrad`,
 `/var/backups/hikrad`; generates secrets into `/etc/hikrad/hikrad.env`. Re-running upgrades an
 existing install in place — it never overwrites config, regenerates secrets, or changes the
