@@ -82,8 +82,16 @@ jobs:
           HIKRAD_VERSION: ${{ steps.version.outputs.version }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # install.sh rides along so a customer can download exactly two
+          # files (tar + install.sh) and run `sudo bash install.sh` offline.
+          cp scripts/quick-install.sh install.sh
+          # install.sh rides along so a customer can download exactly two
+          # files (tar + install.sh) and run `sudo bash install.sh` offline.
+          cp scripts/quick-install.sh install.sh
           gh release create "$HIKRAD_VERSION" \
             "hikrad-${HIKRAD_VERSION}.tar" \
+            install.sh \
+            install.sh \
             "hikrad-routeros-${HIKRAD_VERSION}-amd64.tar" \
             "hikrad-routeros-${HIKRAD_VERSION}-arm64.tar" \
             --title "HikRAD $HIKRAD_VERSION" \
@@ -108,8 +116,16 @@ jobs:
           HIKRAD_VERSION: ${{ steps.version.outputs.version }}
           GH_TOKEN: ${{ secrets.HIKRAD_RELEASES_REPO_TOKEN }}
         run: |
+          # install.sh rides along so a customer can download exactly two
+          # files (tar + install.sh) and run `sudo bash install.sh` offline.
+          cp scripts/quick-install.sh install.sh
+          # install.sh rides along so a customer can download exactly two
+          # files (tar + install.sh) and run `sudo bash install.sh` offline.
+          cp scripts/quick-install.sh install.sh
           gh release create "$HIKRAD_VERSION" \
             "hikrad-${HIKRAD_VERSION}.tar" \
+            install.sh \
+            install.sh \
             "hikrad-routeros-${HIKRAD_VERSION}-amd64.tar" \
             "hikrad-routeros-${HIKRAD_VERSION}-arm64.tar" \
             --repo "Hikari0Des/hikrad-releases" \

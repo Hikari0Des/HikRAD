@@ -257,12 +257,13 @@ if [ "${HIKRAD_SKIP_PACKAGES:-0}" != "1" ]; then
     # (possibly before TimescaleDB packages exist for it), and Ubuntu's own
     # `postgresql-contrib` meta package dragged in a second, unused
     # PostgreSQL 16 next to 18 (found on a real VM install). An install that
-    # already has a cluster keeps its version; otherwise 18, the version the
-    # full test suite and install rehearsals ran on. Override: HIKRAD_PG_MAJOR.
+    # already has a cluster keeps its version; otherwise 16, the PRD's
+    # user-confirmed stack (FR-118; CI's backend job tests against 16).
+    # Override: HIKRAD_PG_MAJOR.
     if [ -z "${HIKRAD_PG_MAJOR:-}" ] && command -v pg_lsclusters >/dev/null 2>&1; then
         HIKRAD_PG_MAJOR="$(pg_lsclusters -h 2>/dev/null | awk '$2 == "main" {print $1}' | sort -n | tail -1)"
     fi
-    PG_MAJOR="${HIKRAD_PG_MAJOR:-18}"
+    PG_MAJOR="${HIKRAD_PG_MAJOR:-16}"
     log "Using PostgreSQL $PG_MAJOR"
 
     # PostgreSQL + TimescaleDB: add the upstream repos only if not already

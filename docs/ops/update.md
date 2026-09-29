@@ -1,10 +1,33 @@
-# Update runbook (FR-51.4/51.5, bundle verification FR-81.3, retargeted onto
-# systemd in v4-2/FR-121)
+# Updating HikRAD
+
+## Quick recipes
+
+**Customer server (installed from a release):** copy the new
+`hikrad-vX.Y.Z.tar` to the server, then:
 
 ```sh
-hikrad update --bundle hikrad-vX.Y.Z.tar   # production: verify + stage a signed offline bundle
-hikrad update                              # dev-only source checkouts: rebuild + restage from source
+sudo hikrad update --bundle hikrad-vX.Y.Z.tar
 ```
+
+or put the file in `/var/lib/hikrad/incoming/` and click **Settings →
+System → Check for update → Update now** in the panel.
+
+**Your own server (installed from source):**
+
+```sh
+cd ~/hikrad          # the checkout you installed from
+git pull
+sudo hikrad update
+```
+
+Either way HikRAD takes a backup first, verifies the new release, applies
+it, waits until it is healthy, and **rolls back automatically** if anything
+fails. Already-connected subscribers stay connected during the brief
+restart; a new login attempted in those few seconds may be rejected and
+retried by the client.
+
+The rest of this page explains what happens underneath (FR-51.4/51.5,
+bundle verification FR-81.3, systemd since v4-2/FR-121).
 
 The panel mirrors this runbook at **Settings > System**: it shows the
 installed version (from `GET /api/v1/system/version`) and walks the operator
@@ -24,12 +47,11 @@ other unit, including any that would host a caller talking to it) and
 listens on a local unix socket (`/run/hikrad/updater.sock`), never a
 network port. `hikrad-api` relays the panel's requests to it over that
 socket, authenticated by a shared token (`HIKRAD_UPDATER_TOKEN` in
-`/etc/hikrad/hikrad.env`). **The daemon's own Go code did not change for
-v4-2** — it has always worked by shelling into `hikrad update` as a child
-process and scanning its output for stage markers; v4-2 only retargeted
-what `hikrad update` itself *drives* (`systemctl`/`install.sh` instead of
-`docker compose`), which the daemon observes exactly the same way it
-always did.
+`/etc/hikrad/hikrad.env`). The daemon runs `hikrad update` as a child
+process and follows its log, `/var/lib/hikrad/data/updater/last-update.log`
+(also handy for you: it is the full output of the last update). The child
+does not depend on the daemon: the update finishes even though the
+installer restarts `hikrad-updaterd` partway through.
 
 **A lock file (`/var/lib/hikrad/data/updater/update.lock`, held by
 whichever `hikrad update` invocation is actually running) means a
@@ -52,14 +74,16 @@ internet (`scp`, USB, a download portal) into that directory, *then* click
    `pre_update` in `backup_runs`) — this is the safety net if the update
    itself goes wrong in a way a binary rollback can't fix (a bad migration
    that already committed data changes, for instance).
-2. The bundle is verified (checksums + Ed25519 signature) before anything
-   in it is used — a failed verification refuses immediately and changes
-   nothing.
+2. The bundle is verified (checksums + Ed25519 signature) with the
+   verifier already installed on the server (`/opt/hikrad/lib`), never the
+   one inside the new bundle, before anything in it is used or run. A
+   failed verification refuses immediately and changes nothing.
 3. The current `/opt/hikrad/bin`, `/opt/hikrad/www`, and
    `/etc/hikrad/freeradius` are copied to a one-deep rollback location
    (`/opt/hikrad/release.rollback`) — there is no container image id to
    re-tag without Docker, so this is v4-2's equivalent rollback mechanism.
-4. `scripts/install.sh` runs (source or `--bundle`) to stage the new
+4. The new release's own `install.sh` runs (from the verified bundle, or
+   from the source checkout recorded at install time) to stage the new
    release in place: new binaries, frontend build, FreeRADIUS config,
    migrations — the exact same idempotent, non-secret-touching install
    path a fresh install uses.

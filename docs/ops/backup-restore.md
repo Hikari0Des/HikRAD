@@ -89,7 +89,10 @@ What it does, step by step (FR-51.2):
 ### Restoring onto a new server (disaster recovery)
 
 1. Install HikRAD on the new server as usual (`install.sh`), at the same or a
-   newer version than the one that made the backup.
+   newer version than the one that made the backup, **and on the same or a
+   newer PostgreSQL major** (a dump from PostgreSQL 18 cannot be restored
+   into 16). Check the old server with `psql --version`; if it is newer than
+   16, install the new one with e.g. `sudo HIKRAD_PG_MAJOR=18 bash install.sh`.
 2. Copy the archive over, e.g. into `/var/backups/hikrad/`.
 3. Restore with the **old** server's backup passphrase — the new server's
    `hikrad.env` holds its own, freshly generated one:

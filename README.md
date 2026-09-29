@@ -42,35 +42,39 @@ and how to reset a dev environment): [docs/ops/dev-setup.md](docs/ops/dev-setup.
 
 ## Production install
 
-**Recommended — one command**, no source access needed (fetches the latest signed release bundle from the public, source-free mirror repo — see [docs/ops/release-checklist.md](docs/ops/release-checklist.md) and PRD Decision 56). The mirror only exists once the first tagged release has been published; until then this URL returns 404 — use source mode below:
+Full guide: [docs/ops/install-guide.md](docs/ops/install-guide.md). In short:
+
+**Customer server (offline, from a release):** copy `hikrad-vX.Y.Z.tar` and `install.sh`
+into one folder on the server, then
+
+```sh
+sudo bash install.sh
+```
+
+**Customer server (online, once releases are published):**
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/Hikari0Des/hikrad-releases/main/install.sh | sudo bash
 ```
 
-Extra flags (`--domain`, `--no-start`, …) pass straight through, e.g.:
+**Your own server (from this private repo; Go and Node are installed automatically):**
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/Hikari0Des/hikrad-releases/main/install.sh | sudo bash -s -- --domain panel.example.isp
-```
-
-**Source-mode (internal/dev only)** — requires access to this (private) repo and a Go/Node
-toolchain on the target server; builds binaries locally instead of loading a signed bundle.
-Ubuntu 22.04/24.04/26.04 LTS and Debian 12/13 are the tested tier, most other modern Linux
-distributions work too with a warning:
-
-```sh
+git clone https://github.com/Hikari0Des/HikRAD.git hikrad && cd hikrad
 sudo ./scripts/install.sh
 ```
 
-Either way: provisions PostgreSQL + TimescaleDB, FreeRADIUS, nginx, and the seven `hikrad-*`
-systemd units; creates `/opt/hikrad/bin`, `/etc/hikrad`, `/var/lib/hikrad`,
-`/var/backups/hikrad`; generates secrets into `/etc/hikrad/hikrad.env`. Re-running upgrades an
-existing install in place — it never overwrites config, regenerates secrets, or changes the
-chosen port. Daily operation requires no internet access.
+Supported: Ubuntu 22.04/24.04, Debian 12/13 (others with a warning). The installer sets up
+PostgreSQL + TimescaleDB, Redis, FreeRADIUS, nginx and the `hikrad-*` systemd services,
+prints the panel address and a backup passphrase (write it down), and is safe to re-run
+(it never regenerates secrets). Afterwards: open the panel, finish the first-run wizard,
+and check health with `sudo hikrad doctor`.
 
-**Migrating an existing Docker Compose install?** See `hikrad migrate-to-native` in
-[docs/ops/update.md](docs/ops/update.md).
+**Making a release for customers:** `make release VERSION=v1.2.3` builds the two files into
+`dist/`; pushing a `v1.2.3` tag has GitHub build and publish them. See
+[docs/ops/release-checklist.md](docs/ops/release-checklist.md).
+**Updating:** [docs/ops/update.md](docs/ops/update.md).
+**Migrating an old Docker Compose install:** `hikrad migrate-to-native`, see the same page.
 
 ## Documentation
 
