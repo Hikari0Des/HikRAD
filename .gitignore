@@ -67,3 +67,6 @@ docs/evidence/raw/
 
 # Release output (make release)
 /dist/
+
+# Release output (make release)
+/dist/
