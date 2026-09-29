@@ -126,6 +126,30 @@ if [ "${HIKRAD_SKIP_OS_CHECK:-0}" != "1" ]; then
     command -v systemctl >/dev/null 2>&1 || die "systemd (systemctl) not found — the native installer requires it. Set HIKRAD_SKIP_OS_CHECK=1 only for a sandboxed --no-start rehearsal with no real service management."
 fi
 
+# --- 1b. Bundle: extract and verify its signature FIRST -------------------
+# Before any package, user, database or secret is created. This used to happen
+# at step 7, after all of those, and step 6 ran gen-env.sh from next to THIS
+# script — which, when quick-install.sh has pulled only install.sh out of the
+# bundle, does not exist. Every fresh install from a release bundle therefore
+# died at "gen-env.sh: No such file or directory" (found installing a real
+# `make release` bundle on a clean server). Everything bundle-mode needs now
+# comes from the verified $SCRATCH tree.
+SCRATCH=""
+if [ -n "$BUNDLE" ]; then
+    [ -f "$BUNDLE" ] || die "--bundle file not found: $BUNDLE"
+    if ! command -v openssl >/dev/null 2>&1 && command -v apt-get >/dev/null 2>&1; then
+        apt-get update -qq && apt-get install -y -qq openssl >/dev/null \
+            || die "openssl is needed to verify the bundle signature and could not be installed"
+    fi
+    log "Verifying release bundle $BUNDLE before using anything from it…"
+    SCRATCH="$(mktemp -d)"
+    trap 'rm -rf "$SCRATCH"' EXIT
+    tar -xf "$BUNDLE" -C "$SCRATCH" || die "could not extract $BUNDLE — the file is incomplete or corrupt (nothing was changed)"
+    bash "$SCRATCH/scripts/verify-bundle.sh" "$SCRATCH" \
+        || die "bundle verification failed — refusing to install from $BUNDLE (nothing was changed)"
+    log "Bundle verified."
+fi
+
 # --- 2. Resolve the HTTP port BEFORE any work begins (frozen: every prompt --
 # happens up front, never mid-run — non-interactive via HIKRAD_HTTP_PORT).
 # Once chosen, it is recorded in install.meta and NEVER re-prompted or
@@ -429,7 +453,9 @@ log "Directories and ownership reconciled."
 if [ ! -f "$ENV_FILE" ]; then
     log "Generating $ENV_FILE (fresh secrets)…"
     HIKRAD_DB_PASS="${PG_PASSWORD:-${HIKRAD_DB_PASS:-}}" \
-        bash "$SCRIPT_DIR/gen-env.sh" --env prod "$ENV_FILE"
+        gen_env_sh="$SCRIPT_DIR/gen-env.sh"
+        [ -n "$SCRATCH" ] && gen_env_sh="$SCRATCH/scripts/gen-env.sh"
+        bash "$gen_env_sh" --env prod "$ENV_FILE"
     chmod 0600 "$ENV_FILE"
 else
     log "$ENV_FILE already exists — leaving all secrets untouched."
@@ -448,15 +474,7 @@ STAGE_CLI="$SCRIPT_DIR/hikrad"
 STAGE_VERSION=""
 
 if [ -n "$BUNDLE" ]; then
-    [ -f "$BUNDLE" ] || die "--bundle file not found: $BUNDLE"
-    log "Verifying release bundle $BUNDLE before using anything from it…"
-    SCRATCH="$(mktemp -d)"
-    trap 'rm -rf "$SCRATCH"' EXIT
-    tar -xf "$BUNDLE" -C "$SCRATCH"
-    bash "$SCRATCH/scripts/verify-bundle.sh" "$SCRATCH" \
-        || die "bundle verification failed — refusing to install from $BUNDLE (nothing was changed)"
-    log "Bundle verified."
-
+    # Extracted and verified at step 1b, before anything was changed.
     STAGE_BIN=""             # bundle ships prebuilt binaries directly, no go build
     STAGE_WWW_PANEL="$SCRATCH/www/panel"
     STAGE_WWW_PORTAL="$SCRATCH/www/portal"
