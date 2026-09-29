@@ -452,9 +452,11 @@ log "Directories and ownership reconciled."
 # existing secrets" guarantee (gate item 3).
 if [ ! -f "$ENV_FILE" ]; then
     log "Generating $ENV_FILE (fresh secrets)…"
+    gen_env_sh="$SCRIPT_DIR/gen-env.sh"
+    [ -n "$SCRATCH" ] && gen_env_sh="$SCRATCH/scripts/gen-env.sh"
+    # The DB role was created with $PG_PASSWORD (step 4); hikrad.env must
+    # carry the same one, so it is passed to gen-env.sh explicitly.
     HIKRAD_DB_PASS="${PG_PASSWORD:-${HIKRAD_DB_PASS:-}}" \
-        gen_env_sh="$SCRIPT_DIR/gen-env.sh"
-        [ -n "$SCRATCH" ] && gen_env_sh="$SCRATCH/scripts/gen-env.sh"
         bash "$gen_env_sh" --env prod "$ENV_FILE"
     chmod 0600 "$ENV_FILE"
 else
