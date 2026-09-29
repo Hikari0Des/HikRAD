@@ -702,9 +702,22 @@ for site in "$NGINX_ENABLED"/*; do
         break
     fi
 done
+# The distro placeholder is safe to disable when either this run installed
+# nginx, or the file is still byte-identical to the package's stock copy
+# (dpkg records its checksum): nobody has customized it, so nothing depends
+# on it. The second case covers a re-run after an earlier attempt installed
+# nginx and then failed — that run's nginx looked "pre-existing", and the
+# stock "Welcome to nginx!" page kept answering on http://<server-ip>/.
+stock_default_unmodified() {
+    local f="$NGINX_AVAILABLE/default" want have
+    [ -f "$f" ] || return 1
+    want="$(dpkg-query -W -f='${Conffiles}\n' nginx-common 2>/dev/null | awk '$1 == "/etc/nginx/sites-available/default" {print $2}')"
+    have="$(md5sum "$f" 2>/dev/null | awk '{print $1}')"
+    [ -n "$want" ] && [ "$want" = "$have" ]
+}
 if [ -n "$other_default" ]; then
-    if [ "$NGINX_PREEXISTING" = "0" ] && [ "$(basename "$other_default")" = "default" ]; then
-        log "Disabling nginx's stock placeholder site (installed by this run; the file stays in $NGINX_AVAILABLE/default)."
+    if [ "$(basename "$other_default")" = "default" ] && { [ "$NGINX_PREEXISTING" = "0" ] || stock_default_unmodified; }; then
+        log "Disabling nginx's stock placeholder site (unmodified package default; the file stays in $NGINX_AVAILABLE/default)."
         rm -f "$other_default"
     else
         warn "$other_default already owns nginx's default server on port $HTTP_PORT/$HTTPS_PORT — leaving it untouched; HikRAD's site will answer only when no other server_name matches."
