@@ -740,6 +740,23 @@ else
             || warn "$unit failed to (re)start — check: systemctl status $unit; journalctl -u $unit"
     done
     systemctl reload nginx 2>/dev/null || systemctl restart nginx
+
+    # Don't declare success while hikrad-api is still applying its first-boot
+    # migrations: a `hikrad doctor` run right after install otherwise failed
+    # its API check for a few seconds, which looks like a broken install.
+    log "Waiting for hikrad-api to finish starting (applies database migrations on first boot)…"
+    api_up=0
+    for _ in $(seq 1 90); do
+        if curl -fsS -o /dev/null --max-time 2 "http://127.0.0.1:$HIKRAD_INTERNAL_API_PORT/api/v1/system/version" 2>/dev/null; then
+            api_up=1; break
+        fi
+        sleep 2
+    done
+    if [ "$api_up" = "1" ]; then
+        log "hikrad-api is up."
+    else
+        warn "hikrad-api did not answer within 3 minutes — check: journalctl -u hikrad-api -n 50"
+    fi
 fi
 
 # --- 10b. Cloudflare tunnel bootstrap (HIKRAD_CF_TOKEN, frozen non---------
@@ -809,12 +826,16 @@ EOF
 
 # --- 14. Summary --------------------------------------------------------------
 PASSPHRASE="$(grep '^HIKRAD_BACKUP_PASSPHRASE=' "$ENV_FILE" | cut -d= -f2-)"
+SERVER_ADDR="${DOMAIN:-$(hostname -I 2>/dev/null | awk '{print $1}')}"
+[ -n "$SERVER_ADDR" ] || SERVER_ADDR="<this-server>"
+if [ "$HTTPS_PORT" = "443" ]; then PANEL_URL="https://$SERVER_ADDR/"; else PANEL_URL="https://$SERVER_ADDR:$HTTPS_PORT/"; fi
 cat <<EOF
 
 ================================================================================
  HikRAD install summary — save this somewhere safe, it is not shown again.
 ================================================================================
- Panel:               https://<this-server>:$HTTPS_PORT/
+ Panel:                $PANEL_URL
+ Subscriber portal:    ${PANEL_URL}portal/
  Config:               $ETC_DIR
  Data:                 $VAR_DIR
  Backups:              $BACKUP_DIR
@@ -826,10 +847,17 @@ cat <<EOF
  manager. If BOTH this copy and hikrad.env are lost, existing backups are
  permanently unrecoverable by design (no vendor escrow).
 
- No admin account exists yet — open the panel now and complete the
- first-run wizard (license, admin account, branding, NAS, profile). Until
- then the panel has no way in, which is deliberate: there is no default
- password to change later.
+ Next steps:
+   1. Open $PANEL_URL (the certificate is self-signed until you
+      re-run with --domain, so accept the browser warning once).
+   2. Complete the first-run wizard: license, admin account, branding, NAS,
+      first profile. There is no default password — until the wizard is done
+      the panel has no way in, by design.
+   3. Add each MikroTik in the panel (NAS > Add). Its setup wizard can
+      configure the router's RADIUS client and incoming CoA for you; manually
+      it is RADIUS to this server's IP (auth 1812, acct 1813) plus
+      /radius incoming accept=yes.
+   4. Check health any time with:  sudo hikrad doctor
 ================================================================================
 
 Manage the stack with: hikrad {status|logs|backup|restore|update|doctor|passwd}
