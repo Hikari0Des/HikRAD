@@ -405,8 +405,11 @@ if [ "${HIKRAD_SKIP_PACKAGES:-0}" != "1" ]; then
         sudo -u postgres psql -v ON_ERROR_STOP=1 -c "CREATE DATABASE hikrad OWNER hikrad;" \
             || die "failed to create the 'hikrad' database"
     fi
+    # Fatal, not a warning: starting hikrad-api without TimescaleDB makes its
+    # migrations fail halfway and leaves the schema "dirty", which then needs
+    # manual repair. Stopping here changes nothing that a re-run can't finish.
     sudo -u postgres psql -v ON_ERROR_STOP=1 -d hikrad -c "CREATE EXTENSION IF NOT EXISTS timescaledb;" \
-        || warn "CREATE EXTENSION timescaledb failed — install the timescaledb-2-postgresql-<N> package and run this again; hikrad-api's own migrations will otherwise fail."
+        || die "CREATE EXTENSION timescaledb failed on PostgreSQL $PG_MAJOR — check that timescaledb-2-postgresql-$PG_MAJOR is installed and 'timescaledb' is in shared_preload_libraries (/etc/postgresql/$PG_MAJOR/main/postgresql.conf), restart postgresql, then re-run this installer. No HikRAD service was started."
 fi
 
 # --- 5. Directories + system users + ownership ------------------------------
