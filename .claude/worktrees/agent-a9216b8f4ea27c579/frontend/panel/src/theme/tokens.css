@@ -1,7 +1,0 @@
-/*
- * FR-115 (v4-1): tokens are defined ONCE, in @hikrad/shared. This file is an
- * import, never a redefinition — a per-app :root block here is a lint
- * failure (lint-tokens.sh) and a frozen-contract violation. See
- * frontend/shared/src/theme/tokens.css for the canonical definitions.
- */
-@import '@hikrad/shared/theme/tokens.css';
