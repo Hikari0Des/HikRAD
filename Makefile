@@ -5,7 +5,7 @@
 
 MODE ?= smoke
 
-.PHONY: help dev-env dev-up dev-down seed test lint evidence
+.PHONY: help dev-env dev-up dev-down seed test lint evidence release
 
 help:
 	@echo "make dev-env  - generate deploy/hikrad.env against your local Postgres/Redis (if missing)"
@@ -15,6 +15,7 @@ help:
 	@echo "make test     - backend unit tests + script self-tests"
 	@echo "make lint     - go vet + frontend lint"
 	@echo "make evidence - run the chaos/perf/sizing evidence pack; MODE=full for the 5k/2k reference scale"
+	@echo "make release VERSION=v1.2.3 - build the signed client bundle + installer into dist/ (Linux, Go + Node)"
 
 deploy/hikrad.env:
 	./scripts/gen-env.sh deploy/hikrad.env
@@ -59,3 +60,20 @@ lint:
 	else \
 		echo "frontend/package.json not present yet — skipping frontend lint"; \
 	fi
+
+# Client release: two files in dist/ are everything a customer server needs —
+#   dist/hikrad-$(VERSION).tar   signed offline bundle (binaries, panel, config)
+#   dist/install.sh              the installer; run next to the tar:  sudo bash install.sh
+# Signs with scripts/release-signing/dev-release-key.pem unless
+# RELEASE_SIGNING_KEY_FILE points at the real offline key (see
+# docs/ops/release-checklist.md). Needs Linux (or WSL) with Go and Node.
+release:
+	@case "$(VERSION)" in v[0-9]*.[0-9]*.[0-9]*) ;; *) echo "usage: make release VERSION=v1.2.3"; exit 1 ;; esac
+	@mkdir -p dist
+	bash scripts/build-release-bundle.sh $(VERSION) dist/hikrad-$(VERSION).tar
+	install -m 0755 scripts/quick-install.sh dist/install.sh
+	@echo ""
+	@echo "Release ready — give the customer BOTH files:"
+	@echo "  dist/hikrad-$(VERSION).tar"
+	@echo "  dist/install.sh"
+	@echo "They copy them to the server and run:  sudo bash install.sh"

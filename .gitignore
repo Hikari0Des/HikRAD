@@ -64,3 +64,6 @@ docs/evidence/raw/
 
 # Claude Code agent worktrees (temporary full-repo copies — never commit)
 .claude/worktrees/
+
+# Release output (make release)
+/dist/
