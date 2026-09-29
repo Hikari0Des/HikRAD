@@ -316,7 +316,13 @@ if [ "${HIKRAD_SKIP_PACKAGES:-0}" != "1" ]; then
             # the extension still failed). timescaledb-tune is the
             # package's own recommended, idempotent way to do this.
             if command -v timescaledb-tune >/dev/null 2>&1; then
-                timescaledb-tune --quiet --yes >/dev/null 2>&1 \
+                # Explicit version + conf path: timescaledb-tune otherwise
+                # guesses from pg_config, which reports the newest PGDG client
+                # library (e.g. 18) even when the server is 16, and then looks
+                # for /etc/postgresql/18/... — found switching a server from
+                # 18 to 16.
+                timescaledb-tune --quiet --yes --pg-version "$pg_major" \
+                    --conf-path "/etc/postgresql/$pg_major/main/postgresql.conf" >/dev/null 2>&1 \
                     || warn "timescaledb-tune failed — add 'timescaledb' to shared_preload_libraries in postgresql.conf manually, then restart postgresql."
                 systemctl restart postgresql \
                     || warn "postgresql restart after timescaledb-tune failed — CREATE EXTENSION timescaledb will keep failing until it's restarted."
