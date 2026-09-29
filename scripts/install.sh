@@ -143,6 +143,11 @@ fi
 # via its own apt postinst) claimed 8080.
 readonly HIKRAD_INTERNAL_API_PORT=8080
 
+# Toolchains source mode installs when missing (the versions every rehearsal
+# ran on). Overridable for a newer patch release.
+HIKRAD_GO_VERSION="${HIKRAD_GO_VERSION:-1.24.6}"
+HIKRAD_NODE_VERSION="${HIKRAD_NODE_VERSION:-20.18.1}"
+
 port_in_use() { # port_in_use PORT -> 0 if something is already listening
     command -v ss >/dev/null 2>&1 && ss -ltn "( sport = :$1 )" 2>/dev/null | grep -q ":$1" && return 0
     command -v ss >/dev/null 2>&1 || return 1
@@ -220,8 +225,21 @@ if [ "${HIKRAD_SKIP_PACKAGES:-0}" != "1" ]; then
     # the main install further down. Minimal Ubuntu/Debian server images ship
     # neither gnupg nor (sometimes) curl, and the install died right here on
     # "gpg: command not found" (found in a clean ubuntu:24.04 rehearsal).
-    apt-get install -y -qq curl gnupg ca-certificates lsb-release \
+    apt-get install -y -qq curl gnupg ca-certificates lsb-release xz-utils \
         || die "could not install the bootstrap packages (curl, gnupg, ca-certificates)"
+
+    # ONE pinned PostgreSQL major. The unversioned `postgresql` package means
+    # "newest", so fresh installs would silently jump majors as PGDG ships them
+    # (possibly before TimescaleDB packages exist for it), and Ubuntu's own
+    # `postgresql-contrib` meta package dragged in a second, unused
+    # PostgreSQL 16 next to 18 (found on a real VM install). An install that
+    # already has a cluster keeps its version; otherwise 18, the version the
+    # full test suite and install rehearsals ran on. Override: HIKRAD_PG_MAJOR.
+    if [ -z "${HIKRAD_PG_MAJOR:-}" ] && command -v pg_lsclusters >/dev/null 2>&1; then
+        HIKRAD_PG_MAJOR="$(pg_lsclusters -h 2>/dev/null | awk '$2 == "main" {print $1}' | sort -n | tail -1)"
+    fi
+    PG_MAJOR="${HIKRAD_PG_MAJOR:-18}"
+    log "Using PostgreSQL $PG_MAJOR"
 
     # PostgreSQL + TimescaleDB: add the upstream repos only if not already
     # present (idempotent — a second run must not duplicate apt sources).
@@ -250,7 +268,7 @@ if [ "${HIKRAD_SKIP_PACKAGES:-0}" != "1" ]; then
     apt-get update -qq
 
     apt-get install -y -qq \
-        postgresql postgresql-contrib \
+        "postgresql-$PG_MAJOR" "postgresql-client-$PG_MAJOR" \
         freeradius freeradius-utils \
         nginx \
         wireguard wireguard-tools \
@@ -262,8 +280,7 @@ if [ "${HIKRAD_SKIP_PACKAGES:-0}" != "1" ]; then
     # TimescaleDB's package name is versioned to the installed PG major
     # version (e.g. timescaledb-2-postgresql-16); resolve it rather than
     # hardcoding one PG version across every supported OS release.
-    pg_major="$(pg_config --version 2>/dev/null | grep -oE '[0-9]+' | head -1)"
-    [ -n "$pg_major" ] || pg_major="$(psql -V 2>/dev/null | grep -oE '[0-9]+' | head -1)"
+    pg_major="$PG_MAJOR"
     if [ -n "$pg_major" ]; then
         if apt-get install -y -qq "timescaledb-2-postgresql-${pg_major}"; then
             # The package alone is not enough — TimescaleDB is a shared-
@@ -458,6 +475,28 @@ else
     if ! command -v go >/dev/null 2>&1 && [ -x /usr/local/go/bin/go ]; then
         PATH="$PATH:/usr/local/go/bin"
     fi
+    # Source mode needs Go and Node to build. Rather than stopping with
+    # "install Go first" (what a real VM install hit), fetch the pinned,
+    # tested toolchains from their official sites when missing or too old.
+    # Skipped under HIKRAD_SKIP_PACKAGES (CI brings its own).
+    if [ "${HIKRAD_SKIP_PACKAGES:-0}" != "1" ]; then
+        tc_arch="$(dpkg --print-architecture 2>/dev/null || echo amd64)"
+        if ! command -v go >/dev/null 2>&1 || ! go version | grep -qE 'go1\.(2[4-9]|[3-9][0-9])'; then
+            log "Installing Go $HIKRAD_GO_VERSION (build toolchain for source mode)…"
+            curl -fsSL "https://go.dev/dl/go${HIKRAD_GO_VERSION}.linux-${tc_arch}.tar.gz" -o /tmp/hikrad-go.tgz \
+                || die "could not download Go $HIKRAD_GO_VERSION — check internet access, or install from a signed bundle (--bundle)"
+            rm -rf /usr/local/go && tar -C /usr/local -xzf /tmp/hikrad-go.tgz && rm -f /tmp/hikrad-go.tgz
+            PATH="/usr/local/go/bin:$PATH"
+        fi
+        if ! command -v node >/dev/null 2>&1 || [ "$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)" -lt 20 ]; then
+            node_arch="$tc_arch"; [ "$node_arch" = "amd64" ] && node_arch="x64"
+            log "Installing Node.js $HIKRAD_NODE_VERSION (frontend build toolchain for source mode)…"
+            curl -fsSL "https://nodejs.org/dist/v${HIKRAD_NODE_VERSION}/node-v${HIKRAD_NODE_VERSION}-linux-${node_arch}.tar.xz" -o /tmp/hikrad-node.txz \
+                || die "could not download Node.js $HIKRAD_NODE_VERSION — check internet access, or install from a signed bundle (--bundle)"
+            tar -C /usr/local --strip-components=1 -xJf /tmp/hikrad-node.txz && rm -f /tmp/hikrad-node.txz
+            hash -r
+        fi
+    fi
     command -v go >/dev/null 2>&1 || die "no --bundle given and no Go toolchain found — source-mode install needs Go to build the binaries. Either install Go, or use --bundle with a signed release (see docs/ops/install-guide.md)."
     log "Source mode: building binaries from $REPO_DIR/backend…"
     ( cd "$REPO_DIR/backend" && for svc in hikrad-api hikrad-acct hikrad-monitor hikrad-updaterd; do
@@ -495,13 +534,16 @@ else
 fi
 log "Installed binaries to $BIN_DIR."
 
-# --- 7c. Frontend (built dists; a bundle ships them prebuilt, source mode --
-# builds them here if npm is available and dist/ doesn't already exist).
-if [ ! -d "$STAGE_WWW_PANEL" ] || [ ! -d "$STAGE_WWW_PORTAL" ]; then
-    if [ -z "$BUNDLE" ] && command -v npm >/dev/null 2>&1; then
+# --- 7c. Frontend (built dists; a bundle ships them prebuilt). Source mode
+# rebuilds on EVERY run: it used to build only when dist/ was missing, so
+# `git pull && sudo ./scripts/install.sh` kept serving the previous panel.
+if [ -z "$BUNDLE" ]; then
+    if command -v npm >/dev/null 2>&1; then
         log "Building frontend (panel + portal)…"
         ( cd "$REPO_DIR/frontend" && npm ci --silent && npm run build --workspaces --if-present --silent ) \
             || warn "frontend build failed — panel/portal will 404 until 'cd frontend && npm run build --workspaces' succeeds."
+    elif [ ! -d "$STAGE_WWW_PANEL" ] || [ ! -d "$STAGE_WWW_PORTAL" ]; then
+        warn "npm not found and no built frontend present — the panel and portal will 404. Install Node.js 20+ and re-run."
     fi
 fi
 if [ -d "$STAGE_WWW_PANEL" ]; then rm -rf "$WWW_DIR/panel"; cp -a "$STAGE_WWW_PANEL" "$WWW_DIR/panel"; fi
