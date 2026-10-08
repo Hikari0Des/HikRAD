@@ -128,9 +128,9 @@ func loadLimitProgress(ctx context.Context, db *pgxpool.Pool, ids []string) (map
 		         AND time >= COALESCE(sc.daily_period_start, s.created_at)
 		  ) du ON true
 		  LEFT JOIN LATERAL (
-		      SELECT COALESCE(SUM(EXTRACT(EPOCH FROM (
+		      SELECT FLOOR(COALESCE(SUM(EXTRACT(EPOCH FROM (
 		               COALESCE(stopped_at, now()) - GREATEST(started_at, COALESCE(sc.uptime_cycle_anchor, s.created_at))
-		             ))), 0) AS used
+		             ))), 0))::bigint AS used
 		        FROM sessions
 		       WHERE subscriber_id = s.id AND started_at IS NOT NULL
 		         AND COALESCE(stopped_at, now()) > COALESCE(sc.uptime_cycle_anchor, s.created_at)

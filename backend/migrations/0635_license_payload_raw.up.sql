@@ -1,0 +1,16 @@
+-- 0635_license_payload_raw — store the license payload's EXACT signed bytes.
+--
+-- license.payload is jsonb, and jsonb normalises its input (key order,
+-- whitespace, duplicate keys), so the bytes read back from it are never the
+-- bytes the vendor's Ed25519 signature covers. RefreshLicenseCache (FR-124)
+-- re-verifies the stored payload against its signature on every boot/tick and
+-- refuses to adopt a row that fails — so with only the jsonb copy, every
+-- installed license failed re-verification, the grace/expiry state machine
+-- never ran, and a fingerprint mismatch or calendar expiry stayed "valid"
+-- forever. payload_raw holds the verbatim uploaded bytes; payload (jsonb) is
+-- kept as the queryable decoded copy.
+--
+-- Nullable: rows installed before this migration have no recoverable raw
+-- bytes and keep failing re-verification (the pre-existing behaviour) until
+-- the operator re-uploads the license file once.
+ALTER TABLE license ADD COLUMN IF NOT EXISTS payload_raw bytea;

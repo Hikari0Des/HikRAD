@@ -20,6 +20,12 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write   # to attach the bundle as a GitHub Release asset
+    env:
+      # The `secrets` context is not allowed in a step-level `if:` — using it
+      # there made GitHub reject this whole file ("workflow file issue") on
+      # every push, so no tag could ever run it. Job-level env may read
+      # secrets; the steps below gate on this boolean instead.
+      HAS_MIRROR_TOKEN: ${{ secrets.HIKRAD_RELEASES_REPO_TOKEN != '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -76,8 +82,16 @@ jobs:
           HIKRAD_VERSION: ${{ steps.version.outputs.version }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # install.sh rides along so a customer can download exactly two
+          # files (tar + install.sh) and run `sudo bash install.sh` offline.
+          cp scripts/quick-install.sh install.sh
+          # install.sh rides along so a customer can download exactly two
+          # files (tar + install.sh) and run `sudo bash install.sh` offline.
+          cp scripts/quick-install.sh install.sh
           gh release create "$HIKRAD_VERSION" \
             "hikrad-${HIKRAD_VERSION}.tar" \
+            install.sh \
+            install.sh \
             "hikrad-routeros-${HIKRAD_VERSION}-amd64.tar" \
             "hikrad-routeros-${HIKRAD_VERSION}-arm64.tar" \
             --title "HikRAD $HIKRAD_VERSION" \
@@ -96,14 +110,22 @@ jobs:
       # yet — same "degrade, don't block a rehearsal tag" posture as the
       # release-signing-key fallback above.
       - name: Publish the release assets to the public releases mirror (customer distribution)
-        if: ${{ secrets.HIKRAD_RELEASES_REPO_TOKEN != '' }}
+        if: env.HAS_MIRROR_TOKEN == 'true'
         continue-on-error: true   # never let a mirror hiccup fail the already-published internal release
         env:
           HIKRAD_VERSION: ${{ steps.version.outputs.version }}
           GH_TOKEN: ${{ secrets.HIKRAD_RELEASES_REPO_TOKEN }}
         run: |
+          # install.sh rides along so a customer can download exactly two
+          # files (tar + install.sh) and run `sudo bash install.sh` offline.
+          cp scripts/quick-install.sh install.sh
+          # install.sh rides along so a customer can download exactly two
+          # files (tar + install.sh) and run `sudo bash install.sh` offline.
+          cp scripts/quick-install.sh install.sh
           gh release create "$HIKRAD_VERSION" \
             "hikrad-${HIKRAD_VERSION}.tar" \
+            install.sh \
+            install.sh \
             "hikrad-routeros-${HIKRAD_VERSION}-amd64.tar" \
             "hikrad-routeros-${HIKRAD_VERSION}-arm64.tar" \
             --repo "Hikari0Des/hikrad-releases" \
@@ -111,7 +133,7 @@ jobs:
             --generate-notes
 
       - name: Sync the curl-installer wrapper to the public releases mirror
-        if: ${{ secrets.HIKRAD_RELEASES_REPO_TOKEN != '' }}
+        if: env.HAS_MIRROR_TOKEN == 'true'
         continue-on-error: true   # same reasoning as the step above
         env:
           HIKRAD_VERSION: ${{ steps.version.outputs.version }}
@@ -131,6 +153,6 @@ jobs:
           fi
 
       - name: Warn if the public releases mirror isn't set up yet
-        if: ${{ secrets.HIKRAD_RELEASES_REPO_TOKEN == '' }}
+        if: env.HAS_MIRROR_TOKEN != 'true'
         run: |
           echo "::warning::HIKRAD_RELEASES_REPO_TOKEN secret is not set — skipped publishing to the public Hikari0Des/hikrad-releases mirror and syncing the curl-installer wrapper. The bundle is still published above as a Release asset on THIS (should be private) repo only. See docs/ops/release-checklist.md before the first real customer shipment."

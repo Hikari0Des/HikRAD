@@ -18,7 +18,9 @@
 # creating a client — no secret, no source IP is ever an implicit trust.
 exec hikrad_dynamic_client {
 	wait = yes
-	program = "${confdir}/scripts/dynamic-client.pl"
+	# The source address is passed as an argument: Packet-Src-* are virtual
+	# attributes that input_pairs does not export (see the script's header).
+	program = "${confdir}/scripts/dynamic-client.pl %{%{Packet-Src-IP-Address}:-%{Packet-Src-IPv6-Address}}"
 	input_pairs = request
 	output_pairs = control
 	# Same 2s bound as hikrad_authorize — a slow/unreachable hikrad-api

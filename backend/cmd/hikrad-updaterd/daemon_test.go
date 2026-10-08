@@ -247,10 +247,21 @@ func TestBundlePathValidation(t *testing.T) {
 	// A valid path (file need not exist for validation to pass — existence is
 	// scripts/hikrad's own concern) is accepted and reaches the child process.
 	valid := filepath.Join(cfg.IncomingDir, "hikrad-v1.2.3.tar")
+	// Without these the spawned cfg.UpdateCmd (this test binary) isn't in
+	// helper mode and re-runs the WHOLE test suite as the "update" child.
+	t.Setenv("HIKRAD_UPDATER_TEST_HELPER", "1")
+	t.Setenv("HELPER_OUTCOME", "success")
+	t.Setenv("HELPER_SLEEP_MS", "10")
+	t.Setenv("HELPER_TARGET_VERSION", "v1.2.3")
+	t.Setenv("HELPER_VERSION_FILE", cfg.VersionFile)
 	r := sendRequest(t, socket, Request{
 		Verb: "update", Token: cfg.Token, BundlePath: valid,
 	})
-	_ = r // draining not required for this leg — dispatch alone proves it wasn't rejected as invalid
+	// Dispatch alone proves it wasn't rejected as invalid, but the stream is
+	// still drained so the helper child exits before t.TempDir's cleanup —
+	// otherwise the child is still writing under root when RemoveAll runs,
+	// which Linux tolerates but Windows fails ("directory is not empty").
+	drainStream(t, r)
 }
 
 // --- gate item 3: lock semantics (fast in-memory path) -------------------

@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/hikrad/hikrad/internal/platform"
+	"github.com/hikrad/hikrad/internal/platform/crypto"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -28,6 +29,19 @@ func testDB(t *testing.T) *pgxpool.Pool {
 		t.Skip("HIKRAD_TEST_DB_URL not set; skipping notify DB suite")
 	}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	// Channel secrets are stored encrypted (platform.SetEncrypted), so the
+	// process-wide crypto service needs a key; nothing else in this package
+	// provides one. crypto.Configure rather than t.Setenv because the lazy
+	// env path initialises once per process (sync.Once). Same key bytes as
+	// internal/monitorsvc's DB helpers so encrypted settings rows written to
+	// the shared test database by either package stay readable by the other.
+	key := make([]byte, 32)
+	for i := range key {
+		key[i] = byte(i + 41)
+	}
+	if err := crypto.Configure(key); err != nil {
+		t.Fatalf("configure crypto: %v", err)
+	}
 	if err := platform.Migrate(dbURL, "../../migrations", log); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
@@ -140,6 +154,15 @@ func TestDispatcher_TruthfulFailureReason(t *testing.T) {
 		Channel: ChannelSMS, Locale: "en", Body: "test message",
 	})
 	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The outbox is shared with every other test (and package) using this
+	// database, and claimBatch serves rows in next_attempt_at order — so a
+	// backlog of older due rows could consume the whole tick and this row
+	// would never be attempted. Make it the oldest due row so the single
+	// tick below deterministically claims it.
+	if _, err := db.Exec(ctx, `UPDATE notification_outbox SET next_attempt_at = now() - interval '10 years' WHERE id = $1::uuid`, id); err != nil {
 		t.Fatal(err)
 	}
 

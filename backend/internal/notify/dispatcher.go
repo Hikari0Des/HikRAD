@@ -92,11 +92,11 @@ func (d *Dispatcher) Tick(ctx context.Context, batchSize int) {
 func (d *Dispatcher) attempt(ctx context.Context, row OutboxRow) {
 	sender, ok := d.senders[Channel(row.Channel)]
 	if !ok {
-		_ = resolveFailedAttempt(ctx, d.db, row.ID, row.AttemptCount, "unknown channel: "+row.Channel)
+		d.logResolveErr(row, "failed", resolveFailedAttempt(ctx, d.db, row.ID, row.AttemptCount, "unknown channel: "+row.Channel))
 		return
 	}
 	if row.Address == "" && row.Channel != string(ChannelInApp) {
-		_ = resolveSkippedRow(ctx, d.db, row.ID, SkipNoContact)
+		d.logResolveErr(row, "skipped", resolveSkippedRow(ctx, d.db, row.ID, SkipNoContact))
 		return
 	}
 	err := sender.send(ctx, row)
@@ -104,8 +104,18 @@ func (d *Dispatcher) attempt(ctx context.Context, row OutboxRow) {
 		if d.log != nil {
 			d.log.Warn("notify dispatcher: send failed", "channel", row.Channel, "event", row.Event, "error", err)
 		}
-		_ = resolveFailedAttempt(ctx, d.db, row.ID, row.AttemptCount, err.Error())
+		d.logResolveErr(row, "failed", resolveFailedAttempt(ctx, d.db, row.ID, row.AttemptCount, err.Error()))
 		return
 	}
-	_ = resolveSent(ctx, d.db, row.ID)
+	d.logResolveErr(row, "sent", resolveSent(ctx, d.db, row.ID))
+}
+
+// logResolveErr surfaces a failure to record an attempt's outcome. Such a
+// failure leaves the row in `sending` until reclaimStuckSending re-queues it,
+// so it must never be silent (it once hid a permanently broken retry path).
+func (d *Dispatcher) logResolveErr(row OutboxRow, outcome string, err error) {
+	if err != nil && d.log != nil {
+		d.log.Error("notify dispatcher: recording attempt outcome failed — row left in sending",
+			"id", row.ID, "channel", row.Channel, "outcome", outcome, "error", err)
+	}
 }

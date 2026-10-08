@@ -1,9 +1,110 @@
-# v1 release checklist
+# Releasing HikRAD
 
-This is the internal go/no-go checklist for cutting the v1 release build,
-distinct from [pilot-checklist.md](pilot-checklist.md) (which the ISP's
-installer runs against the actual pilot server). Everything here should be
-true of the exact commit being tagged.
+How to turn the source repo into something a customer can install, in three
+short recipes, followed by the go/no-go checklist for a release you're about
+to ship.
+
+A **release** is two files:
+
+```
+hikrad-vX.Y.Z.tar     signed bundle: programs, panel, FreeRADIUS config, migrations
+install.sh            the installer (uses the tar next to it, or downloads the latest)
+```
+
+The customer never gets the source code, Go or Node — see
+[install-guide.md](install-guide.md) § A for their side.
+
+## 1. One-time setup (before the FIRST real customer)
+
+The repo ships **development** signing keys whose private halves are in the
+repo itself. Fine for testing; before a real sale, replace both, on an
+offline machine, following:
+
+- `scripts/release-signing/README.md`: signs release bundles.
+- `scripts/license-tool/README.md`: signs customer licenses.
+
+Keep the new private keys **out of the repo** (password manager, encrypted
+USB). Losing the release key means existing installs can't verify your
+future updates.
+
+## 2. Make a release (offline delivery) — one command
+
+On any Linux machine with a checkout of the repo, Go 1.24+ and Node 20+.
+Your own HikRAD server installed from source already has all three
+(the installer put Go in `/usr/local/go/bin`):
+
+```sh
+cd hikrad
+git pull
+export PATH=$PATH:/usr/local/go/bin
+make release VERSION=v1.2.3
+```
+
+With the real signing key from step 1:
+
+```sh
+RELEASE_SIGNING_KEY_FILE=/secure/release-signing-key.pem make release VERSION=v1.2.3
+```
+
+Result:
+
+```
+dist/hikrad-v1.2.3.tar
+dist/install.sh
+```
+
+Give the customer both files. New install: they run `sudo bash install.sh`
+next to them. Update: `sudo hikrad update --bundle hikrad-v1.2.3.tar` (see
+[update.md](update.md)).
+
+**Version numbers:** `vMAJOR.MINOR.PATCH`, always higher than the last
+release you shipped. The updater only offers a bundle newer than what is
+installed.
+
+## 3. Publishing online (optional, automated)
+
+Instead of (or as well as) handing files over, GitHub can build and publish
+each release, enabling the one-line `curl … | sudo bash` install.
+
+One-time:
+
+1. Create a **public** repo `Hikari0Des/hikrad-releases` (it will only ever
+   hold `install.sh` and release files, never source).
+2. Create a fine-grained GitHub token with **Contents: write** on that repo
+   only. In the source repo (Settings → Secrets → Actions) add it as
+   `HIKRAD_RELEASES_REPO_TOKEN`.
+3. Add your release signing key (step 1) as `HIKRAD_RELEASE_SIGNING_KEY`,
+   base64-encoded: `base64 -w0 release-signing-key.pem`.
+4. Make sure the **source** repo `Hikari0Des/HikRAD` is **Private**.
+
+Every release after that:
+
+```sh
+git checkout master && git pull
+git tag v1.2.3
+git push origin v1.2.3
+```
+
+GitHub Actions builds and signs the bundle, attaches `hikrad-v1.2.3.tar` and
+`install.sh` (plus the RouterOS container images) to a Release on the
+private repo, and publishes the same files to `hikrad-releases`. Watch it
+under the repo's **Actions** tab. Customers can then install with:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/Hikari0Des/hikrad-releases/main/install.sh | sudo bash
+```
+
+Without the secrets from steps 2–3, the tag still produces a release on the
+private repo (signed with the dev key, with a warning), which you can
+download and hand over as in section 2.
+
+---
+
+# Go/no-go checklist
+
+The internal checklist for the exact commit being tagged, distinct from
+[pilot-checklist.md](pilot-checklist.md) (which the ISP's installer runs
+against the actual pilot server).
 
 ## Gate status
 

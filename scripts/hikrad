@@ -18,6 +18,7 @@ WWW_DIR="$PREFIX/opt/hikrad/www"
 FR_DIR="$ETC_DIR/freeradius"
 VERSION_FILE="$PREFIX/opt/hikrad/VERSION"
 RELEASE_ROLLBACK_DIR="$PREFIX/opt/hikrad/release.rollback"
+LIB_DIR="$PREFIX/opt/hikrad/lib"
 LOCK_DIR="$VAR_DIR/data/updater"
 
 # Dev fallback: running from a checkout with no real install yet (matches
@@ -66,7 +67,11 @@ pg_restore_app() { PGPASSWORD="$PG_PASSWORD" pg_restore -h "$PG_HOST" -U "$PG_US
 psql_admin() { sudo -u postgres psql -v ON_ERROR_STOP=1 "$@"; }
 
 require_passphrase() {
-    PASSPHRASE="$(env_get HIKRAD_BACKUP_PASSPHRASE)"
+    # An explicit HIKRAD_BACKUP_PASSPHRASE in the environment wins: restoring
+    # onto a NEW server (disaster recovery) means decrypting with the OLD
+    # server's passphrase, while this server's hikrad.env holds its own
+    # freshly generated one — e.g. HIKRAD_BACKUP_PASSPHRASE='<old>' hikrad restore <archive>
+    PASSPHRASE="${HIKRAD_BACKUP_PASSPHRASE:-$(env_get HIKRAD_BACKUP_PASSPHRASE)}"
     [ -n "$PASSPHRASE" ] || die "HIKRAD_BACKUP_PASSPHRASE not set in $ENV_FILE — cannot encrypt/decrypt backups (see docs/ops/backup-restore.md)."
 }
 
@@ -241,26 +246,60 @@ cmd_restore() {
     log "Stopping the stack…"
     for u in $(all_units); do systemctl stop "$u" 2>/dev/null || true; done
 
-    log "Dropping and recreating $PG_DB…"
-    psql_admin -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '$PG_DB' AND pid <> pg_backend_pid();"
-    psql_admin -c "DROP DATABASE IF EXISTS \"$PG_DB\";"
-    psql_admin -c "CREATE DATABASE \"$PG_DB\" OWNER \"$PG_USER\";"
+    # Restore into a SCRATCH database and swap it in only once pg_restore has
+    # succeeded. The old flow dropped the live database first, so any failure
+    # after that point (found live: timescaledb_pre_restore() refused to run
+    # as the non-superuser app role) left the operator with an EMPTY database
+    # and a restore that had destroyed the very data it was meant to recover.
+    # The previous database is kept as ${PG_DB}_pre_restore until the next
+    # restore, as a manual safety net.
+    local staging="${PG_DB}_restore" previous="${PG_DB}_pre_restore"
+    log "Restoring into a staging database ($staging) first — the current database is untouched until this succeeds…"
+    psql_admin -c "DROP DATABASE IF EXISTS \"$staging\";"
+    psql_admin -c "CREATE DATABASE \"$staging\" OWNER \"$PG_USER\";"
     # TimescaleDB hypertables need the extension created and the catalog put
     # into restore mode before pg_restore touches chunk tables, or COPY fails
-    # with "could not find hypertable" — this is TimescaleDB's own documented
-    # pg_dump/pg_restore procedure, timescaledb_pre_restore()/_post_restore().
-    psql_admin -d "$PG_DB" -c "CREATE EXTENSION IF NOT EXISTS timescaledb;"
-    psql_app -c "SELECT timescaledb_pre_restore();"
+    # with "could not find hypertable" — TimescaleDB's own documented
+    # pg_dump/pg_restore procedure. Both calls ALTER DATABASE, which needs a
+    # superuser, hence psql_admin (the app role gets "permission denied to set
+    # parameter timescaledb.restoring").
+    psql_admin -d "$staging" -c "CREATE EXTENSION IF NOT EXISTS timescaledb;"
+    psql_admin -d "$staging" -c "SELECT timescaledb_pre_restore();"
 
     log "Restoring dump…"
-    if ! pg_restore_app --no-owner --no-privileges < "$work/db.pgdump"; then
-        die "pg_restore reported errors — the pre-restore stack is stopped; investigate before retrying (the archive itself is untouched)"
+    # As the postgres superuser, keeping the dump's owners and ACLs: the
+    # timescaledb extension (and its _timescaledb_internal schema, where
+    # every hypertable chunk and continuous-aggregate table lives) is owned
+    # by postgres, so the app role got "permission denied for schema
+    # _timescaledb_internal" on every chunk and the restore failed. Owners
+    # are preserved (every app object stays owned by $PG_USER), so nothing
+    # ends up postgres-owned and unreadable to hikrad-api.
+    if ! sudo -u postgres pg_restore -d "$staging" < "$work/db.pgdump"; then
+        psql_admin -c "DROP DATABASE IF EXISTS \"$staging\";" >/dev/null 2>&1 || true
+        for u in $(all_units); do systemctl start "$u" 2>/dev/null || true; done
+        die "pg_restore reported errors — the current database was NOT modified and the stack has been restarted on it (the archive itself is untouched)"
     fi
-    psql_app -c "SELECT timescaledb_post_restore();"
+    psql_admin -d "$staging" -c "SELECT timescaledb_post_restore();"
+
+    log "Swapping the restored database in (previous one kept as $previous)…"
+    psql_admin -c "DROP DATABASE IF EXISTS \"$previous\";"
+    psql_admin -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname IN ('$PG_DB', '$staging') AND pid <> pg_backend_pid();"
+    psql_admin -c "ALTER DATABASE \"$PG_DB\" RENAME TO \"$previous\";" 2>/dev/null || true
+    psql_admin -c "ALTER DATABASE \"$staging\" RENAME TO \"$PG_DB\";"
 
     cp "$ENV_FILE" "$ENV_FILE.pre-restore.bak"
     cp "$work/hikrad.env" "$ENV_FILE"
     log "hikrad.env restored (previous copy saved as $ENV_FILE.pre-restore.bak) — this is required: it carries the AES-GCM key that decrypts subscriber/NAS secrets."
+    # The restored hikrad.env carries the SOURCE server's DB password. Restoring
+    # onto a fresh server (the disaster-recovery case) left the local role on
+    # its own install-time password, so hikrad-api could never connect. Re-key
+    # the role to the password the services will now read.
+    local restored_pw
+    restored_pw="$(grep '^POSTGRES_PASSWORD=' "$ENV_FILE" | cut -d= -f2-)"
+    if [ -n "$restored_pw" ]; then
+        psql_admin -c "ALTER ROLE \"$PG_USER\" PASSWORD '$(printf '%s' "$restored_pw" | sed "s/'/''/g")';" >/dev/null             || log "WARNING: could not re-key role $PG_USER to the restored hikrad.env password — hikrad-api may fail to connect"
+        PG_PASSWORD="$restored_pw"
+    fi
 
     log "Starting the stack (hikrad-api applies forward migrations on boot)…"
     for u in $(all_units); do systemctl start "$u" 2>/dev/null || true; done
@@ -316,17 +355,40 @@ cmd_update() {
     log "Pre-update backup…"
     cmd_backup_now pre_update
 
-    local script_dir; script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    local install_sh="$script_dir/install.sh"
-    [ -f "$install_sh" ] || install_sh="/opt/hikrad/release/scripts/install.sh"
-
+    # Which install.sh applies the update. It used to be looked up next to
+    # this CLI (/usr/local/bin) or at the Docker-era /opt/hikrad/release path
+    # — neither exists on a native install, so every `hikrad update` (and the
+    # panel's update button, which drives it) failed and rolled back.
+    #   bundle: the NEW release's own installer, but only after the bundle
+    #           verifies against the INSTALLED (trusted) verifier.
+    #   source: the checkout install.sh recorded (operator git-pulls first).
+    local install_sh="" work=""
     local install_status=0
     if [ -n "$bundle" ]; then
         [ -f "$bundle" ] || die "--bundle file not found: $bundle"
-        # install.sh's own first step verifies the bundle (scripts/verify-
-        # bundle.sh) before touching anything — this line's wording is what
-        # run.go's classifyStage keys off, see that file's own comment.
+        # This line's wording is what run.go's classifyStage keys off, see
+        # that file's own comment.
         log "Verifying release bundle $bundle before using anything from it…"
+        work="$(mktemp -d)"
+        # shellcheck disable=SC2064
+        trap "rm -rf '$work'" RETURN
+        tar -xf "$bundle" -C "$work" || die "could not extract $bundle — nothing was changed"
+        local verifier="$LIB_DIR/verify-bundle.sh"
+        if [ ! -f "$verifier" ]; then
+            # Installs from before the trusted copy existed: fall back to the
+            # recorded source checkout's verifier, never the bundle's own.
+            local src; src="$(meta_get HIKRAD_SOURCE_DIR)"
+            [ -n "$src" ] && [ -f "$src/scripts/verify-bundle.sh" ] && verifier="$src/scripts/verify-bundle.sh"
+        fi
+        [ -f "$verifier" ] || die "no trusted verify-bundle.sh at $LIB_DIR — re-run install.sh from your current release first, then retry."
+        bash "$verifier" "$work" || die "bundle verification failed — refusing to update from $bundle (nothing was changed)"
+        install_sh="$work/scripts/install.sh"
+    else
+        local src; src="$(meta_get HIKRAD_SOURCE_DIR)"
+        if [ -z "$src" ] || [ ! -f "$src/scripts/install.sh" ]; then
+            die "no --bundle given and no source checkout recorded in $META_FILE — use: hikrad update --bundle hikrad-vX.Y.Z.tar"
+        fi
+        install_sh="$src/scripts/install.sh"
     fi
 
     log "Applying update (hikrad-api runs forward-only migrations on boot)…"

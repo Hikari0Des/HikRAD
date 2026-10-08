@@ -22,6 +22,12 @@ Environment=HIKRAD_UPDATE_CMD=/usr/local/bin/hikrad
 ExecStart=/opt/hikrad/bin/hikrad-updaterd
 Restart=on-failure
 RestartSec=2
+# A stop/restart signals only the daemon itself, never the `hikrad update`
+# child it spawned: install.sh restarts this very unit as part of applying an
+# update, and the default KillMode=control-group killed the update halfway
+# through (FR-86.5 — the update must survive the daemon). The child holds the
+# update lock, so a restarted daemon never starts a second one.
+KillMode=process
 
 # /run/hikrad is where hikrad-api's HIKRAD_UPDATER_SOCKET also points — both
 # units share this one directory natively (no bind-mount indirection needed

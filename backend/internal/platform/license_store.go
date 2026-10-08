@@ -182,26 +182,42 @@ func SetCachedLicenseStateForTest(s license.State) {
 // re-marshaled reconstruction) so a caller can re-verify them — see
 // RefreshLicenseCache, the one place that actually does.
 func LoadLicenseRecord(ctx context.Context, db *pgxpool.Pool) (rec license.Record, ok bool, err error) {
-	var payloadRaw []byte
+	rec, _, ok, err = loadLicenseRow(ctx, db)
+	return rec, ok, err
+}
+
+// loadLicenseRow is LoadLicenseRecord plus legacy: true when the row predates
+// migration 0635 (payload_raw NULL), i.e. its exact signed bytes were never
+// stored and its signature can no longer be re-verified.
+func loadLicenseRow(ctx context.Context, db *pgxpool.Pool) (rec license.Record, legacy, ok bool, err error) {
+	var payloadJSONB, payloadRaw []byte
 	var signature string
 	var state string
 	err = db.QueryRow(ctx,
-		`SELECT key_id, payload, signature, fingerprint, state, grace_started_at
+		`SELECT key_id, payload, payload_raw, signature, fingerprint, state, grace_started_at
 		   FROM license WHERE id = 'current'`).
-		Scan(&rec.KeyID, &payloadRaw, &signature, &rec.IssuedFingerprint, &state, &rec.GraceStartedAt)
+		Scan(&rec.KeyID, &payloadJSONB, &payloadRaw, &signature, &rec.IssuedFingerprint, &state, &rec.GraceStartedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return license.Record{}, false, nil
+		return license.Record{}, false, false, nil
 	}
 	if err != nil {
-		return license.Record{}, false, fmt.Errorf("platform: load license: %w", err)
+		return license.Record{}, false, false, fmt.Errorf("platform: load license: %w", err)
+	}
+	// payload_raw (migration 0635) is the verbatim signed bytes; the jsonb
+	// column is normalised by Postgres and can never pass re-verification.
+	// A pre-0635 row has no raw bytes — fall back to the jsonb text so the
+	// row still decodes; RefreshLicenseCache applies its legacy handling.
+	if len(payloadRaw) == 0 {
+		payloadRaw = payloadJSONB
+		legacy = true
 	}
 	if err := json.Unmarshal(payloadRaw, &rec.Payload); err != nil {
-		return license.Record{}, false, fmt.Errorf("platform: decode license payload: %w", err)
+		return license.Record{}, false, false, fmt.Errorf("platform: decode license payload: %w", err)
 	}
 	rec.PayloadRaw = json.RawMessage(payloadRaw)
 	rec.Signature = signature
 	rec.State = license.State(state)
-	return rec, true, nil
+	return rec, legacy, true, nil
 }
 
 // SaveLicenseRecord upserts the full license row: called on upload (a new
@@ -214,19 +230,34 @@ func LoadLicenseRecord(ctx context.Context, db *pgxpool.Pool) (rec license.Recor
 // straight from rec.Payload here — the re-verify-on-load discipline
 // (RefreshLicenseCache) exists for the path this function doesn't cover:
 // a row that changed via something other than a verified upload.
+//
+// rec.PayloadRaw must be the exact bytes the signature covers (the uploaded
+// blob's payload, verbatim). It is persisted to payload_raw (migration 0635)
+// because the jsonb payload column normalises key order/whitespace, and
+// RefreshLicenseCache re-verifies the signature on every boot/tick — storing
+// only a re-marshaled/jsonb copy made that re-verification fail for every
+// installed license, so the grace/expiry state machine never ran. When
+// PayloadRaw is empty (callers that only hold a decoded Payload) it falls back
+// to json.Marshal(rec.Payload), which is byte-identical to license.Sign's
+// encoding for a payload this build fully understands.
 func SaveLicenseRecord(ctx context.Context, db *pgxpool.Pool, rec license.Record, signature string) error {
-	payload, err := json.Marshal(rec.Payload)
-	if err != nil {
-		return fmt.Errorf("platform: encode license payload: %w", err)
+	raw := []byte(rec.PayloadRaw)
+	if len(raw) == 0 {
+		var err error
+		raw, err = json.Marshal(rec.Payload)
+		if err != nil {
+			return fmt.Errorf("platform: encode license payload: %w", err)
+		}
 	}
-	_, err = db.Exec(ctx,
-		`INSERT INTO license (id, key_id, payload, signature, fingerprint, state, grace_started_at, installed_at, updated_at)
-		 VALUES ('current', $1, $2, $3, $4, $5, $6, now(), now())
+	_, err := db.Exec(ctx,
+		`INSERT INTO license (id, key_id, payload, payload_raw, signature, fingerprint, state, grace_started_at, installed_at, updated_at)
+		 VALUES ('current', $1, $2::jsonb, $3, $4, $5, $6, $7, now(), now())
 		 ON CONFLICT (id) DO UPDATE SET
-		   key_id = EXCLUDED.key_id, payload = EXCLUDED.payload, signature = EXCLUDED.signature,
+		   key_id = EXCLUDED.key_id, payload = EXCLUDED.payload, payload_raw = EXCLUDED.payload_raw,
+		   signature = EXCLUDED.signature,
 		   fingerprint = EXCLUDED.fingerprint, state = EXCLUDED.state,
 		   grace_started_at = EXCLUDED.grace_started_at, installed_at = now(), updated_at = now()`,
-		rec.KeyID, payload, signature, rec.IssuedFingerprint, string(rec.State), rec.GraceStartedAt)
+		rec.KeyID, string(raw), raw, signature, rec.IssuedFingerprint, string(rec.State), rec.GraceStartedAt)
 	if err != nil {
 		return fmt.Errorf("platform: save license: %w", err)
 	}
@@ -283,22 +314,47 @@ func insertLicenseStateAudit(ctx context.Context, db *pgxpool.Pool, log *slog.Lo
 // any edit to payload or signature invalidates the signature over the
 // *other* one, since Ed25519 signs the exact payload bytes.
 func RefreshLicenseCache(ctx context.Context, db *pgxpool.Pool, log *slog.Logger) {
-	rec, ok, err := LoadLicenseRecord(ctx, db)
+	rec, legacy, ok, err := loadLicenseRow(ctx, db)
 	if err != nil {
 		log.Error("license: refresh failed", "error", err)
 		return
 	}
 	if !ok {
+		// No license row at all: the zero-license "valid", uncapped default
+		// (FR-50 / AC-82b — a dev checkout or a fresh install before the
+		// wizard's license step must not be blocked). Unchanged by FR-124.
 		storeSnapshot(LicenseSnapshot{State: license.StateValid})
 		return
 	}
 
 	verified, verr := license.Verify(license.ProductionPublicKey, license.Blob{Payload: rec.PayloadRaw, Signature: rec.Signature})
-	if verr != nil {
+	// unverifiedLegacy: a pre-0635 row whose exact signed bytes were never
+	// stored (the jsonb copy is normalised by Postgres), so it cannot be
+	// re-verified through no fault of the operator. Refusing it outright would
+	// leave the fingerprint/expiry state machine permanently switched off for
+	// every upgraded install (the bug 0635 fixes); adopting it as verified
+	// would break FR-124. Middle ground: the grace/expiry state machine and the
+	// cap still run off the stored decoded payload (so mismatch and expiry are
+	// enforced, never silently "valid"), but it grants NO entitlements — an
+	// unverifiable licence grants nothing (FR-124) — until the operator
+	// re-uploads the licence file once, which stores payload_raw.
+	unverifiedLegacy := false
+	switch {
+	case verr == nil:
+		rec.Payload = verified
+	case legacy:
+		unverifiedLegacy = true
+		log.Warn("license: installed licence predates exact-bytes storage (migration 0635) and cannot be signature re-verified — "+
+			"grace/expiry still enforced from the stored payload, entitlements withheld; re-upload the licence file to restore full verification",
+			"error", verr, "key_id", rec.KeyID)
+	default:
 		log.Error("license: stored record failed signature re-verification — refusing to adopt, keeping last-known-good cache", "error", verr, "key_id", rec.KeyID)
 		return
 	}
-	rec.Payload = verified
+	entitlements := entitlementSnapshot(rec.Payload)
+	if unverifiedLegacy {
+		entitlements = map[string]bool{}
+	}
 
 	cur, ferr := license.Current()
 	if ferr != nil {
@@ -309,7 +365,7 @@ func RefreshLicenseCache(ctx context.Context, db *pgxpool.Pool, log *slog.Logger
 		log.Warn("license: fingerprint unavailable, keeping last-known state", "error", ferr)
 		snap := loadSnapshot()
 		snap.MaxSubscribers = rec.Payload.MaxSubscribers
-		snap.Entitlements = entitlementSnapshot(rec.Payload)
+		snap.Entitlements = entitlements
 		snap.ExpiresAt = rec.Payload.ExpiresAt
 		snap.SupportUntil = rec.Payload.SupportUntil
 		storeSnapshot(snap)
@@ -340,7 +396,7 @@ func RefreshLicenseCache(ctx context.Context, db *pgxpool.Pool, log *slog.Logger
 	storeSnapshot(LicenseSnapshot{
 		State:          updated.State,
 		MaxSubscribers: updated.Payload.MaxSubscribers,
-		Entitlements:   entitlementSnapshot(updated.Payload),
+		Entitlements:   entitlements,
 		ExpiresAt:      updated.Payload.ExpiresAt,
 		SupportUntil:   updated.Payload.SupportUntil,
 	})

@@ -34,6 +34,10 @@ func (m *Module) balanceHandler(w http.ResponseWriter, r *http.Request) {
 		httpapi.Error(w, http.StatusForbidden, "forbidden", "you may only view your own balance")
 		return
 	}
+	if !validUUID(id) {
+		httpapi.Error(w, http.StatusNotFound, "not_found", "manager not found")
+		return
+	}
 	// v3-2 (FR-100.1): the book is single IQD; any ?currency= is ignored.
 	bal, err := m.readBalance(r, id)
 	if err != nil {
@@ -50,6 +54,10 @@ func (m *Module) balancesHandler(w http.ResponseWriter, r *http.Request) {
 	mgr, _ := auth.ManagerFrom(r.Context())
 	if mgr == nil || (mgr.ID != id && !mgr.Can(auth.PermTopup)) {
 		httpapi.Error(w, http.StatusForbidden, "forbidden", "you may only view your own balance")
+		return
+	}
+	if !validUUID(id) {
+		httpapi.Error(w, http.StatusNotFound, "not_found", "manager not found")
 		return
 	}
 	rows, err := m.db.Query(r.Context(),
@@ -69,6 +77,29 @@ func (m *Module) balancesHandler(w http.ResponseWriter, r *http.Request) {
 		out = append(out, b)
 	}
 	httpapi.JSON(w, http.StatusOK, map[string]any{"balances": out})
+}
+
+// validUUID reports whether s is a canonical 8-4-4-4-12 hex UUID, so a
+// malformed path id is rejected with 404 before it reaches a ::uuid cast
+// (mirrors auth.validUUID, which is unexported).
+func validUUID(s string) bool {
+	if len(s) != 36 {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch i {
+		case 8, 13, 18, 23:
+			if c != '-' {
+				return false
+			}
+		default:
+			if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // readBalance returns the manager's cached ledger-derived IQD balance (0 when
@@ -93,6 +124,22 @@ type topupRequest struct {
 // figure + rate; a native-IQD top-up is unchanged. The book is single IQD.
 func (m *Module) topupHandler(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
+	// A malformed or unknown manager id is a 404 (the auth/managers_api.go
+	// convention), never a 500 from the ::uuid cast or the manager_balances FK.
+	if !validUUID(id) {
+		httpapi.Error(w, http.StatusNotFound, "not_found", "manager not found")
+		return
+	}
+	var exists bool
+	if err := m.db.QueryRow(r.Context(),
+		`SELECT EXISTS (SELECT 1 FROM managers WHERE id = $1::uuid)`, id).Scan(&exists); err != nil {
+		m.internalError(w, "topup manager lookup", err)
+		return
+	}
+	if !exists {
+		httpapi.Error(w, http.StatusNotFound, "not_found", "manager not found")
+		return
+	}
 	var in topupRequest
 	if !httpapi.Bind(w, r, &in) {
 		return

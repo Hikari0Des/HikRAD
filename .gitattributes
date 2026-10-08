@@ -1,0 +1,21 @@
+# Everything that ships to a Linux server (shell/Perl scripts, FreeRADIUS
+# config, systemd units, nginx templates) must be LF in EVERY working tree,
+# including a Windows checkout with core.autocrlf=true — CRLF breaks shebangs
+# ("bad interpreter: /usr/bin/perl^M") and FreeRADIUS's config parser, and
+# build-release-bundle.sh packages files straight from the working tree.
+* text=auto eol=lf
+
+# Binaries — never touch.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.webp binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.der binary
+*.p12 binary
+*.exe binary
+scripts/license-tool/hikrad-license-tool binary

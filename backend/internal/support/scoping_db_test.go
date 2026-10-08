@@ -110,8 +110,11 @@ func TestScoping_AgentSeesOnlyOwnSubscribersTickets(t *testing.T) {
 		t.Fatal("agent A's scoped list leaked agent B's ticket — scoping is broken")
 	}
 
-	// An unscoped (admin) caller sees both.
-	whereAll, argsAll := ticketFilters(req, nil, "", 1)
+	// An unscoped (admin) caller asking for scope=all sees both. (Without
+	// scope=all the default is "mine" — pinned to the caller's own id even for
+	// an admin — which is what the panel's My/All toggle relies on.)
+	reqAllAgents := httptest.NewRequest(http.MethodGet, "/api/v1/support-tickets?scope=all", nil)
+	whereAll, argsAll := ticketFilters(reqAllAgents, nil, seedManager(t, db), 1)
 	itemsAll, _, err := listTickets(ctx, db, whereAll, argsAll, nil, 50)
 	if err != nil {
 		t.Fatalf("list unscoped: %v", err)
@@ -167,7 +170,8 @@ func TestTicketLifecycle_StatusesAndWithdrawalHidesByDefault(t *testing.T) {
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/support-tickets", nil)
-	where, args := ticketFilters(req, nil, "", 1) // default: withdrawn hidden
+	// The owning agent's own (default scope=mine) list; withdrawn hidden by default.
+	where, args := ticketFilters(req, nil, agent, 1)
 	items, _, err := listTickets(ctx, db, where, args, nil, 50)
 	if err != nil {
 		t.Fatal(err)
@@ -179,7 +183,7 @@ func TestTicketLifecycle_StatusesAndWithdrawalHidesByDefault(t *testing.T) {
 	}
 
 	reqAll := httptest.NewRequest(http.MethodGet, "/api/v1/support-tickets?include_withdrawn=true", nil)
-	whereAll, argsAll := ticketFilters(reqAll, nil, "", 1)
+	whereAll, argsAll := ticketFilters(reqAll, nil, agent, 1)
 	itemsAll, _, err := listTickets(ctx, db, whereAll, argsAll, nil, 50)
 	if err != nil {
 		t.Fatal(err)

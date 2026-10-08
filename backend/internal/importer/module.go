@@ -8,6 +8,9 @@
 // import_rows (migrations 0400-0401); execute runs as an async job (the
 // Phase-2 bulk-job pattern subscribers/bulk.go established) so a 10k-row
 // batch never blocks the request.
+// audit-lint: delegated — every created subscriber/profile goes through the real,
+// audited create handler in-process (asserted by db_test.go's subscriber.create audit check).
+
 package importer
 
 import (

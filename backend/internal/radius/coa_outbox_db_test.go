@@ -9,6 +9,7 @@ package radius
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -90,6 +91,18 @@ func mustInsertTestNAS(t *testing.T, m *module) nasRow {
 	return mustInsertNAS(t, m, "", "", "")
 }
 
+// mustInsertTestSubscriber seeds a real subscribers row: coa_outbox.subscriber_id
+// is a uuid FK to subscribers(id), so a placeholder string cannot stand in.
+func mustInsertTestSubscriber(t *testing.T, m *module) (id, username string) {
+	t.Helper()
+	username = fmt.Sprintf("coa-sub-%d", time.Now().UnixNano())
+	if err := m.db.QueryRow(context.Background(),
+		`INSERT INTO subscribers (username) VALUES ($1) RETURNING id::text`, username).Scan(&id); err != nil {
+		t.Fatalf("seed subscriber: %v", err)
+	}
+	return id, username
+}
+
 func runTicks(t *testing.T, m *module, n int) {
 	t.Helper()
 	for i := 0; i < n; i++ {
@@ -139,9 +152,10 @@ func TestCoAOutbox_HybridFallback_NACKsThenFallsBackToDisconnect(t *testing.T) {
 		exchange: fakeExchangeAlwaysNAK(), inflight: make(chan struct{}, 8)}
 	setDefaultCoA(m.coa)
 	n := mustInsertTestNAS(t, m)
+	subID, username := mustInsertTestSubscriber(t, m)
 
 	sess := livestate.State{
-		Username: "u1", SubscriberID: "sub-1", NASID: n.ID, AcctSessionID: "live-sess",
+		Username: username, SubscriberID: subID, NASID: n.ID, AcctSessionID: "live-sess",
 		StartedAt: time.Now(), LastInterimAt: time.Now(),
 	}
 	if err := livestate.Upsert(context.Background(), m.rdb, sess); err != nil {
@@ -171,6 +185,12 @@ func TestCoAOutbox_HybridFallback_NACKsThenFallsBackToDisconnect(t *testing.T) {
 		}
 		if row.State == OutboxFailed {
 			break
+		}
+		// A NAK retry is backed off 3s (nextAttemptBackoff); fast-forward it
+		// so each tick is a real dispatch attempt instead of a no-op wait.
+		if _, err := m.db.Exec(context.Background(),
+			`UPDATE coa_outbox SET next_attempt_at = now() WHERE id = $1::uuid AND state = 'pending'`, id); err != nil {
+			t.Fatalf("fast-forward backoff: %v", err)
 		}
 		m.coaDispatchTick(context.Background())
 	}

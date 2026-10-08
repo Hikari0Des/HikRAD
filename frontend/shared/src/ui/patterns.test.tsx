@@ -38,9 +38,7 @@ const cols: Column<Row>[] = [
 
 describe('DataTable (FR-97.2)', () => {
   it('renders rows under the column headers', () => {
-    withI18n(
-      <DataTable columns={cols} rows={[{ id: '1', name: 'Ali' }]} getRowKey={(r) => r.id} />,
-    )
+    withI18n(<DataTable columns={cols} rows={[{ id: '1', name: 'Ali' }]} getRowKey={(r) => r.id} />)
     expect(screen.getByText('Name')).toBeInTheDocument()
     expect(screen.getByText('Ali')).toBeInTheDocument()
   })

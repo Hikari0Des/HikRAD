@@ -22,9 +22,8 @@ otherwise mean "stolen backup = data + key" for anyone who got hold of one.
 
 **The passphrase itself lives in two places, on purpose:**
 1. Printed once, at the end of `install.sh` — write it down.
-2. `/opt/hikrad/.env` (`HIKRAD_BACKUP_PASSPHRASE=...`) — needed so the
-   nightly cron backup can run unattended, with nobody typing a passphrase
-   at 3am.
+2. `/etc/hikrad/hikrad.env` (`HIKRAD_BACKUP_PASSPHRASE=...`) — needed so the
+   nightly backup can run unattended, with nobody typing a passphrase at 3am.
 
 **If you lose both**, existing backups are permanently unrecoverable. There
 is no vendor escrow and no recovery mechanism — this is a deliberate
@@ -38,9 +37,10 @@ hikrad backup now      # immediate, ad-hoc
 hikrad backup list      # what's on disk, newest first
 ```
 
-Nightly backups run automatically via the cron entry `install.sh` installs
-(default 03:00 server time). Retention defaults to 14 archives
-(`HIKRAD_BACKUP_RETENTION` in `.env`) — older archives are pruned after each
+Nightly backups run automatically via the `hikrad-backup.timer` systemd
+timer `install.sh` installs (03:00 server time, up to 10 minutes' random
+delay). Archives land in `/var/backups/hikrad/`. Retention defaults to 14
+archives (`HIKRAD_BACKUP_RETENTION` in `hikrad.env`) — older archives are pruned after each
 successful backup, never during a failed one (a disk-full backup fails
 loudly and leaves existing archives alone; it does not corrupt rotation).
 
@@ -55,8 +55,9 @@ hikrad restore hikrad-backup-20260101T030000Z.tar.gz.gpg
 # or a full path; relative names are looked up under the backups directory
 ```
 
-This is destructive to the target's current database — **rehearse it on a
-second VM before you ever need it on production.**
+This replaces the target's current database — **rehearse it on a second VM
+before you ever need it on production.** The previous database is kept (see
+step 5), so a restore you regret can still be undone by hand.
 
 What it does, step by step (FR-51.2):
 1. Asks for confirmation (`type 'yes'`) unless `HIKRAD_RESTORE_YES=1`.
@@ -67,16 +68,45 @@ What it does, step by step (FR-51.2):
    clear message — update first, then retry. Restoring into a newer or
    equal install proceeds; forward migrations run automatically when
    `hikrad-api` boots at the end.
-4. Stops the whole stack, brings up only `postgres`.
-5. Drops and recreates the target database, then restores the dump
-   (including the TimescaleDB pre/post-restore steps hypertables need).
-6. Replaces `.env` and the Caddy config with the archive's copies (the old
-   `.env` is saved alongside as `.env.pre-restore.bak`, never deleted).
-7. Starts the full stack and waits for `hikrad-api`'s healthcheck.
+4. Stops every `hikrad-*` service (PostgreSQL keeps running).
+5. Restores the dump into a **staging** database (`hikrad_restore`), with the
+   TimescaleDB pre/post-restore steps hypertables need, run as the
+   `postgres` superuser. Only if that fully succeeds is it swapped in: the
+   current database is renamed to `hikrad_pre_restore` (replacing any older
+   one) and the staging copy becomes `hikrad`. If pg_restore fails, the
+   current database is untouched and the services are restarted on it.
+   Once you have verified the restore, reclaim the space with
+   `sudo -u postgres dropdb hikrad_pre_restore`.
+6. Replaces `/etc/hikrad/hikrad.env` with the archive's copy (the old one is
+   saved as `hikrad.env.pre-restore.bak`, never deleted) and re-keys the
+   `hikrad` database role to the restored password.
+7. Starts every service and waits for `hikrad-api`'s healthcheck.
 8. Prints a verification summary: subscriber count, last ledger entry time,
    last accounting record time. **Check these against what you expect** —
    this is the step that actually tells you the restore is trustworthy, not
    just that the commands didn't error.
+
+### Restoring onto a new server (disaster recovery)
+
+1. Install HikRAD on the new server as usual (`install.sh`), at the same or a
+   newer version than the one that made the backup, **and on the same or a
+   newer PostgreSQL major** (a dump from PostgreSQL 18 cannot be restored
+   into 16). Check the old server with `psql --version`; if it is newer than
+   16, install the new one with e.g. `sudo HIKRAD_PG_MAJOR=18 bash install.sh`.
+2. Copy the archive over, e.g. into `/var/backups/hikrad/`.
+3. Restore with the **old** server's backup passphrase — the new server's
+   `hikrad.env` holds its own, freshly generated one:
+
+   ```sh
+   HIKRAD_BACKUP_PASSPHRASE='<old passphrase>' HIKRAD_RESTORE_YES=1 hikrad restore <archive>
+   ```
+
+   The archive's `hikrad.env` (encryption key, secrets, DB password) replaces
+   the new server's, so subscriber passwords and NAS secrets decrypt exactly
+   as before, and later backups use the old passphrase again.
+4. Run `hikrad doctor`, then point your NAS devices at the new server's IP
+   (or move the old IP to it). A NAS whose IP changes must be updated in the
+   panel; FreeRADIUS picks the change up without a restart.
 
 ### Same-hardware restore and licensing
 

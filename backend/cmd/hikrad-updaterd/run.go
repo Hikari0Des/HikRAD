@@ -207,11 +207,27 @@ func (s *Server) runUpdate(r *updateRun, bundlePath string) {
 	}
 	cmd := exec.Command(s.cfg.UpdateCmd, args...)
 
-	pr, pw := io.Pipe()
-	cmd.Stdout = pw
-	cmd.Stderr = pw
+	// The child writes to a log FILE that this daemon follows, never to a
+	// pipe this daemon holds. With a pipe, the daemon dying (a crash, or
+	// install.sh itself restarting hikrad-updaterd mid-update) left the
+	// child's next log line writing into a closed pipe — SIGPIPE killed
+	// `hikrad update` halfway through applying a release (FR-86.5 / gate item
+	// 11; Linux-only, which is why these tests passed on Windows). The file
+	// also leaves a readable record of the last update for the operator.
+	logPath := filepath.Join(filepath.Dir(s.cfg.StatePath), "last-update.log")
+	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o640)
+	if err == nil {
+		cmd.Stdout = logFile
+		cmd.Stderr = logFile
+		err = cmd.Start()
+		_ = logFile.Close() // the child holds its own copy of the descriptor
+	}
+	var logReader *os.File
+	if err == nil {
+		logReader, err = os.Open(logPath)
+	}
 
-	if err := cmd.Start(); err != nil {
+	if err != nil {
 		close(r.resolved) // not a lock conflict — the connection handler proceeds to tail and sees this result
 		r.setStage("rolled_back")
 		r.append(Event{Type: "result", OK: boolPtr(false), Message: "failed to start update: " + err.Error()})
@@ -223,13 +239,15 @@ func (s *Server) runUpdate(r *updateRun, bundlePath string) {
 		return
 	}
 
+	defer logReader.Close()
 	waitErrCh := make(chan error, 1)
+	childDone := make(chan struct{})
 	go func() {
 		waitErrCh <- cmd.Wait()
-		_ = pw.Close()
+		close(childDone)
 	}()
 
-	scanner := bufio.NewScanner(pr)
+	scanner := bufio.NewScanner(&followReader{f: logReader, done: childDone})
 	scanner.Buffer(make([]byte, 0, 4096), 1<<20)
 	stage := ""
 	lastLine := ""
@@ -427,4 +445,34 @@ func (s *Server) findNewerBundle(current string) (version, path string) {
 		return "", ""
 	}
 	return bundleTargetVersion(bestName), filepath.Join(s.cfg.IncomingDir, bestName)
+}
+
+// followReader tails a file that another process is still appending to (the
+// child's log): at EOF it waits for more data until done is closed, then
+// drains whatever the exited child wrote last and reports EOF.
+type followReader struct {
+	f    *os.File
+	done <-chan struct{}
+}
+
+func (fr *followReader) Read(p []byte) (int, error) {
+	for {
+		n, err := fr.f.Read(p)
+		if n > 0 {
+			return n, nil
+		}
+		if err != nil && err != io.EOF {
+			return 0, err
+		}
+		select {
+		case <-fr.done:
+			// The child has exited, so the file is complete: one more read
+			// picks up anything written between the last read and exit.
+			if n, _ := fr.f.Read(p); n > 0 {
+				return n, nil
+			}
+			return 0, io.EOF
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
 }

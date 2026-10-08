@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 # HikRAD — one-command installer.
 #
-#   curl -fsSL https://raw.githubusercontent.com/Hikari0Des/hikrad-releases/main/install.sh | sudo bash
+#   Online:   curl -fsSL https://raw.githubusercontent.com/Hikari0Des/hikrad-releases/main/install.sh | sudo bash
+#   Offline:  put this file and hikrad-vX.Y.Z.tar in the same folder, then
+#             sudo bash install.sh            (or: sudo bash install.sh --bundle /path/hikrad-vX.Y.Z.tar)
 #
-# Downloads the latest signed HikRAD release bundle and hands off to its own
+# Uses a local bundle when one is given or found next to it; otherwise
+# downloads the latest signed HikRAD release bundle. Either way it hands off to its own
 # installer (scripts/install.sh --bundle, FR-81). This file's canonical copy
 # lives here (scripts/quick-install.sh) in the private source repo; the
 # release pipeline (.github/workflows/release.yml) publishes a copy of it as
@@ -34,13 +37,40 @@ die() { echo "${RED}error:${RESET} $*" >&2; exit 1; }
 [ "$(id -u)" -eq 0 ] || die "run as root — pipe into 'sudo bash':
   curl -fsSL https://raw.githubusercontent.com/${REPO}/main/install.sh | sudo bash"
 
-for tool in curl tar; do
-  command -v "$tool" >/dev/null 2>&1 || die "'$tool' is required but not installed."
+# --bundle FILE, or a hikrad-v*.tar next to this script / in the current
+# directory, means an offline install: no download at all (NFR-7 — a customer
+# site may have no internet on the server). Every other argument is passed
+# through to scripts/install.sh (--domain, --no-start, …).
+local_bundle=""
+pass=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --bundle) local_bundle="${2:?--bundle needs a path to hikrad-vX.Y.Z.tar}"; shift 2 ;;
+    *) pass+=("$1"); shift ;;
+  esac
 done
+if [ -z "$local_bundle" ]; then
+  here=""
+  [ -n "${BASH_SOURCE[0]:-}" ] && [ -f "${BASH_SOURCE[0]}" ] && here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  for dir in "$here" "$PWD"; do
+    [ -n "$dir" ] || continue
+    found="$(ls -1 "$dir"/hikrad-v*.tar 2>/dev/null | sort -V | tail -n1 || true)"
+    if [ -n "$found" ]; then local_bundle="$found"; break; fi
+  done
+fi
+
+command -v tar >/dev/null 2>&1 || die "'tar' is required but not installed."
+[ -n "$local_bundle" ] || command -v curl >/dev/null 2>&1 || die "'curl' is required to download a release (or pass --bundle with a local hikrad-vX.Y.Z.tar)."
 
 workdir="$(mktemp -d)"
 trap 'rm -rf "$workdir"' EXIT
 
+if [ -n "$local_bundle" ]; then
+  [ -f "$local_bundle" ] || die "bundle not found: $local_bundle"
+  version="$(basename "$local_bundle" | sed -E 's/^hikrad-(.*)\.tar$/\1/')"
+  say "Installing from local bundle $(basename "$local_bundle") (offline — nothing is downloaded)"
+  cp "$local_bundle" "$workdir/hikrad.tar"
+else
 say "Finding the latest HikRAD release…"
 api="https://api.github.com/repos/${REPO}/releases/latest"
 asset_url="$(curl -fsSL --connect-timeout 10 --max-time 20 "$api" 2>/dev/null \
@@ -53,6 +83,7 @@ say "Latest release: HikRAD ${version}"
 say "Downloading ${asset_url##*/} — a full offline bundle (binaries, frontend build, FreeRADIUS config, migrations; NFR-7, no internet needed after this)…"
 curl -fSL --progress-bar --connect-timeout 10 --speed-limit 10240 --speed-time 60 --max-time 3600 \
   "$asset_url" -o "$workdir/hikrad.tar"
+fi
 
 say "Extracting the installer…"
 # Only scripts/install.sh is pulled out here, just to bootstrap — it does its
@@ -66,6 +97,6 @@ tar -xf "$workdir/hikrad.tar" -C "$workdir" ./scripts/install.sh 2>/dev/null \
 
 say "Running the HikRAD installer (verifies the bundle's signature before touching anything)…"
 echo
-bash "$workdir/scripts/install.sh" --bundle "$workdir/hikrad.tar" "$@"
+bash "$workdir/scripts/install.sh" --bundle "$workdir/hikrad.tar" ${pass[@]+"${pass[@]}"}
 echo
 echo "${GREEN}==>${RESET} HikRAD ${version} installation finished."

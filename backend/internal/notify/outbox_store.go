@@ -335,10 +335,17 @@ func resolveFailedAttempt(ctx context.Context, db *pgxpool.Pool, id string, atte
 			 WHERE id = $1::uuid`, id, errText)
 		return err
 	}
+	// make_interval(secs => $3::int), not ($3 || ' seconds')::interval: the
+	// concatenation makes Postgres infer $3 as text, which pgx v5 refuses to
+	// encode a Go int into ("cannot find encode plan"). That error was
+	// swallowed by the dispatcher, so every retryable failure left the row
+	// stuck in `sending` with no last_error and attempt_count never advancing
+	// — reclaimStuckSending re-queued it every 30s forever, never reaching
+	// `failed` and never showing the real reason.
 	_, err := db.Exec(ctx, `
 		UPDATE notification_outbox
 		   SET state = 'queued', attempt_count = attempt_count + 1, last_error = $2,
-		       next_attempt_at = now() + ($3 || ' seconds')::interval
+		       next_attempt_at = now() + make_interval(secs => $3::int)
 		 WHERE id = $1::uuid`, id, errText, backoffSeconds(attemptCount+1))
 	return err
 }

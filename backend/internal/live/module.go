@@ -4,6 +4,9 @@
 // action. It reads the live-session state hikrad-acct's consumer maintains in
 // Redis (internal/live/livestate) and wires the radius authorize seams at boot.
 // It never ingests packets — that is hikrad-acct (internal/accounting).
+// audit-lint: delegated — the disconnect route's audit row is written by
+// radius.Enqueue ("coa.enqueue", internal/radius/coa_enqueue.go).
+
 package live
 
 import (

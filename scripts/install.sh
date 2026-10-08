@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # install.sh — HikRAD native installer (v4-2, FR-118). Provisions PostgreSQL
 # + TimescaleDB, FreeRADIUS 3 (with zero-restart dynamic NAS clients), nginx,
-# and the six hikrad-* systemd units directly on a Linux host — Docker is
+# and the seven hikrad-* systemd units directly on a Linux host — Docker is
 # CANCELLED as the delivery mechanism (Decision 57); nothing here installs
 # or depends on it. The RouterOS container target (Decision 58) is a
 # completely separate, single-image artifact built by
@@ -75,6 +75,7 @@ WWW_DIR="$PREFIX/opt/hikrad/www"
 MIGRATIONS_DIR="$PREFIX/opt/hikrad/migrations"
 VERSION_FILE="$PREFIX/opt/hikrad/VERSION"
 RELEASE_ROLLBACK_DIR="$PREFIX/opt/hikrad/release.rollback"
+LIB_DIR="$PREFIX/opt/hikrad/lib"
 ETC_DIR="$PREFIX/etc/hikrad"
 ENV_FILE="$ETC_DIR/hikrad.env"
 META_FILE="$ETC_DIR/install.meta"
@@ -125,6 +126,30 @@ if [ "${HIKRAD_SKIP_OS_CHECK:-0}" != "1" ]; then
     command -v systemctl >/dev/null 2>&1 || die "systemd (systemctl) not found — the native installer requires it. Set HIKRAD_SKIP_OS_CHECK=1 only for a sandboxed --no-start rehearsal with no real service management."
 fi
 
+# --- 1b. Bundle: extract and verify its signature FIRST -------------------
+# Before any package, user, database or secret is created. This used to happen
+# at step 7, after all of those, and step 6 ran gen-env.sh from next to THIS
+# script — which, when quick-install.sh has pulled only install.sh out of the
+# bundle, does not exist. Every fresh install from a release bundle therefore
+# died at "gen-env.sh: No such file or directory" (found installing a real
+# `make release` bundle on a clean server). Everything bundle-mode needs now
+# comes from the verified $SCRATCH tree.
+SCRATCH=""
+if [ -n "$BUNDLE" ]; then
+    [ -f "$BUNDLE" ] || die "--bundle file not found: $BUNDLE"
+    if ! command -v openssl >/dev/null 2>&1 && command -v apt-get >/dev/null 2>&1; then
+        apt-get update -qq && apt-get install -y -qq openssl >/dev/null \
+            || die "openssl is needed to verify the bundle signature and could not be installed"
+    fi
+    log "Verifying release bundle $BUNDLE before using anything from it…"
+    SCRATCH="$(mktemp -d)"
+    trap 'rm -rf "$SCRATCH"' EXIT
+    tar -xf "$BUNDLE" -C "$SCRATCH" || die "could not extract $BUNDLE — the file is incomplete or corrupt (nothing was changed)"
+    bash "$SCRATCH/scripts/verify-bundle.sh" "$SCRATCH" \
+        || die "bundle verification failed — refusing to install from $BUNDLE (nothing was changed)"
+    log "Bundle verified."
+fi
+
 # --- 2. Resolve the HTTP port BEFORE any work begins (frozen: every prompt --
 # happens up front, never mid-run — non-interactive via HIKRAD_HTTP_PORT).
 # Once chosen, it is recorded in install.meta and NEVER re-prompted or
@@ -141,6 +166,11 @@ fi
 # on "bind: address already in use" the moment nginx (which starts first,
 # via its own apt postinst) claimed 8080.
 readonly HIKRAD_INTERNAL_API_PORT=8080
+
+# Toolchains source mode installs when missing (the versions every rehearsal
+# ran on). Overridable for a newer patch release.
+HIKRAD_GO_VERSION="${HIKRAD_GO_VERSION:-1.24.6}"
+HIKRAD_NODE_VERSION="${HIKRAD_NODE_VERSION:-20.18.1}"
 
 port_in_use() { # port_in_use PORT -> 0 if something is already listening
     command -v ss >/dev/null 2>&1 && ss -ltn "( sport = :$1 )" 2>/dev/null | grep -q ":$1" && return 0
@@ -198,6 +228,12 @@ fi
 [ "$HTTPS_PORT" != "$HIKRAD_INTERNAL_API_PORT" ] \
     || die "the derived HTTPS port ($HTTPS_PORT, one above HIKRAD_HTTP_PORT=$HTTP_PORT) collides with hikrad-api's own fixed internal port — choose a different HIKRAD_HTTP_PORT."
 
+# Whether nginx was already on this host BEFORE this run — decides, in step
+# 9, whether the distro's stock default site may be disabled (only if WE just
+# installed nginx, so nobody can be relying on it yet).
+NGINX_PREEXISTING=0
+command -v nginx >/dev/null 2>&1 && NGINX_PREEXISTING=1
+
 # --- 3. OS package dependencies (idempotent — apt-get install is already a --
 # no-op on an already-satisfied package; TimescaleDB/PGDG repo files are only
 # added if missing).
@@ -209,6 +245,26 @@ if [ "${HIKRAD_SKIP_PACKAGES:-0}" != "1" ]; then
     . /etc/os-release
     log "Installing OS package dependencies…"
     apt-get update -qq
+    # The repo-key steps below pipe curl into gpg — both must exist BEFORE
+    # the main install further down. Minimal Ubuntu/Debian server images ship
+    # neither gnupg nor (sometimes) curl, and the install died right here on
+    # "gpg: command not found" (found in a clean ubuntu:24.04 rehearsal).
+    apt-get install -y -qq curl gnupg ca-certificates lsb-release xz-utils \
+        || die "could not install the bootstrap packages (curl, gnupg, ca-certificates)"
+
+    # ONE pinned PostgreSQL major. The unversioned `postgresql` package means
+    # "newest", so fresh installs would silently jump majors as PGDG ships them
+    # (possibly before TimescaleDB packages exist for it), and Ubuntu's own
+    # `postgresql-contrib` meta package dragged in a second, unused
+    # PostgreSQL 16 next to 18 (found on a real VM install). An install that
+    # already has a cluster keeps its version; otherwise 16, the PRD's
+    # user-confirmed stack (FR-118; CI's backend job tests against 16).
+    # Override: HIKRAD_PG_MAJOR.
+    if [ -z "${HIKRAD_PG_MAJOR:-}" ] && command -v pg_lsclusters >/dev/null 2>&1; then
+        HIKRAD_PG_MAJOR="$(pg_lsclusters -h 2>/dev/null | awk '$2 == "main" {print $1}' | sort -n | tail -1)"
+    fi
+    PG_MAJOR="${HIKRAD_PG_MAJOR:-16}"
+    log "Using PostgreSQL $PG_MAJOR"
 
     # PostgreSQL + TimescaleDB: add the upstream repos only if not already
     # present (idempotent — a second run must not duplicate apt sources).
@@ -237,7 +293,7 @@ if [ "${HIKRAD_SKIP_PACKAGES:-0}" != "1" ]; then
     apt-get update -qq
 
     apt-get install -y -qq \
-        postgresql postgresql-contrib \
+        "postgresql-$PG_MAJOR" "postgresql-client-$PG_MAJOR" \
         freeradius freeradius-utils \
         nginx \
         wireguard wireguard-tools \
@@ -249,8 +305,7 @@ if [ "${HIKRAD_SKIP_PACKAGES:-0}" != "1" ]; then
     # TimescaleDB's package name is versioned to the installed PG major
     # version (e.g. timescaledb-2-postgresql-16); resolve it rather than
     # hardcoding one PG version across every supported OS release.
-    pg_major="$(pg_config --version 2>/dev/null | grep -oE '[0-9]+' | head -1)"
-    [ -n "$pg_major" ] || pg_major="$(psql -V 2>/dev/null | grep -oE '[0-9]+' | head -1)"
+    pg_major="$PG_MAJOR"
     if [ -n "$pg_major" ]; then
         if apt-get install -y -qq "timescaledb-2-postgresql-${pg_major}"; then
             # The package alone is not enough — TimescaleDB is a shared-
@@ -261,7 +316,13 @@ if [ "${HIKRAD_SKIP_PACKAGES:-0}" != "1" ]; then
             # the extension still failed). timescaledb-tune is the
             # package's own recommended, idempotent way to do this.
             if command -v timescaledb-tune >/dev/null 2>&1; then
-                timescaledb-tune --quiet --yes >/dev/null 2>&1 \
+                # Explicit version + conf path: timescaledb-tune otherwise
+                # guesses from pg_config, which reports the newest PGDG client
+                # library (e.g. 18) even when the server is 16, and then looks
+                # for /etc/postgresql/18/... — found switching a server from
+                # 18 to 16.
+                timescaledb-tune --quiet --yes --pg-version "$pg_major" \
+                    --conf-path "/etc/postgresql/$pg_major/main/postgresql.conf" >/dev/null 2>&1 \
                     || warn "timescaledb-tune failed — add 'timescaledb' to shared_preload_libraries in postgresql.conf manually, then restart postgresql."
                 systemctl restart postgresql \
                     || warn "postgresql restart after timescaledb-tune failed — CREATE EXTENSION timescaledb will keep failing until it's restarted."
@@ -315,8 +376,24 @@ if [ "${HIKRAD_SKIP_PACKAGES:-0}" != "1" ]; then
     [ -n "$PG_PASSWORD" ] || PG_PASSWORD="$(openssl rand -hex 24)"
 
     role_exists="$(sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='hikrad'" 2>/dev/null || true)"
-    if [ "$role_exists" = "1" ]; then
+    if [ "$role_exists" = "1" ] && [ -f "$ENV_FILE" ]; then
         vlog "role 'hikrad' already exists — leaving its password untouched (never re-set on an existing role, matches the 'never regenerate secrets' contract)"
+    elif [ "$role_exists" = "1" ]; then
+        # The role survived but hikrad.env did not (deleted /etc/hikrad, a
+        # half-finished uninstall, a reinstall onto a kept database). Step 6
+        # is about to write a brand-new hikrad.env with $PG_PASSWORD, so the
+        # role MUST be re-keyed to match — leaving it untouched guaranteed
+        # hikrad-api could never log in ("password authentication failed").
+        # There is no old secret left to preserve: it lived only in the
+        # hikrad.env that is already gone.
+        warn "PostgreSQL role 'hikrad' exists but $ENV_FILE does not — re-keying the role to the password being written to the new hikrad.env."
+        sudo -u postgres psql -v ON_ERROR_STOP=1 -c \
+            "ALTER ROLE hikrad LOGIN PASSWORD '$(printf '%s' "$PG_PASSWORD" | sed "s/'/''/g")';" \
+            || die "failed to re-key the existing 'hikrad' PostgreSQL role"
+        db_has_data="$(sudo -u postgres psql -d hikrad -tAc "SELECT 1 FROM information_schema.tables WHERE table_name='subscribers'" 2>/dev/null || true)"
+        if [ "$db_has_data" = "1" ]; then
+            warn "the existing 'hikrad' database already holds data, but a NEW HIKRAD_ENCRYPTION_KEY is about to be generated — subscriber RADIUS passwords and NAS secrets encrypted under the old key will NOT decrypt. Restore the old hikrad.env (or a 'hikrad restore' backup + its passphrase) instead if you still have it."
+        fi
     else
         sudo -u postgres psql -v ON_ERROR_STOP=1 -c \
             "CREATE ROLE hikrad LOGIN PASSWORD '$(printf '%s' "$PG_PASSWORD" | sed "s/'/''/g")';" \
@@ -328,8 +405,11 @@ if [ "${HIKRAD_SKIP_PACKAGES:-0}" != "1" ]; then
         sudo -u postgres psql -v ON_ERROR_STOP=1 -c "CREATE DATABASE hikrad OWNER hikrad;" \
             || die "failed to create the 'hikrad' database"
     fi
+    # Fatal, not a warning: starting hikrad-api without TimescaleDB makes its
+    # migrations fail halfway and leaves the schema "dirty", which then needs
+    # manual repair. Stopping here changes nothing that a re-run can't finish.
     sudo -u postgres psql -v ON_ERROR_STOP=1 -d hikrad -c "CREATE EXTENSION IF NOT EXISTS timescaledb;" \
-        || warn "CREATE EXTENSION timescaledb failed — install the timescaledb-2-postgresql-<N> package and run this again; hikrad-api's own migrations will otherwise fail."
+        || die "CREATE EXTENSION timescaledb failed on PostgreSQL $PG_MAJOR — check that timescaledb-2-postgresql-$PG_MAJOR is installed and 'timescaledb' is in shared_preload_libraries (/etc/postgresql/$PG_MAJOR/main/postgresql.conf), restart postgresql, then re-run this installer. No HikRAD service was started."
 fi
 
 # --- 5. Directories + system users + ownership ------------------------------
@@ -382,8 +462,12 @@ log "Directories and ownership reconciled."
 # existing secrets" guarantee (gate item 3).
 if [ ! -f "$ENV_FILE" ]; then
     log "Generating $ENV_FILE (fresh secrets)…"
+    gen_env_sh="$SCRIPT_DIR/gen-env.sh"
+    [ -n "$SCRATCH" ] && gen_env_sh="$SCRATCH/scripts/gen-env.sh"
+    # The DB role was created with $PG_PASSWORD (step 4); hikrad.env must
+    # carry the same one, so it is passed to gen-env.sh explicitly.
     HIKRAD_DB_PASS="${PG_PASSWORD:-${HIKRAD_DB_PASS:-}}" \
-        bash "$SCRIPT_DIR/gen-env.sh" --env prod "$ENV_FILE"
+        bash "$gen_env_sh" --env prod "$ENV_FILE"
     chmod 0600 "$ENV_FILE"
 else
     log "$ENV_FILE already exists — leaving all secrets untouched."
@@ -402,15 +486,7 @@ STAGE_CLI="$SCRIPT_DIR/hikrad"
 STAGE_VERSION=""
 
 if [ -n "$BUNDLE" ]; then
-    [ -f "$BUNDLE" ] || die "--bundle file not found: $BUNDLE"
-    log "Verifying release bundle $BUNDLE before using anything from it…"
-    SCRATCH="$(mktemp -d)"
-    trap 'rm -rf "$SCRATCH"' EXIT
-    tar -xf "$BUNDLE" -C "$SCRATCH"
-    bash "$SCRATCH/scripts/verify-bundle.sh" "$SCRATCH" \
-        || die "bundle verification failed — refusing to install from $BUNDLE (nothing was changed)"
-    log "Bundle verified."
-
+    # Extracted and verified at step 1b, before anything was changed.
     STAGE_BIN=""             # bundle ships prebuilt binaries directly, no go build
     STAGE_WWW_PANEL="$SCRATCH/www/panel"
     STAGE_WWW_PORTAL="$SCRATCH/www/portal"
@@ -423,6 +499,34 @@ if [ -n "$BUNDLE" ]; then
     BUNDLE_BIN_DIR="$SCRATCH/bin"
     HIKRAD_DELIVERY_MODE="bundle"
 else
+    # sudo's secure_path drops /usr/local/go/bin (the go.dev tarball's
+    # documented location), so a Go the invoking user can run is invisible
+    # here under plain `sudo ./scripts/install.sh`.
+    if ! command -v go >/dev/null 2>&1 && [ -x /usr/local/go/bin/go ]; then
+        PATH="$PATH:/usr/local/go/bin"
+    fi
+    # Source mode needs Go and Node to build. Rather than stopping with
+    # "install Go first" (what a real VM install hit), fetch the pinned,
+    # tested toolchains from their official sites when missing or too old.
+    # Skipped under HIKRAD_SKIP_PACKAGES (CI brings its own).
+    if [ "${HIKRAD_SKIP_PACKAGES:-0}" != "1" ]; then
+        tc_arch="$(dpkg --print-architecture 2>/dev/null || echo amd64)"
+        if ! command -v go >/dev/null 2>&1 || ! go version | grep -qE 'go1\.(2[4-9]|[3-9][0-9])'; then
+            log "Installing Go $HIKRAD_GO_VERSION (build toolchain for source mode)…"
+            curl -fsSL "https://go.dev/dl/go${HIKRAD_GO_VERSION}.linux-${tc_arch}.tar.gz" -o /tmp/hikrad-go.tgz \
+                || die "could not download Go $HIKRAD_GO_VERSION — check internet access, or install from a signed bundle (--bundle)"
+            rm -rf /usr/local/go && tar -C /usr/local -xzf /tmp/hikrad-go.tgz && rm -f /tmp/hikrad-go.tgz
+            PATH="/usr/local/go/bin:$PATH"
+        fi
+        if ! command -v node >/dev/null 2>&1 || [ "$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)" -lt 20 ]; then
+            node_arch="$tc_arch"; [ "$node_arch" = "amd64" ] && node_arch="x64"
+            log "Installing Node.js $HIKRAD_NODE_VERSION (frontend build toolchain for source mode)…"
+            curl -fsSL "https://nodejs.org/dist/v${HIKRAD_NODE_VERSION}/node-v${HIKRAD_NODE_VERSION}-linux-${node_arch}.tar.xz" -o /tmp/hikrad-node.txz \
+                || die "could not download Node.js $HIKRAD_NODE_VERSION — check internet access, or install from a signed bundle (--bundle)"
+            tar -C /usr/local --strip-components=1 -xJf /tmp/hikrad-node.txz && rm -f /tmp/hikrad-node.txz
+            hash -r
+        fi
+    fi
     command -v go >/dev/null 2>&1 || die "no --bundle given and no Go toolchain found — source-mode install needs Go to build the binaries. Either install Go, or use --bundle with a signed release (see docs/ops/install-guide.md)."
     log "Source mode: building binaries from $REPO_DIR/backend…"
     ( cd "$REPO_DIR/backend" && for svc in hikrad-api hikrad-acct hikrad-monitor hikrad-updaterd; do
@@ -460,13 +564,16 @@ else
 fi
 log "Installed binaries to $BIN_DIR."
 
-# --- 7c. Frontend (built dists; a bundle ships them prebuilt, source mode --
-# builds them here if npm is available and dist/ doesn't already exist).
-if [ ! -d "$STAGE_WWW_PANEL" ] || [ ! -d "$STAGE_WWW_PORTAL" ]; then
-    if [ -z "$BUNDLE" ] && command -v npm >/dev/null 2>&1; then
+# --- 7c. Frontend (built dists; a bundle ships them prebuilt). Source mode
+# rebuilds on EVERY run: it used to build only when dist/ was missing, so
+# `git pull && sudo ./scripts/install.sh` kept serving the previous panel.
+if [ -z "$BUNDLE" ]; then
+    if command -v npm >/dev/null 2>&1; then
         log "Building frontend (panel + portal)…"
         ( cd "$REPO_DIR/frontend" && npm ci --silent && npm run build --workspaces --if-present --silent ) \
             || warn "frontend build failed — panel/portal will 404 until 'cd frontend && npm run build --workspaces' succeeds."
+    elif [ ! -d "$STAGE_WWW_PANEL" ] || [ ! -d "$STAGE_WWW_PORTAL" ]; then
+        warn "npm not found and no built frontend present — the panel and portal will 404. Install Node.js 20+ and re-run."
     fi
 fi
 if [ -d "$STAGE_WWW_PANEL" ]; then rm -rf "$WWW_DIR/panel"; cp -a "$STAGE_WWW_PANEL" "$WWW_DIR/panel"; fi
@@ -562,7 +669,61 @@ log "Configuring nginx (additive — no other site is touched)…"
 install -d -m 0755 "$NGINX_AVAILABLE" "$NGINX_ENABLED"
 sed -e "s/@@HTTP_PORT@@/$HTTP_PORT/g" -e "s/@@HTTPS_PORT@@/$HTTPS_PORT/g" \
     "$STAGE_NGINX_TEMPLATE" > "$NGINX_AVAILABLE/hikrad.conf"
+# The template's standalone `http2 on;` directive exists only from nginx
+# 1.25.1. The tested tier ships older nginx (Ubuntu 22.04: 1.18, Ubuntu
+# 24.04: 1.24, Debian 12: 1.22), where `nginx -t` rejects it as an unknown
+# directive and the install aborts. On those, use the older
+# `listen … ssl http2` form instead, which they all accept.
+if command -v nginx >/dev/null 2>&1; then
+    nginx_ver="$(nginx -v 2>&1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
+    if [ -n "$nginx_ver" ] && [ "$(printf '%s\n%s\n' "$nginx_ver" 1.25.1 | sort -V | head -1)" != "1.25.1" ]; then
+        vlog "nginx $nginx_ver predates 'http2 on;' — using 'listen … ssl http2' instead"
+        sed -i -e '/^[[:space:]]*http2 on;[[:space:]]*$/d' \
+               -e 's/^\([[:space:]]*listen[[:space:]].*\) ssl\( default_server\)\{0,1\};/\1 ssl http2\2;/' \
+               "$NGINX_AVAILABLE/hikrad.conf"
+    fi
+fi
 ln -sf "$NGINX_AVAILABLE/hikrad.conf" "$NGINX_ENABLED/hikrad.conf"
+
+# nginx allows ONE default_server per listen port. Stock Ubuntu/Debian nginx
+# enables sites-enabled/default with `listen 80 default_server`, so on a
+# fresh server `nginx -t` failed ("duplicate default server") and the install
+# aborted (found in a clean ubuntu:24.04 rehearsal).
+#   - nginx installed by THIS run: its stock placeholder site serves nobody
+#     yet — disable its symlink (the file stays in sites-available), so the
+#     panel answers on http://<server-ip>/.
+#   - nginx pre-existed: another site deliberately owns the default server;
+#     never touch it (gate item 4) — HikRAD drops default_server instead.
+other_default=""
+for site in "$NGINX_ENABLED"/*; do
+    [ "$(basename "$site")" = "hikrad.conf" ] && continue
+    if grep -qE "^[[:space:]]*listen[[:space:]]+(\[::\]:)?($HTTP_PORT|$HTTPS_PORT)[[:space:]].*default_server" "$site" 2>/dev/null; then
+        other_default="$site"
+        break
+    fi
+done
+# The distro placeholder is safe to disable when either this run installed
+# nginx, or the file is still byte-identical to the package's stock copy
+# (dpkg records its checksum): nobody has customized it, so nothing depends
+# on it. The second case covers a re-run after an earlier attempt installed
+# nginx and then failed — that run's nginx looked "pre-existing", and the
+# stock "Welcome to nginx!" page kept answering on http://<server-ip>/.
+stock_default_unmodified() {
+    local f="$NGINX_AVAILABLE/default" want have
+    [ -f "$f" ] || return 1
+    want="$(dpkg-query -W -f='${Conffiles}\n' nginx-common 2>/dev/null | awk '$1 == "/etc/nginx/sites-available/default" {print $2}')"
+    have="$(md5sum "$f" 2>/dev/null | awk '{print $1}')"
+    [ -n "$want" ] && [ "$want" = "$have" ]
+}
+if [ -n "$other_default" ]; then
+    if [ "$(basename "$other_default")" = "default" ] && { [ "$NGINX_PREEXISTING" = "0" ] || stock_default_unmodified; }; then
+        log "Disabling nginx's stock placeholder site (unmodified package default; the file stays in $NGINX_AVAILABLE/default)."
+        rm -f "$other_default"
+    else
+        warn "$other_default already owns nginx's default server on port $HTTP_PORT/$HTTPS_PORT — leaving it untouched; HikRAD's site will answer only when no other server_name matches."
+        sed -i 's/ default_server;/;/' "$NGINX_AVAILABLE/hikrad.conf"
+    fi
+fi
 
 if [ ! -f "$TLS_DIR/cert.pem" ]; then
     log "Generating a self-signed TLS certificate covering this server's detected address(es)…"
@@ -622,6 +783,23 @@ else
             || warn "$unit failed to (re)start — check: systemctl status $unit; journalctl -u $unit"
     done
     systemctl reload nginx 2>/dev/null || systemctl restart nginx
+
+    # Don't declare success while hikrad-api is still applying its first-boot
+    # migrations: a `hikrad doctor` run right after install otherwise failed
+    # its API check for a few seconds, which looks like a broken install.
+    log "Waiting for hikrad-api to finish starting (applies database migrations on first boot)…"
+    api_up=0
+    for _ in $(seq 1 90); do
+        if curl -fsS -o /dev/null --max-time 2 "http://127.0.0.1:$HIKRAD_INTERNAL_API_PORT/api/v1/system/version" 2>/dev/null; then
+            api_up=1; break
+        fi
+        sleep 2
+    done
+    if [ "$api_up" = "1" ]; then
+        log "hikrad-api is up."
+    else
+        warn "hikrad-api did not answer within 3 minutes — check: journalctl -u hikrad-api -n 50"
+    fi
 fi
 
 # --- 10b. Cloudflare tunnel bootstrap (HIKRAD_CF_TOKEN, frozen non---------
@@ -667,6 +845,16 @@ install -d -m 0755 "$PREFIX/usr/local/bin"
 install -m 0755 "$STAGE_CLI" "$PREFIX/usr/local/bin/hikrad" \
     && log "Installed CLI wrapper: $PREFIX/usr/local/bin/hikrad" \
     || warn "could not install $PREFIX/usr/local/bin/hikrad — copy scripts/hikrad there manually."
+# Trusted bundle verifier (it embeds the release public key): `hikrad update
+# --bundle` verifies a new bundle with THIS installed copy before executing
+# anything from inside it — running the bundle's own installer unverified
+# would let a tampered bundle skip its own verification step.
+install -d -m 0755 "$LIB_DIR"
+if [ -n "$BUNDLE" ]; then verifier_src="$SCRATCH/scripts/verify-bundle.sh"; else verifier_src="$SCRIPT_DIR/verify-bundle.sh"; fi
+install -m 0755 "$verifier_src" "$LIB_DIR/verify-bundle.sh"     || warn "could not install $LIB_DIR/verify-bundle.sh — 'hikrad update --bundle' will refuse to run until it exists."
+
+SOURCE_DIR_META=""
+[ "$HIKRAD_DELIVERY_MODE" = "source" ] && SOURCE_DIR_META="$REPO_DIR"
 
 # --- 13. install.meta (read back by `hikrad` and by this script's own -----
 # port-reuse logic above).
@@ -676,16 +864,21 @@ HIKRAD_HTTP_PORT=$HTTP_PORT
 HIKRAD_HTTPS_PORT=$HTTPS_PORT
 HIKRAD_DELIVERY_MODE=$HIKRAD_DELIVERY_MODE
 HIKRAD_ENV_FILE=$ENV_FILE
+HIKRAD_SOURCE_DIR=$SOURCE_DIR_META
 EOF
 
 # --- 14. Summary --------------------------------------------------------------
 PASSPHRASE="$(grep '^HIKRAD_BACKUP_PASSPHRASE=' "$ENV_FILE" | cut -d= -f2-)"
+SERVER_ADDR="${DOMAIN:-$(hostname -I 2>/dev/null | awk '{print $1}')}"
+[ -n "$SERVER_ADDR" ] || SERVER_ADDR="<this-server>"
+if [ "$HTTPS_PORT" = "443" ]; then PANEL_URL="https://$SERVER_ADDR/"; else PANEL_URL="https://$SERVER_ADDR:$HTTPS_PORT/"; fi
 cat <<EOF
 
 ================================================================================
  HikRAD install summary — save this somewhere safe, it is not shown again.
 ================================================================================
- Panel:               https://<this-server>:$HTTPS_PORT/
+ Panel:                $PANEL_URL
+ Subscriber portal:    ${PANEL_URL}portal/
  Config:               $ETC_DIR
  Data:                 $VAR_DIR
  Backups:              $BACKUP_DIR
@@ -697,10 +890,17 @@ cat <<EOF
  manager. If BOTH this copy and hikrad.env are lost, existing backups are
  permanently unrecoverable by design (no vendor escrow).
 
- No admin account exists yet — open the panel now and complete the
- first-run wizard (license, admin account, branding, NAS, profile). Until
- then the panel has no way in, which is deliberate: there is no default
- password to change later.
+ Next steps:
+   1. Open $PANEL_URL (the certificate is self-signed until you
+      re-run with --domain, so accept the browser warning once).
+   2. Complete the first-run wizard: license, admin account, branding, NAS,
+      first profile. There is no default password — until the wizard is done
+      the panel has no way in, by design.
+   3. Add each MikroTik in the panel (NAS > Add). Its setup wizard can
+      configure the router's RADIUS client and incoming CoA for you; manually
+      it is RADIUS to this server's IP (auth 1812, acct 1813) plus
+      /radius incoming accept=yes.
+   4. Check health any time with:  sudo hikrad doctor
 ================================================================================
 
 Manage the stack with: hikrad {status|logs|backup|restore|update|doctor|passwd}

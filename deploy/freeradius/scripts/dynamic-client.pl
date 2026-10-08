@@ -54,7 +54,15 @@ sub envattr {
 # Packet-Src-IP-Address is the actual socket source address (what a real NAS
 # connected from); NAS-IP-Address is an attacker/client-controlled attribute
 # value and must never be trusted for this lookup.
-my $src_ip = unwrap(envattr('Packet-Src-IP-Address', 'PACKET_SRC_IP_ADDRESS')) || unwrap(envattr('Packet-Src-IPv6-Address', 'PACKET_SRC_IPV6_ADDRESS'));
+#
+# It arrives as ARGV[0] (mods-enabled/hikrad_dynamic_client expands
+# %{Packet-Src-IP-Address} into the command line): Packet-Src-* are VIRTUAL
+# attributes computed from the socket, not pairs in the request list, so
+# input_pairs never exports them and the env lookup alone always came back
+# empty — every dynamic-client lookup exited 1 and no NAS added through the
+# panel could authenticate until a restart. The env fallback is kept only for
+# a manual invocation.
+my $src_ip = unwrap($ARGV[0]) || unwrap(envattr('Packet-Src-IP-Address', 'PACKET_SRC_IP_ADDRESS')) || unwrap(envattr('Packet-Src-IPv6-Address', 'PACKET_SRC_IPV6_ADDRESS'));
 
 exit 1 unless $src_ip;
 
